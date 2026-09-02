@@ -28,9 +28,9 @@ cargo tauri build --target aarch64-apple-darwin
 
 ## Codex hooks
 
-在设置中使用 **Install hooks**，将 Codex Halo 自有的生命周期命令添加到用户级
+在设置中使用 **安装 hooks**，将 Codex Halo 自有的生命周期命令添加到用户级
 Codex hooks 配置 `~/.codex/hooks.json` 中。Codex 可能要求用户检查并信任新增或
-变更的 hooks。**Remove hooks** 只会删除 Codex Halo 的条目。已安装的命令会调用
+变更的 hooks。**移除 hooks** 只会删除 Codex Halo 的条目。已安装的命令会调用
 复制到应用数据目录中的 helper，并使用 `--state-dir` 传入该应用的 `state` 目录；
 更新时会在同一路径替换 helper。安装 hooks 不会自动信任它们。
 
@@ -41,7 +41,7 @@ session 计数。
 
 ## 设置与诊断
 
-设置中有本地 **Export diagnostics** 控件。它会下载
+设置中有本地 **导出诊断** 控件。它会下载
 `codex-halo-diagnostics.json`，其中只有当前状态名称和 timestamp；不会导出
 prompt、transcript、tool、model 或 path 数据。
 
@@ -53,9 +53,11 @@ Windows 打包和原生运行时检查需要 Windows x86_64 MSVC runner。macOS 
 
 ## 隐私
 
-hook helper 只读取 session identifier 和生命周期事件名称。它只保存经过哈希的
-session state、状态名称和 timestamp。不使用 prompt、transcript、tool data、
-model names、paths、network data、telemetry，也不进行 cloud sync。
+hook helper 读取 hook 输入中的 `session_id` 和生命周期事件名称，并在处理
+`SessionStart` 输入时读取可选的 `source` 字段，用于识别 `source: "compact"`。它只
+保存经过哈希的 session identifier、状态名称和 timestamp。不使用 prompt、
+transcript、tool data、model names、paths、network data、telemetry，也不进行 cloud
+sync。
 
 ## 归属
 

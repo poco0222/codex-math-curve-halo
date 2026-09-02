@@ -57,10 +57,11 @@ runner. macOS checks do not establish Windows runtime behavior.
 
 ## Privacy
 
-The hook helper reads only the session identifier and lifecycle event name. It
-stores only hashed session state, state names, and timestamps. Prompts,
-transcripts, tool data, model names, paths, network data, telemetry, and cloud
-sync are not used.
+The hook helper reads `session_id` and the lifecycle event name from hook input,
+plus the optional `source` field in `SessionStart` input to identify
+`source: "compact"`. It stores only a hash of the session identifier, state
+names, and timestamps. Prompts, transcripts, tool data, model names, paths,
+network data, telemetry, and cloud sync are not used.
 
 ## Attribution
 
