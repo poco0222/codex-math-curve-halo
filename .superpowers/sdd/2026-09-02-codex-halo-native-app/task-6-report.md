@@ -185,3 +185,43 @@ Environment boundaries:
 - Actual Windows Registry/LaunchAgent execution and live Codex integration:
   `NOT RUN`.
 - The no-op `tauri-build` features edit was not touched in this fix round.
+
+## Fix Round 2/5 Evidence
+
+Date: 2026-09-02
+Base commit: `fc67838`
+
+The remaining partial-autostart failure hole is closed. When the autostart
+operation changes native state and then returns an error, the transaction now
+attempts to restore `current.start_at_login`. A successful reconciliation
+returns the original fixed redacted autostart category. A failed
+reconciliation returns `start-at-login:reconciliation`. The settings write is
+not attempted on this error path. The existing settings-write rollback path
+is unchanged.
+
+Focused RED/GREEN evidence:
+
+- `settings_transaction_reconciles_autostart_error_before_writing_settings`
+  first failed because the transaction returned on the initial autostart
+  error; it then passed with a stub that mutates native state, returns
+  `start-at-login:registry`, and succeeds when restoring the current value.
+- `settings_transaction_reports_initial_autostart_reconciliation_failure`
+  covers the same mutating error with a failed restore and passes with the
+  stable `start-at-login:reconciliation` category.
+- The regression asserts native autostart ends at the current value and the
+  settings write is not committed.
+
+Verification:
+
+- Focused Rust tests: `4` passed.
+- `cargo test --manifest-path src-tauri/Cargo.toml`: `46 + 13 + 5` tests
+  passed; doc-tests had `0` tests.
+- `cargo check --manifest-path src-tauri/Cargo.toml`: passed.
+- `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`: passed.
+- `git diff --check`: passed.
+- JavaScript tests: `NOT RUN`; no JavaScript files were affected.
+
+Residual gap: Windows and live macOS autostart runtime behavior remain
+unverified on this host boundary, as recorded above. This round adds unit
+evidence for the dependency partial-failure contract but does not exercise the
+native OS APIs.

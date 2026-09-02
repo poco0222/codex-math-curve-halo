@@ -233,7 +233,12 @@ where
         return write_settings(next);
     }
 
-    set_autostart(next.start_at_login)?;
+    if let Err(error) = set_autostart(next.start_at_login) {
+        if set_autostart(current.start_at_login).is_err() {
+            return Err("start-at-login:reconciliation".to_owned());
+        }
+        return Err(error);
+    }
     if let Err(error) = write_settings(next) {
         if set_autostart(current.start_at_login).is_err() {
             return Err("start-at-login:reconciliation".to_owned());
@@ -874,5 +879,73 @@ mod scan_tests {
 
         assert_eq!(result, Err("start-at-login:reconciliation".to_owned()));
         assert_eq!(autostart_changes, [true, false]);
+    }
+
+    #[test]
+    fn settings_transaction_reconciles_autostart_error_before_writing_settings() {
+        let current = AppSettings::default();
+        let mut next = current.clone();
+        next.start_at_login = true;
+        let mut native_autostart = current.start_at_login;
+        let mut autostart_changes = Vec::new();
+        let mut settings_committed = false;
+        let mut attempts = 0;
+
+        let result = save_settings_transaction(
+            &current,
+            &next,
+            |_| {
+                settings_committed = true;
+                Ok(())
+            },
+            |enabled| {
+                native_autostart = enabled;
+                autostart_changes.push(enabled);
+                attempts += 1;
+                if attempts == 1 {
+                    Err("start-at-login:registry".to_owned())
+                } else {
+                    Ok(())
+                }
+            },
+        );
+
+        assert_eq!(result, Err("start-at-login:registry".to_owned()));
+        assert_eq!(native_autostart, current.start_at_login);
+        assert_eq!(autostart_changes, [true, false]);
+        assert!(!settings_committed);
+    }
+
+    #[test]
+    fn settings_transaction_reports_initial_autostart_reconciliation_failure() {
+        let current = AppSettings::default();
+        let mut next = current.clone();
+        next.start_at_login = true;
+        let mut native_autostart = current.start_at_login;
+        let mut settings_committed = false;
+        let mut attempts = 0;
+
+        let result = save_settings_transaction(
+            &current,
+            &next,
+            |_| {
+                settings_committed = true;
+                Ok(())
+            },
+            |enabled| {
+                native_autostart = enabled;
+                attempts += 1;
+                Err(if attempts == 1 {
+                    "start-at-login:registry"
+                } else {
+                    "start-at-login:reconciliation"
+                }
+                .to_owned())
+            },
+        );
+
+        assert_eq!(result, Err("start-at-login:reconciliation".to_owned()));
+        assert_eq!(native_autostart, current.start_at_login);
+        assert!(!settings_committed);
     }
 }
