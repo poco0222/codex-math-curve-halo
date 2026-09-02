@@ -259,6 +259,14 @@ pub fn is_owned_handler(value: &Value) -> bool {
             .is_some_and(|command| command.contains(OWNED_MARKER))
 }
 
+fn has_direct_owned_handler(value: &Value) -> bool {
+    is_owned_handler(value)
+        || value
+            .get("hooks")
+            .and_then(Value::as_array)
+            .is_some_and(|handlers| handlers.iter().any(is_owned_handler))
+}
+
 pub fn get_hook_status(config_path: &Path, helper_path: &Path) -> HookStatus {
     if !helper_path.is_absolute() {
         return HookStatus::Invalid;
@@ -313,6 +321,19 @@ pub fn get_hook_status(config_path: &Path, helper_path: &Path) -> HookStatus {
         .count();
     if hooks.values().any(|events| !events.is_array()) {
         return HookStatus::Invalid;
+    }
+    if EVENT_SPECS.iter().any(|spec| {
+        let expected = owned_group(*spec, helper_path, &state_dir);
+        hooks
+            .get(spec.name)
+            .and_then(Value::as_array)
+            .is_some_and(|events| {
+                events
+                    .iter()
+                    .any(|group| has_direct_owned_handler(group) && group != &expected)
+            })
+    }) {
+        return HookStatus::PartiallyInstalled;
     }
 
     if installed_events == EVENT_SPECS.len() && helper_path.is_file() {
@@ -426,11 +447,7 @@ fn owned_group(spec: EventSpec, helper_path: &Path, state_dir: &Path) -> Value {
     #[cfg(windows)]
     command.insert(
         "commandWindows".to_owned(),
-        Value::String(format!(
-            "{} --codex-halo --state-dir {}",
-            quote_windows_arg(&helper_path.to_string_lossy()),
-            quote_windows_arg(&state_dir.to_string_lossy())
-        )),
+        Value::String(windows_command(helper_path, state_dir)),
     );
     if spec.asynchronous {
         command.insert("async".to_owned(), Value::Bool(true));
@@ -456,34 +473,45 @@ fn quote_posix_arg(path: &Path) -> String {
 }
 
 #[cfg_attr(not(windows), allow(dead_code))]
-fn quote_windows_arg(value: &str) -> String {
-    let mut quoted = String::from("\"");
-    let mut backslashes = 0;
+fn windows_command(helper_path: &Path, state_dir: &Path) -> String {
+    let script = format!(
+        "$helper = '{}'; $state = '{}'; & $helper '--codex-halo' '--state-dir' $state",
+        helper_path.to_string_lossy().replace('\'', "''"),
+        state_dir.to_string_lossy().replace('\'', "''")
+    );
+    format!(
+        "powershell.exe -NoProfile -NonInteractive -EncodedCommand {}",
+        encode_base64_utf16le(&script)
+    )
+}
 
-    for character in value.chars() {
-        if character == '\\' {
-            backslashes += 1;
-            continue;
-        }
-        if character == '"' {
-            for _ in 0..(backslashes * 2 + 1) {
-                quoted.push('\\');
-            }
-            quoted.push('"');
+#[cfg_attr(not(windows), allow(dead_code))]
+fn encode_base64_utf16le(value: &str) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let bytes = value
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect::<Vec<_>>();
+    let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
+
+    for chunk in bytes.chunks(3) {
+        let first = chunk[0];
+        let second = chunk.get(1).copied().unwrap_or(0);
+        let third = chunk.get(2).copied().unwrap_or(0);
+        encoded.push(ALPHABET[(first >> 2) as usize] as char);
+        encoded.push(ALPHABET[((first & 0x03) << 4 | second >> 4) as usize] as char);
+        encoded.push(if chunk.len() > 1 {
+            ALPHABET[((second & 0x0f) << 2 | third >> 6) as usize] as char
         } else {
-            for _ in 0..backslashes {
-                quoted.push('\\');
-            }
-            quoted.push(character);
-        }
-        backslashes = 0;
+            '='
+        });
+        encoded.push(if chunk.len() > 2 {
+            ALPHABET[(third & 0x3f) as usize] as char
+        } else {
+            '='
+        });
     }
-
-    for _ in 0..(backslashes * 2) {
-        quoted.push('\\');
-    }
-    quoted.push('"');
-    quoted
+    encoded
 }
 
 fn create_backup(path: &Path) -> Result<PathBuf, HookError> {
@@ -1053,16 +1081,66 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    fn decode_base64_utf16le(value: &str) -> String {
+        fn decode_byte(byte: u8) -> u8 {
+            match byte {
+                b'A'..=b'Z' => byte - b'A',
+                b'a'..=b'z' => byte - b'a' + 26,
+                b'0'..=b'9' => byte - b'0' + 52,
+                b'+' => 62,
+                b'/' => 63,
+                _ => 0,
+            }
+        }
+
+        let mut bytes = Vec::new();
+        for chunk in value.as_bytes().chunks(4) {
+            let values = chunk
+                .iter()
+                .map(|byte| decode_byte(*byte))
+                .collect::<Vec<_>>();
+            bytes.push((values[0] << 2) | (values[1] >> 4));
+            if chunk.len() > 2 && chunk[2] != b'=' {
+                bytes.push((values[1] << 4) | (values[2] >> 2));
+            }
+            if chunk.len() > 3 && chunk[3] != b'=' {
+                bytes.push((values[2] << 6) | values[3]);
+            }
+        }
+        String::from_utf16(
+            &bytes
+                .chunks_exact(2)
+                .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+                .collect::<Vec<_>>(),
+        )
+        .unwrap()
+    }
+
     #[test]
-    fn windows_argument_quoting_escapes_quotes_and_trailing_backslashes() {
-        let value = r#"C:\Program Files\Codex "Halo" $cash `tick`;&|\"#;
-        let quoted = quote_windows_arg(value);
-        assert!(quoted.starts_with('"'));
-        assert!(quoted.ends_with('"'));
-        assert!(quoted.contains(r#"\"Halo\""#));
-        assert!(quoted.contains("$cash"));
-        assert!(quoted.contains("`tick`;&|"));
-        assert!(quoted.trim_end_matches('"').ends_with("\\\\"));
+    fn windows_command_avoids_raw_paths_under_cmd_outer_runner() {
+        let helper =
+            Path::new(r#"C:\Codex Halo\100%!\safe&^$`tick`;=+,[]{}'quote'\codex-halo-hook.exe"#);
+        let state = Path::new(r#"C:\Codex Halo\state 100%!\safe&^$`tick`;=+,[]{}'quote'\state"#);
+        let command = windows_command(helper, state);
+        let outer = format!(r#"cmd.exe /d /s /c "{command}""#);
+
+        assert!(command.starts_with("powershell.exe -NoProfile -NonInteractive -EncodedCommand "));
+        assert!(!command.contains('"'));
+        for character in ['%', '!', '&', '^', '$', '`'] {
+            assert!(
+                !command.contains(character),
+                "raw shell character: {character}"
+            );
+        }
+        assert!(!outer.contains(helper.to_string_lossy().as_ref()));
+        assert!(!outer.contains(state.to_string_lossy().as_ref()));
+
+        let encoded = command.split_once("-EncodedCommand ").unwrap().1;
+        let script = decode_base64_utf16le(encoded);
+        assert!(script.contains(&helper.to_string_lossy().replace('\'', "''")));
+        assert!(script.contains(&state.to_string_lossy().replace('\'', "''")));
+        assert!(script.contains("--codex-halo"));
+        assert!(script.contains("--state-dir"));
     }
 
     #[test]
@@ -1109,5 +1187,34 @@ mod tests {
             );
             fs::remove_dir_all(root).unwrap();
         }
+    }
+
+    #[test]
+    fn status_rejects_an_extra_stale_owned_stop_group() {
+        let root = temp_dir("extra-stale-stop");
+        fs::create_dir_all(&root).unwrap();
+        let config_path = root.join("hooks.json");
+        let helper = root.join("helper");
+        let state = root.join("state");
+        write_config(&config_path, &fixture());
+        fs::write(&helper, b"helper").unwrap();
+        install_hooks(&config_path, &helper, &state).unwrap();
+
+        let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+        config["hooks"]["Stop"].as_array_mut().unwrap().push(json!({
+            "hooks": [{
+                "type": "command",
+                "command": "'stale-helper' --codex-halo --state-dir 'stale-state'",
+                "async": true,
+                "statusMessage": "Codex Halo"
+            }]
+        }));
+        write_config(&config_path, &config);
+
+        assert_eq!(
+            get_hook_status(&config_path, &helper),
+            HookStatus::PartiallyInstalled
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 }
