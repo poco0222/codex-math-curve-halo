@@ -1,13 +1,63 @@
 use codex_halo_lib::platform;
-use codex_halo_lib::state::{AppSettings, DisplayState, HaloState};
+use codex_halo_lib::state::{AppSettings, DisplayState, HaloState, SessionStore, Snapshot};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::MacosLauncher;
 
 #[tauri::command]
-fn get_display_state() -> DisplayState {
-    DisplayState::idle()
+fn get_display_state(app: AppHandle, store: State<'_, Mutex<SessionStore>>) -> DisplayState {
+    let now_ms = now_ms();
+    let snapshots = state_dir(&app).and_then(|state_dir| read_snapshots(&state_dir));
+    let mut store = store
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    if let Some(snapshots) = snapshots {
+        *store = SessionStore::default();
+        for snapshot in snapshots {
+            store.upsert(snapshot);
+        }
+    }
+
+    store.clear_expired(now_ms);
+    store.display_state(now_ms)
+}
+
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .try_into()
+        .unwrap_or(i64::MAX)
+}
+
+fn state_dir(app: &AppHandle) -> Option<PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|path| path.join("state"))
+}
+
+fn read_snapshots(path: &Path) -> Option<Vec<Snapshot>> {
+    let entries = match fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Some(Vec::new()),
+        Err(_) => return None,
+    };
+
+    Some(
+        entries
+            .filter_map(Result::ok)
+            .filter_map(|entry| fs::read_to_string(entry.path()).ok())
+            .filter_map(|contents| serde_json::from_str::<Snapshot>(&contents).ok())
+            .collect(),
+    )
 }
 
 #[tauri::command]
@@ -112,6 +162,7 @@ fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
 
 fn main() {
     let builder = tauri::Builder::default()
+        .manage(Mutex::new(SessionStore::default()))
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_settings_or_report(app);
         }))
