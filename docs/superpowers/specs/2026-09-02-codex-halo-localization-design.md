@@ -1,7 +1,7 @@
 # Codex Halo Localization and README Variants
 
 **Date:** 2026-09-02  
-**Status:** Design approved in chat; awaiting written-spec review  
+**Status:** Approved
 **Target:** Existing macOS and Windows Tauri desktop companion app
 
 ## 1. Scope
