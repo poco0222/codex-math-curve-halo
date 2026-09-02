@@ -6,6 +6,7 @@ state/
 settings-export*.json
 *.local.json
 src-tauri/binaries/codex-halo-hook-*
+.worktrees/
 
 # Node.js and local environment
 node_modules/
