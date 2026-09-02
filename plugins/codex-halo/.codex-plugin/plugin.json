@@ -1,0 +1,30 @@
+{
+  "name": "codex-halo",
+  "version": "0.1.0",
+  "description": "Show Codex lifecycle activity as a local mathematical halo.",
+  "author": {
+    "name": "Codex Halo"
+  },
+  "keywords": [
+    "codex",
+    "lifecycle hooks",
+    "status",
+    "halo"
+  ],
+  "interface": {
+    "displayName": "Codex Halo",
+    "shortDescription": "Show Codex activity as a local halo.",
+    "longDescription": "Codex Halo listens to trusted Codex lifecycle hooks and writes content-free local state for the companion overlay app.",
+    "developerName": "Codex Halo",
+    "category": "Productivity",
+    "capabilities": [
+      "Lifecycle hooks"
+    ],
+    "defaultPrompt": [
+      "Install Codex Halo hooks for this Codex environment."
+    ],
+    "brandColor": "#339CFF",
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/icon.png"
+  }
+}

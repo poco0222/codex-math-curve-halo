@@ -1,0 +1,113 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}/bin/codex-halo-hook\" --codex-halo",
+            "commandWindows": "& \"$env:PLUGIN_ROOT\\bin\\codex-halo-hook.exe\" --codex-halo",
+            "timeout": 5,
+            "statusMessage": "Updating Codex Halo"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}/bin/codex-halo-hook\" --codex-halo",
+            "commandWindows": "& \"$env:PLUGIN_ROOT\\bin\\codex-halo-hook.exe\" --codex-halo",
+            "timeout": 5,
+            "statusMessage": "Updating Codex Halo"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}/bin/codex-halo-hook\" --codex-halo",
+            "commandWindows": "& \"$env:PLUGIN_ROOT\\bin\\codex-halo-hook.exe\" --codex-halo",
+            "timeout": 5,
+            "statusMessage": "Updating Codex Halo"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}/bin/codex-halo-hook\" --codex-halo",
+            "commandWindows": "& \"$env:PLUGIN_ROOT\\bin\\codex-halo-hook.exe\" --codex-halo",
+            "timeout": 5,
+            "statusMessage": "Updating Codex Halo"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}/bin/codex-halo-hook\" --codex-halo",
+            "commandWindows": "& \"$env:PLUGIN_ROOT\\bin\\codex-halo-hook.exe\" --codex-halo",
+            "timeout": 5,
+            "statusMessage": "Updating Codex Halo"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}/bin/codex-halo-hook\" --codex-halo",
+            "commandWindows": "& \"$env:PLUGIN_ROOT\\bin\\codex-halo-hook.exe\" --codex-halo",
+            "timeout": 5,
+            "statusMessage": "Updating Codex Halo"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}/bin/codex-halo-hook\" --codex-halo",
+            "commandWindows": "& \"$env:PLUGIN_ROOT\\bin\\codex-halo-hook.exe\" --codex-halo",
+            "timeout": 5,
+            "statusMessage": "Updating Codex Halo"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}/bin/codex-halo-hook\" --codex-halo",
+            "commandWindows": "& \"$env:PLUGIN_ROOT\\bin\\codex-halo-hook.exe\" --codex-halo",
+            "timeout": 3,
+            "statusMessage": "Updating Codex Halo"
+          }
+        ]
+      }
+    ]
+  }
+}
