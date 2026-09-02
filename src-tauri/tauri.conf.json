@@ -17,6 +17,7 @@
   },
   "bundle": {
     "active": true,
+    "icon": ["icons/icon.png"],
     "externalBin": ["binaries/codex-halo-hook"]
   }
 }

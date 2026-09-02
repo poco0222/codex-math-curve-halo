@@ -142,13 +142,47 @@ impl SessionStore {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct AppSettings {
     pub enabled: bool,
     pub opacity: f32,
     pub offset_x: i32,
     pub offset_y: i32,
     pub curve_id: String,
+    pub particle_count: i32,
+    pub trail_span: f32,
+    pub duration_ms: f32,
+    pub pulse_duration_ms: f32,
+    pub rotation_duration_ms: f32,
+    pub stroke_width: f32,
+    pub start_at_login: bool,
+}
+
+impl AppSettings {
+    pub fn normalize(mut self) -> Result<Self, String> {
+        if ![
+            self.opacity,
+            self.trail_span,
+            self.duration_ms,
+            self.pulse_duration_ms,
+            self.rotation_duration_ms,
+            self.stroke_width,
+        ]
+        .into_iter()
+        .all(f32::is_finite)
+        {
+            return Err("settings contain non-finite numeric values".to_owned());
+        }
+
+        self.opacity = self.opacity.clamp(0.1, 1.0);
+        self.offset_x = self.offset_x.clamp(-2_000, 2_000);
+        self.offset_y = self.offset_y.clamp(-2_000, 2_000);
+        self.particle_count = self.particle_count.clamp(24, 140);
+        self.trail_span = self.trail_span.clamp(0.12, 0.68);
+        self.stroke_width = self.stroke_width.clamp(2.5, 7.5);
+        Ok(self)
+    }
 }
 
 impl Default for AppSettings {
@@ -159,6 +193,13 @@ impl Default for AppSettings {
             offset_x: 28,
             offset_y: 140,
             curve_id: "rose-seven".to_owned(),
+            particle_count: 64,
+            trail_span: 0.4,
+            duration_ms: 420.0,
+            pulse_duration_ms: 1_200.0,
+            rotation_duration_ms: 4_200.0,
+            stroke_width: 4.0,
+            start_at_login: false,
         }
     }
 }
@@ -362,5 +403,54 @@ mod tests {
 
         assert_eq!(store.display_state(now).state, HaloState::InputNeeded);
         assert_eq!(store.display_state(now).session_count, 1);
+    }
+
+    #[test]
+    fn normalizes_settings_to_the_native_control_bounds() {
+        let mut settings = AppSettings::default();
+        settings.opacity = 0.01;
+        settings.offset_x = i32::MAX;
+        settings.offset_y = i32::MIN;
+        settings.particle_count = 1;
+        settings.trail_span = 1.0;
+        settings.stroke_width = 10.0;
+
+        let normalized = settings.normalize().unwrap();
+
+        assert_eq!(normalized.opacity, 0.1);
+        assert_eq!(normalized.offset_x, 2_000);
+        assert_eq!(normalized.offset_y, -2_000);
+        assert_eq!(normalized.particle_count, 24);
+        assert_eq!(normalized.trail_span, 0.68);
+        assert_eq!(normalized.stroke_width, 7.5);
+    }
+
+    #[test]
+    fn rejects_non_finite_settings_numbers() {
+        let mut settings = AppSettings::default();
+        settings.trail_span = f32::NAN;
+
+        assert!(settings.normalize().is_err());
+    }
+
+    #[test]
+    fn serializes_the_complete_settings_contract() {
+        let value = serde_json::to_value(AppSettings::default()).unwrap();
+        for key in [
+            "enabled",
+            "opacity",
+            "offset_x",
+            "offset_y",
+            "curve_id",
+            "particle_count",
+            "trail_span",
+            "duration_ms",
+            "pulse_duration_ms",
+            "rotation_duration_ms",
+            "stroke_width",
+            "start_at_login",
+        ] {
+            assert!(value.get(key).is_some(), "missing {key}");
+        }
     }
 }

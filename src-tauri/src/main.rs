@@ -1,15 +1,20 @@
 use codex_halo_lib::state::{AppSettings, DisplayState, HaloState, SessionStore, Snapshot};
 use codex_halo_lib::{hook_protocol, hooks, platform};
-use std::fs;
-use std::io;
+use std::fs::{self, OpenOptions};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::menu::{Menu, MenuItem};
+use tauri::image::Image;
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::MacosLauncher;
+
+const SETTINGS_FILENAME: &str = "settings.json";
+const SETTINGS_INVALID_LIMIT: u32 = 64;
+static SETTINGS_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Default)]
 struct ReducerRuntimeState {
@@ -87,6 +92,130 @@ fn state_dir(app: &AppHandle) -> Option<PathBuf> {
         .map(|path| path.join("state"))
 }
 
+fn app_config_path(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_config_dir()
+        .map(|path| path.join(SETTINGS_FILENAME))
+        .map_err(|_| "Codex Halo settings path is unavailable".to_owned())
+}
+
+fn settings_temp_path(path: &Path, sequence: u64) -> Result<PathBuf, String> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let name = path
+        .file_name()
+        .ok_or_else(|| "Codex Halo settings path is invalid".to_owned())?
+        .to_string_lossy();
+    Ok(parent.join(format!("{name}.tmp.{}.{}", std::process::id(), sequence)))
+}
+
+fn write_settings_file(path: &Path, settings: &AppSettings) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent).map_err(|_| "Codex Halo settings could not be saved".to_owned())?;
+
+    for _ in 0..SETTINGS_INVALID_LIMIT {
+        let sequence = SETTINGS_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let temp = settings_temp_path(path, sequence)?;
+        let file = OpenOptions::new().create_new(true).write(true).open(&temp);
+        let Ok(mut file) = file else {
+            continue;
+        };
+
+        let result = (|| {
+            serde_json::to_writer_pretty(&mut file, settings)
+                .map_err(|_| "Codex Halo settings could not be saved".to_owned())?;
+            file.write_all(b"\n")
+                .map_err(|_| "Codex Halo settings could not be saved".to_owned())?;
+            file.flush()
+                .map_err(|_| "Codex Halo settings could not be saved".to_owned())?;
+            file.sync_all()
+                .map_err(|_| "Codex Halo settings could not be saved".to_owned())?;
+            platform::atomic_replace(&temp, path)
+                .map_err(|_| "Codex Halo settings could not be saved".to_owned())
+        })();
+
+        if result.is_err() {
+            let _ = fs::remove_file(&temp);
+        }
+        return result;
+    }
+
+    Err("Codex Halo settings could not be saved".to_owned())
+}
+
+fn quarantine_settings_file(path: &Path) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let name = path
+        .file_name()
+        .ok_or_else(|| "Codex Halo settings path is invalid".to_owned())?
+        .to_string_lossy();
+    let timestamp = now_ms();
+
+    for sequence in 0..SETTINGS_INVALID_LIMIT {
+        let invalid = parent.join(format!("{name}.{timestamp}.{sequence}.invalid"));
+        match fs::rename(path, invalid) {
+            Ok(()) => return Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(_) => return Err("Codex Halo settings could not be repaired".to_owned()),
+        }
+    }
+
+    Err("Codex Halo settings could not be repaired".to_owned())
+}
+
+fn recover_settings_file(path: &Path) -> Result<AppSettings, String> {
+    quarantine_settings_file(path)?;
+    let settings = AppSettings::default();
+    write_settings_file(path, &settings)?;
+    Ok(settings)
+}
+
+fn load_settings_file(path: &Path) -> Result<AppSettings, String> {
+    let contents = match fs::read(path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            let settings = AppSettings::default();
+            write_settings_file(path, &settings)?;
+            return Ok(settings);
+        }
+        Err(_) => return Err("Codex Halo settings could not be read".to_owned()),
+    };
+
+    let parsed = match serde_json::from_slice::<AppSettings>(&contents) {
+        Ok(settings) => settings,
+        Err(_) => return recover_settings_file(path),
+    };
+    let normalized = match parsed.clone().normalize() {
+        Ok(settings) => settings,
+        Err(_) => return recover_settings_file(path),
+    };
+    if parsed != normalized {
+        write_settings_file(path, &normalized)?;
+    }
+    Ok(normalized)
+}
+
+fn load_app_settings(app: &AppHandle) -> Result<AppSettings, String> {
+    load_settings_file(&app_config_path(app)?)
+}
+
+fn apply_settings_to_overlay(app: &AppHandle, settings: &AppSettings) {
+    if let Some(overlay) = app.get_webview_window("main") {
+        if platform::position_overlay(&overlay, settings.offset_x, settings.offset_y).is_err() {
+            eprintln!("Codex Halo: unable to apply overlay position");
+        }
+    }
+    let _ = app.emit_to("main", "settings-changed", settings.clone());
+}
+
 fn read_snapshots(path: &Path) -> io::Result<Vec<Snapshot>> {
     let entries = fs::read_dir(path)?.map(|entry| entry.map(|entry| entry.path()));
     read_snapshot_entries(entries, |path| fs::read_to_string(path))
@@ -117,51 +246,64 @@ where
 }
 
 #[tauri::command]
-fn get_settings() -> AppSettings {
-    AppSettings::default()
+fn get_settings(app: AppHandle) -> Result<AppSettings, String> {
+    load_app_settings(&app)
 }
 
 #[tauri::command]
-fn save_settings(_settings: AppSettings) -> Result<(), String> {
+fn save_settings(app: AppHandle, settings: AppSettings) -> Result<(), String> {
+    let settings = settings.normalize()?;
+    let path = app_config_path(&app)?;
+    let current = load_settings_file(&path)?;
+
+    if current.start_at_login != settings.start_at_login {
+        platform::set_start_at_login(&app, settings.start_at_login)?;
+    }
+    write_settings_file(&path, &settings)?;
+    apply_settings_to_overlay(&app, &settings);
     Ok(())
 }
 
 #[tauri::command]
-fn simulate_state(state: HaloState) -> DisplayState {
-    DisplayState {
+fn simulate_state(app: AppHandle, state: HaloState) -> Result<DisplayState, String> {
+    let display = DisplayState {
         state,
         ..DisplayState::idle()
-    }
+    };
+    let _ = app.emit_to("main", "display-state", display.clone());
+    Ok(display)
 }
 
 #[tauri::command]
 fn install_hooks(app: AppHandle) -> Result<hooks::InstallReport, String> {
     let (config_path, helper_path, state_dir) = hook_paths(&app)?;
-    hooks::install_hooks(&config_path, &helper_path, &state_dir).map_err(|error| error.to_string())
+    hooks::install_hooks(&config_path, &helper_path, &state_dir)
+        .map_err(|_| "Codex Halo hooks could not be installed".to_owned())
 }
 
 #[tauri::command]
 fn remove_hooks(app: AppHandle) -> Result<hooks::RemoveReport, String> {
     let (config_path, helper_path, state_dir) = hook_paths(&app)?;
-    let report = hooks::remove_hooks(&config_path).map_err(|error| error.to_string())?;
-    remove_hook_artifacts(&helper_path, &state_dir).map_err(|error| error.to_string())?;
+    let report = hooks::remove_hooks(&config_path)
+        .map_err(|_| "Codex Halo hooks could not be removed".to_owned())?;
+    remove_hook_artifacts(&helper_path, &state_dir)
+        .map_err(|_| "Codex Halo hook artifacts could not be removed".to_owned())?;
     Ok(report)
 }
 
 #[tauri::command]
-fn get_hook_status(app: AppHandle) -> hooks::HookStatus {
-    let Ok((config_path, helper_path, _)) = hook_paths(&app) else {
-        return hooks::HookStatus::Invalid;
-    };
-    hooks::get_hook_status(&config_path, &helper_path)
+fn get_hook_status(app: AppHandle) -> Result<hooks::HookStatus, String> {
+    let (config_path, helper_path, _) = hook_paths(&app)?;
+    Ok(hooks::get_hook_status(&config_path, &helper_path))
 }
 
 fn hook_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf, PathBuf), String> {
-    let codex_home = hooks::codex_home().map_err(|error| error.to_string())?;
+    let codex_home =
+        hooks::codex_home().map_err(|_| "Codex Halo hooks path is unavailable".to_owned())?;
     let app_data_dir = app
         .path()
         .app_data_dir()
-        .map_err(|error| error.to_string())?;
+        .map_err(|_| "Codex Halo hook data path is unavailable".to_owned())?;
     Ok((
         codex_home.join("hooks.json"),
         app_data_dir.join(hooks::helper_filename()),
@@ -188,6 +330,15 @@ fn open_settings(app: AppHandle) -> Result<(), String> {
     show_settings(&app)
 }
 
+#[tauri::command]
+fn reset_position(app: AppHandle) -> Result<AppSettings, String> {
+    let mut settings = get_settings(app.clone())?;
+    settings.offset_x = AppSettings::default().offset_x;
+    settings.offset_y = AppSettings::default().offset_y;
+    save_settings(app, settings.clone())?;
+    Ok(settings)
+}
+
 fn show_settings(app: &AppHandle) -> Result<(), String> {
     let settings = app
         .get_webview_window("settings")
@@ -202,6 +353,13 @@ fn show_settings_or_report(app: &AppHandle) {
     }
 }
 
+fn toggle_overlay(app: AppHandle) -> Result<AppSettings, String> {
+    let mut settings = get_settings(app.clone())?;
+    settings.enabled = !settings.enabled;
+    save_settings(app, settings.clone())?;
+    Ok(settings)
+}
+
 fn helper_setup_best_effort<F>(install: F) -> bool
 where
     F: FnOnce() -> Result<(), hook_protocol::HookError>,
@@ -212,16 +370,161 @@ where
     true
 }
 
+fn build_tray(app: &mut tauri::App, _enabled: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let open_settings =
+        MenuItem::with_id(app, "open-settings", "Open Settings", true, None::<&str>)?;
+    let toggle_overlay_item = MenuItem::with_id(
+        app,
+        "toggle-overlay",
+        "Enable/disable overlay",
+        true,
+        None::<&str>,
+    )?;
+    let separator_one = PredefinedMenuItem::separator(app)?;
+    let install_hooks_item = MenuItem::with_id(
+        app,
+        "install-hooks",
+        "Install/repair Codex hooks",
+        true,
+        None::<&str>,
+    )?;
+    let remove_hooks_item = MenuItem::with_id(
+        app,
+        "remove-hooks",
+        "Remove Codex Halo hooks",
+        true,
+        None::<&str>,
+    )?;
+    let separator_two = PredefinedMenuItem::separator(app)?;
+    let simulate_idle =
+        MenuItem::with_id(app, "simulate-idle", "Simulate Idle", true, None::<&str>)?;
+    let simulate_thinking = MenuItem::with_id(
+        app,
+        "simulate-thinking",
+        "Simulate Thinking",
+        true,
+        None::<&str>,
+    )?;
+    let simulate_executing = MenuItem::with_id(
+        app,
+        "simulate-executing",
+        "Simulate Executing",
+        true,
+        None::<&str>,
+    )?;
+    let simulate_input = MenuItem::with_id(
+        app,
+        "simulate-input-needed",
+        "Simulate Input needed",
+        true,
+        None::<&str>,
+    )?;
+    let simulate_completed = MenuItem::with_id(
+        app,
+        "simulate-completed",
+        "Simulate Completed",
+        true,
+        None::<&str>,
+    )?;
+    let simulate_compacting = MenuItem::with_id(
+        app,
+        "simulate-compacting",
+        "Simulate Compacting",
+        true,
+        None::<&str>,
+    )?;
+    let reset = MenuItem::with_id(app, "reset-position", "Reset position", true, None::<&str>)?;
+    let separator_three = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &open_settings,
+            &toggle_overlay_item,
+            &separator_one,
+            &install_hooks_item,
+            &remove_hooks_item,
+            &separator_two,
+            &simulate_idle,
+            &simulate_thinking,
+            &simulate_executing,
+            &simulate_input,
+            &simulate_completed,
+            &simulate_compacting,
+            &reset,
+            &separator_three,
+            &quit,
+        ],
+    )?;
+    let icon = Image::from_bytes(include_bytes!("../icons/icon.png"))?.to_owned();
+    let mut tray = TrayIconBuilder::with_id("main")
+        .icon(icon)
+        .menu(&menu)
+        .tooltip("Codex Halo");
+    #[cfg(target_os = "macos")]
+    {
+        tray = tray.icon_as_template(true);
+    }
+    tray.on_menu_event(move |app, event| match event.id.as_ref() {
+        "open-settings" => show_settings_or_report(app),
+        "toggle-overlay" => {
+            if toggle_overlay(app.clone()).is_err() {
+                eprintln!("Codex Halo: unable to change overlay setting");
+            }
+        }
+        "install-hooks" => {
+            if install_hooks(app.clone()).is_err() {
+                eprintln!("Codex Halo: unable to install hooks");
+            }
+            show_settings_or_report(app);
+        }
+        "remove-hooks" => {
+            if remove_hooks(app.clone()).is_err() {
+                eprintln!("Codex Halo: unable to remove hooks");
+            }
+            show_settings_or_report(app);
+        }
+        "reset-position" => {
+            if reset_position(app.clone()).is_err() {
+                eprintln!("Codex Halo: unable to reset position");
+            }
+        }
+        "simulate-idle" => {
+            let _ = simulate_state(app.clone(), HaloState::Idle);
+        }
+        "simulate-thinking" => {
+            let _ = simulate_state(app.clone(), HaloState::Thinking);
+        }
+        "simulate-executing" => {
+            let _ = simulate_state(app.clone(), HaloState::Executing);
+        }
+        "simulate-input-needed" => {
+            let _ = simulate_state(app.clone(), HaloState::InputNeeded);
+        }
+        "simulate-completed" => {
+            let _ = simulate_state(app.clone(), HaloState::Completed);
+        }
+        "simulate-compacting" => {
+            let _ = simulate_state(app.clone(), HaloState::Compacting);
+        }
+        "quit" => app.exit(0),
+        _ => {}
+    })
+    .build(app)?;
+    Ok(())
+}
+
 fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "macos")]
     app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
     let app_data_dir = app.path().app_data_dir()?;
-    helper_setup_best_effort(|| {
-        hook_protocol::install_bundled_helper(&app_data_dir).map(|_| ())
-    });
+    helper_setup_best_effort(|| hook_protocol::install_bundled_helper(&app_data_dir).map(|_| ()));
 
-    let settings = AppSettings::default();
+    let settings = load_app_settings(app.handle()).unwrap_or_else(|_| {
+        eprintln!("Codex Halo: using default settings");
+        AppSettings::default()
+    });
     let overlay = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("Codex Halo")
         .inner_size(112.0, 112.0)
@@ -230,6 +533,7 @@ fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
         .always_on_top(true)
         .skip_taskbar(true)
         .shadow(false)
+        .resizable(false)
         .visible(true)
         .build()?;
     platform::configure_overlay(&overlay)?;
@@ -237,30 +541,13 @@ fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
         eprintln!("Codex Halo: unable to position overlay: {error}");
     }
 
-    WebviewWindowBuilder::new(
-        app,
-        "settings",
-        WebviewUrl::App("settings.html".into()),
-    )
-    .title("Codex Halo Settings")
-    .inner_size(420.0, 680.0)
-    .visible(false)
-    .build()?;
+    WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
+        .title("Codex Halo Settings")
+        .inner_size(420.0, 680.0)
+        .visible(false)
+        .build()?;
 
-    let open_settings = MenuItem::with_id(app, "open-settings", "Open Settings", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open_settings, &quit])?;
-
-    TrayIconBuilder::new()
-        .menu(&menu)
-        .on_menu_event(|app, event| match event.id.as_ref() {
-            "open-settings" => {
-                show_settings_or_report(app);
-            }
-            "quit" => app.exit(0),
-            _ => {}
-        })
-        .build(app)?;
+    build_tray(app, settings.enabled)?;
 
     Ok(())
 }
@@ -271,7 +558,10 @@ fn main() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_settings_or_report(app);
         }))
-        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            None,
+        ))
         .invoke_handler(tauri::generate_handler![
             get_display_state,
             get_settings,
@@ -280,7 +570,8 @@ fn main() {
             install_hooks,
             remove_hooks,
             get_hook_status,
-            open_settings
+            open_settings,
+            reset_position
         ])
         .setup(build_windows);
 
@@ -461,6 +752,32 @@ mod scan_tests {
         assert!(!state_dir.exists());
         remove_hook_artifacts(&helper, &state_dir).unwrap();
         assert!(root.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn corrupt_settings_are_quarantined_and_replaced_with_defaults() {
+        let root = std::env::temp_dir().join(format!(
+            "codex-halo-settings-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let path = root.join("settings.json");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(&path, br#"{"prompt":"must not be shown"}"#).unwrap();
+
+        let settings = load_settings_file(&path).unwrap();
+
+        assert_eq!(settings, AppSettings::default());
+        assert!(path.exists());
+        assert!(fs::read_dir(&root)
+            .unwrap()
+            .filter_map(Result::ok)
+            .any(|entry| entry
+                .path()
+                .extension()
+                .is_some_and(|extension| extension == "invalid")));
+        assert!(!fs::read_to_string(&path).unwrap().contains("prompt"));
         fs::remove_dir_all(root).unwrap();
     }
 }

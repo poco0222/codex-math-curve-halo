@@ -56,6 +56,20 @@ body {
   margin-bottom: 16px;
 }
 
+.status-line,
+.diagnostics,
+.formula {
+  margin: 0;
+  color: #aeb6c2;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.diagnostics {
+  min-height: 18px;
+  margin-bottom: 12px;
+}
+
 h1 {
   margin: 0;
   font-size: 20px;
@@ -127,6 +141,13 @@ button:hover {
   background: #303744;
 }
 
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid #ff8a3d;
+  outline-offset: 2px;
+}
+
 .two-column,
 .state-grid,
 .button-row {
@@ -151,4 +172,11 @@ button:hover {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.formula {
+  display: block;
+  overflow-wrap: anywhere;
+  padding-top: 4px;
+  user-select: text;
 }

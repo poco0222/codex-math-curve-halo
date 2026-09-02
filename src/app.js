@@ -22,12 +22,27 @@ export function createCommandInvoker(invoke, warn = console.warn.bind(console)) 
 }
 
 export function createDisplayStatePoller(invokeCommand, applyDisplayState) {
+  return createDisplayStateBridge(invokeCommand, applyDisplayState).pollDisplayState;
+}
+
+export function createDisplayStateBridge(invokeCommand, applyDisplayState) {
   let latestGeneration = 0;
-  return async function pollDisplayState() {
+
+  async function requestDisplayState(command, args) {
     const generation = ++latestGeneration;
-    const displayState = await invokeCommand('get_display_state');
+    const displayState = await invokeCommand(command, args);
     if (generation === latestGeneration) applyDisplayState(displayState);
     return displayState;
+  }
+
+  return {
+    showDisplayState(displayState) {
+      latestGeneration += 1;
+      applyDisplayState(displayState);
+    },
+    pollDisplayState() {
+      return requestDisplayState('get_display_state');
+    },
   };
 }
 
@@ -41,34 +56,25 @@ function boot() {
     if (displayState?.state) renderer?.setState(displayState.state);
   }
 
-  async function loadSettings() {
-    const settings = await invokeCommand('get_settings');
+  function applySettings(settings) {
     if (!settings) return;
     renderer?.setCurve(settings.curve_id);
     renderer?.setSettings(settings);
-    for (const [key, value] of Object.entries(settings)) {
-      const control = document.getElementById(key.replaceAll('_', '-'));
-      if (!control || document.activeElement === control) continue;
-      if (control.type === 'checkbox') control.checked = Boolean(value);
-      else control.value = String(value);
-    }
   }
 
-  const pollDisplayState = createDisplayStatePoller(invokeCommand, applyDisplayState);
-
-  for (const button of document.querySelectorAll('[data-state]')) {
-    button.addEventListener('click', async () => {
-      const displayState = await invokeCommand('simulate_state', { state: button.dataset.state });
-      applyDisplayState(displayState);
-    });
+  const displayBridge = createDisplayStateBridge(invokeCommand, applyDisplayState);
+  const listen = window.__TAURI__?.event?.listen;
+  if (typeof listen === 'function') {
+    listen('display-state', ({ payload }) => displayBridge.showDisplayState(payload)).catch(() => {});
+    listen('settings-changed', ({ payload }) => applySettings(payload)).catch(() => {});
   }
 
   if (renderer) {
     renderer.start();
-    loadSettings();
-    pollDisplayState();
-    window.setInterval(pollDisplayState, POLL_INTERVAL_MS);
+    invokeCommand('get_settings').then(applySettings);
+    displayBridge.pollDisplayState();
+    window.setInterval(displayBridge.pollDisplayState, POLL_INTERVAL_MS);
   }
 }
 
-if (typeof document !== 'undefined' && typeof window !== 'undefined') boot();
+if (typeof document !== 'undefined' && typeof window !== 'undefined' && document.body?.classList.contains('overlay-page')) boot();

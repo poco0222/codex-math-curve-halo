@@ -70,7 +70,7 @@ fn parse_state_dir(args: impl IntoIterator<Item = OsString>) -> Option<PathBuf> 
         }
         if arg == "--state-dir" && state_dir.is_none() {
             let value = args.next()?;
-            if value.to_str().is_some_and(|value| value.starts_with('-')) {
+            if value.is_empty() || value.to_str().is_some_and(|value| value.starts_with('-')) {
                 return None;
             }
             state_dir = Some(PathBuf::from(value));
@@ -201,6 +201,7 @@ mod tests {
     fn rejects_ambiguous_or_unknown_command_line_arguments() {
         let cases = [
             vec!["--state-dir".into(), "--codex-halo".into()],
+            vec!["--state-dir".into(), "".into()],
             vec![
                 "--state-dir".into(),
                 "/tmp/state".into(),
