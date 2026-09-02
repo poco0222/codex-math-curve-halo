@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Codex Halo Settings</title>
+    <title data-i18n="settings.title">Codex Halo Settings</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body class="settings-page">
@@ -11,80 +11,91 @@
       <header class="settings-header">
         <h1>Codex Halo</h1>
         <label class="switch-row" for="enabled">
-          <span>Overlay enabled</span>
+          <span data-i18n="settings.overlayEnabled">Overlay enabled</span>
           <input id="enabled" name="enabled" type="checkbox" checked />
         </label>
       </header>
 
-      <p id="hook-status" class="status-line" role="status">Hooks: loading</p>
-      <p id="diagnostics" class="diagnostics" aria-live="polite">State: Idle | Last event: never</p>
-      <button id="export-diagnostics" type="button">Export diagnostics</button>
+      <label class="language-row" for="language">
+        <span data-i18n="settings.language">Language</span>
+        <select id="language" name="language" aria-label="Language" data-i18n-aria-label="settings.language">
+          <option value="en">English</option>
+          <option value="zh-CN">简体中文</option>
+        </select>
+      </label>
+
+      <p id="hook-status" class="status-line" role="status">
+        <span data-i18n="settings.hooks">Hooks</span>:
+        <span data-hook-status-label data-i18n="settings.hooks.loading">loading</span>
+      </p>
+      <p id="diagnostics" class="diagnostics" aria-live="polite" data-i18n="settings.diagnosticsLoading">State: Idle | Last event: never</p>
+      <button id="export-diagnostics" type="button" data-i18n="settings.exportDiagnostics">Export diagnostics</button>
 
       <form id="settings-form">
         <fieldset>
-          <legend>Display</legend>
-          <label for="curve-id">Curve profile</label>
+          <legend data-i18n="settings.display">Display</legend>
+          <label for="curve-id" data-i18n="settings.curveProfile">Curve profile</label>
           <select id="curve-id" name="curve_id">
-            <option value="rose-seven">Rose Seven</option>
-            <option value="lissajous-drift">Lissajous Drift</option>
-            <option value="spiral-search">Spiral Search</option>
-            <option value="fourier-flow">Fourier Flow</option>
+            <option value="rose-seven" data-i18n="settings.curves.roseSeven">Rose Seven</option>
+            <option value="lissajous-drift" data-i18n="settings.curves.lissajousDrift">Lissajous Drift</option>
+            <option value="spiral-search" data-i18n="settings.curves.spiralSearch">Spiral Search</option>
+            <option value="fourier-flow" data-i18n="settings.curves.fourierFlow">Fourier Flow</option>
           </select>
 
-          <label for="opacity">Opacity</label>
+          <label for="opacity" data-i18n="settings.opacity">Opacity</label>
           <input id="opacity" name="opacity" type="range" min="0.1" max="1" step="0.01" value="1" />
 
           <div class="two-column">
-            <label for="offset-x">Offset X</label>
-            <label for="offset-y">Offset Y</label>
+            <label for="offset-x" data-i18n="settings.offsetX">Offset X</label>
+            <label for="offset-y" data-i18n="settings.offsetY">Offset Y</label>
             <input id="offset-x" name="offset_x" type="number" value="28" />
             <input id="offset-y" name="offset_y" type="number" value="140" />
           </div>
         </fieldset>
 
         <fieldset>
-          <legend>Renderer</legend>
+          <legend data-i18n="settings.renderer">Renderer</legend>
           <div class="two-column">
-            <label for="particle-count">Particle count</label>
-            <label for="trail-span">Trail span</label>
+            <label for="particle-count" data-i18n="settings.particleCount">Particle count</label>
+            <label for="trail-span" data-i18n="settings.trailSpan">Trail span</label>
             <input id="particle-count" name="particle_count" type="number" min="24" max="140" value="64" />
             <input id="trail-span" name="trail_span" type="number" min="0.12" max="0.68" step="0.01" value="0.4" />
-            <label for="duration-ms">Loop duration (ms)</label>
-            <label for="pulse-duration-ms">Pulse duration (ms)</label>
+            <label for="duration-ms" data-i18n="settings.loopDuration">Loop duration (ms)</label>
+            <label for="pulse-duration-ms" data-i18n="settings.pulseDuration">Pulse duration (ms)</label>
             <input id="duration-ms" name="duration_ms" type="number" min="1" value="420" />
             <input id="pulse-duration-ms" name="pulse_duration_ms" type="number" min="1" value="1200" />
-            <label for="rotation-duration-ms">Rotation duration (ms)</label>
-            <label for="stroke-width">Stroke width</label>
+            <label for="rotation-duration-ms" data-i18n="settings.rotationDuration">Rotation duration (ms)</label>
+            <label for="stroke-width" data-i18n="settings.strokeWidth">Stroke width</label>
             <input id="rotation-duration-ms" name="rotation_duration_ms" type="number" min="1" value="4200" />
             <input id="stroke-width" name="stroke_width" type="number" min="2.5" max="7.5" step="0.1" value="4" />
           </div>
-          <output id="formula" class="formula" aria-label="Active formula"></output>
+          <output id="formula" class="formula" aria-label="Active formula" data-i18n-aria-label="settings.activeFormula"></output>
         </fieldset>
 
         <fieldset>
-          <legend>Hooks</legend>
+          <legend data-i18n="settings.hooks">Hooks</legend>
           <div class="button-row">
-            <button id="install-hooks" type="button">Install hooks</button>
-            <button id="remove-hooks" type="button">Remove hooks</button>
+            <button id="install-hooks" type="button" data-i18n="settings.installHooks">Install hooks</button>
+            <button id="remove-hooks" type="button" data-i18n="settings.removeHooks">Remove hooks</button>
           </div>
         </fieldset>
 
-        <button id="reset-position" type="button">Reset position</button>
+        <button id="reset-position" type="button" data-i18n="settings.resetPosition">Reset position</button>
 
         <fieldset>
-          <legend>Simulate state</legend>
+          <legend data-i18n="settings.simulateState">Simulate state</legend>
           <div class="state-grid">
-            <button type="button" data-state="idle">Idle</button>
-            <button type="button" data-state="thinking">Thinking</button>
-            <button type="button" data-state="executing">Executing</button>
-            <button type="button" data-state="input_needed">Input needed</button>
-            <button type="button" data-state="completed">Completed</button>
-            <button type="button" data-state="compacting">Compacting</button>
+            <button type="button" data-state="idle" data-i18n="settings.states.idle">Idle</button>
+            <button type="button" data-state="thinking" data-i18n="settings.states.thinking">Thinking</button>
+            <button type="button" data-state="executing" data-i18n="settings.states.executing">Executing</button>
+            <button type="button" data-state="input_needed" data-i18n="settings.states.inputNeeded">Input needed</button>
+            <button type="button" data-state="completed" data-i18n="settings.states.completed">Completed</button>
+            <button type="button" data-state="compacting" data-i18n="settings.states.compacting">Compacting</button>
           </div>
         </fieldset>
 
         <label class="switch-row" for="start-at-login">
-          <span>Start at login</span>
+          <span data-i18n="settings.startAtLogin">Start at login</span>
           <input id="start-at-login" name="start_at_login" type="checkbox" />
         </label>
       </form>

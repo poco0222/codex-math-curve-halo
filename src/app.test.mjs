@@ -7,6 +7,15 @@ import {
   DEFAULT_APP_SETTINGS,
   formatSetupError,
 } from './app.js';
+import {
+  DEFAULT_LANGUAGE,
+  SUPPORTED_LANGUAGES,
+  formatSetupError as formatLocalizedSetupError,
+  getCurveLabel,
+  getStateLabel,
+  getText,
+  normalizeLanguage,
+} from './i18n.js';
 
 test('an in-flight poll cannot overwrite a newer simulated display event', async () => {
   let releasePoll;
@@ -77,6 +86,39 @@ test('autostart errors keep only a fixed safe category for settings UI', () => {
     'start-at-login setup failed (permission)',
   );
   assert.equal(formatSetupError('save_settings', 'raw path and payload'), 'save_settings failed');
+});
+
+test('localization defaults and falls back to English', () => {
+  assert.equal(DEFAULT_LANGUAGE, 'en');
+  assert.deepEqual(SUPPORTED_LANGUAGES, ['en', 'zh-CN']);
+  assert.equal(normalizeLanguage('fr'), 'en');
+  assert.equal(normalizeLanguage('zh-CN'), 'zh-CN');
+  assert.equal(getText('zh-CN', 'settings.display'), '显示');
+  assert.equal(getStateLabel('zh-CN', 'input_needed'), '需要输入');
+  assert.equal(getCurveLabel('zh-CN', 'rose-seven'), '七瓣玫瑰');
+});
+
+test('localized setup errors keep only safe categories', () => {
+  assert.match(
+    formatLocalizedSetupError('save_settings', 'start-at-login:permission', 'zh-CN'),
+    /权限/,
+  );
+  assert.equal(
+    formatLocalizedSetupError('save_settings', 'raw path and payload', 'zh-CN'),
+    'save_settings failed',
+  );
+});
+
+test('settings page exposes a persisted language selector', async () => {
+  const html = await readFile(new URL('./settings.html', import.meta.url), 'utf8');
+  const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
+
+  assert.match(html, /id="language"/);
+  assert.match(html, /value="en"/);
+  assert.match(html, /value="zh-CN"/);
+  assert.match(html, /data-i18n="settings\.display"/);
+  assert.match(source, /language: control\('language'\)\.value/);
+  assert.match(source, /document\.documentElement\.lang/);
 });
 
 test('autostart disable treats an absent entry as already disabled', async () => {
