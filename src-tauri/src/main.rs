@@ -137,14 +137,17 @@ async fn get_display_state(
         return Ok(runtime.display_after_scan(None, now_ms()));
     }
     let scan_epoch = runtime.scan_epoch();
+    let scan_now_ms = now_ms();
 
     let state_dirs = scan_state_dirs(&app);
     let scan = if state_dirs.is_empty() {
         None
     } else {
-        tauri::async_runtime::spawn_blocking(move || read_snapshots_from_dirs(&state_dirs))
-            .await
-            .ok()
+        tauri::async_runtime::spawn_blocking(move || {
+            read_snapshots_from_dirs(&state_dirs, scan_now_ms)
+        })
+        .await
+        .ok()
     };
     let display = runtime.display_after_scan_at_epoch(scan, now_ms(), scan_epoch);
     runtime.finish_scan();
@@ -360,7 +363,7 @@ fn read_snapshots(path: &Path) -> io::Result<Vec<Snapshot>> {
     read_snapshot_entries(entries, |path| fs::read_to_string(path))
 }
 
-fn read_snapshots_from_dirs(paths: &[PathBuf]) -> io::Result<Vec<Snapshot>> {
+fn read_snapshots_from_dirs(paths: &[PathBuf], cutoff_ms: i64) -> io::Result<Vec<Snapshot>> {
     let mut latest = HashMap::new();
 
     for path in paths {
@@ -370,6 +373,9 @@ fn read_snapshots_from_dirs(paths: &[PathBuf]) -> io::Result<Vec<Snapshot>> {
             Err(error) => return Err(error),
         };
         for snapshot in snapshots {
+            if snapshot.updated_at_ms > cutoff_ms {
+                continue;
+            }
             let replace = latest
                 .get(&snapshot.session_key)
                 .map_or(true, |current: &Snapshot| {
@@ -1133,7 +1139,7 @@ mod scan_tests {
             Snapshot::new("legacy-session", HaloState::Thinking, 20),
         );
 
-        let snapshots = read_snapshots_from_dirs(&[runtime, legacy, missing]).unwrap();
+        let snapshots = read_snapshots_from_dirs(&[runtime, legacy, missing], 25).unwrap();
 
         assert_eq!(snapshots.len(), 2);
         assert!(snapshots.iter().any(|snapshot| {
@@ -1165,13 +1171,66 @@ mod scan_tests {
             Snapshot::new("shared-session", HaloState::Thinking, 20),
         );
 
-        let snapshots = read_snapshots_from_dirs(&[runtime, legacy]).unwrap();
+        let snapshots = read_snapshots_from_dirs(&[runtime, legacy], 25).unwrap();
         let runtime_state = ReducerRuntimeState::default();
         let display = runtime_state.display_after_scan(Some(Ok(snapshots)), 25);
 
         assert_eq!(display.state, HaloState::Thinking);
         assert_eq!(display.session_count, 1);
         assert_eq!(display.updated_at_ms, 20);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn scan_future_duplicate_does_not_hide_valid_snapshot() {
+        let root = std::env::temp_dir().join(format!(
+            "codex-halo-future-duplicate-scan-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let runtime = root.join("runtime/state");
+        let legacy = root.join("legacy/state");
+        write_scan_snapshot(
+            &runtime,
+            1,
+            Snapshot::new("shared-session", HaloState::InputNeeded, 10),
+        );
+        write_scan_snapshot(
+            &legacy,
+            1,
+            Snapshot::new("shared-session", HaloState::Thinking, 100),
+        );
+
+        let snapshots = read_snapshots_from_dirs(&[runtime, legacy], 25).unwrap();
+        let runtime_state = ReducerRuntimeState::default();
+        let display = runtime_state.display_after_scan(Some(Ok(snapshots)), 25);
+
+        assert_eq!(display.state, HaloState::InputNeeded);
+        assert_eq!(display.session_count, 1);
+        assert_eq!(display.updated_at_ms, 10);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn helper_install_paths_support_real_installs() {
+        let root = std::env::temp_dir().join(format!(
+            "codex-halo-helper-destinations-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let source = root.join("bundled-helper");
+        let runtime = root.join("codex-home/codex-halo");
+        let legacy = root.join("app-data");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(&source, b"helper-round-2").unwrap();
+
+        for directory in helper_install_paths(Some(runtime.clone()), legacy.clone()) {
+            let installed = hook_protocol::install_helper(&source, &directory).unwrap();
+            assert_eq!(fs::read(installed).unwrap(), b"helper-round-2");
+        }
+
+        assert!(runtime.join(hooks::helper_filename()).is_file());
+        assert!(legacy.join(hooks::helper_filename()).is_file());
         fs::remove_dir_all(root).unwrap();
     }
 

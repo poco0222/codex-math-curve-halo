@@ -1,6 +1,7 @@
 use codex_halo_lib::hook_protocol::{
     map_event, parse_hook_input, remove_snapshot, write_snapshot, HookAction,
 };
+use codex_halo_lib::hooks;
 use std::ffi::OsString;
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -59,6 +60,13 @@ fn run(
 }
 
 fn parse_state_dir(args: impl IntoIterator<Item = OsString>) -> Option<PathBuf> {
+    parse_state_dir_with_default(args, || hooks::runtime_state_dir().ok())
+}
+
+fn parse_state_dir_with_default(
+    args: impl IntoIterator<Item = OsString>,
+    default_state_dir: impl FnOnce() -> Option<PathBuf>,
+) -> Option<PathBuf> {
     let mut args = args.into_iter();
     let mut state_dir = None;
     let mut marker_seen = false;
@@ -79,7 +87,7 @@ fn parse_state_dir(args: impl IntoIterator<Item = OsString>) -> Option<PathBuf> 
         return None;
     }
 
-    state_dir
+    state_dir.or_else(|| marker_seen.then(default_state_dir).flatten())
 }
 
 fn now_ms() -> i64 {
@@ -224,8 +232,35 @@ mod tests {
         ];
 
         for args in cases {
-            assert!(parse_state_dir(args).is_none());
+            assert!(parse_state_dir_with_default(args, || None).is_none());
         }
+    }
+
+    #[test]
+    fn marker_only_args_use_injected_runtime_state_dir() {
+        let expected = std::path::PathBuf::from("/tmp/codex-home/codex-halo/state");
+
+        assert_eq!(
+            parse_state_dir_with_default(vec!["--codex-halo".into()], || Some(expected.clone())),
+            Some(expected)
+        );
+    }
+
+    #[test]
+    fn explicit_state_dir_bypasses_injected_runtime_default() {
+        let expected = std::path::PathBuf::from("/tmp/explicit-state");
+
+        assert_eq!(
+            parse_state_dir_with_default(
+                vec![
+                    "--codex-halo".into(),
+                    "--state-dir".into(),
+                    expected.clone().into_os_string(),
+                ],
+                || None,
+            ),
+            Some(expected)
+        );
     }
 
     #[test]

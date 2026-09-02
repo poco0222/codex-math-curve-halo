@@ -1,5 +1,5 @@
 use codex_halo_lib::hook_protocol::is_snapshot_filename;
-use codex_halo_lib::hooks::{self, get_hook_status, install_hooks, remove_hooks, HookStatus};
+use codex_halo_lib::hooks::{get_hook_status, install_hooks, remove_hooks, HookStatus};
 use codex_halo_lib::state::{reduce_snapshots, HaloState, Snapshot};
 use serde_json::{json, Value};
 use std::fs;
@@ -106,9 +106,6 @@ fn task7_installs_twice_preserves_unrelated_hooks_and_reduces_helper_events() {
     let state_dir = app_data.join("state");
     fs::create_dir_all(&codex_home).unwrap();
     fs::create_dir_all(&app_data).unwrap();
-    let previous_codex_home = std::env::var_os("CODEX_HOME");
-    std::env::set_var("CODEX_HOME", &codex_home);
-    assert_eq!(hooks::codex_home().unwrap(), codex_home);
     fs::copy(helper_source(), &helper).unwrap();
     #[cfg(unix)]
     {
@@ -218,10 +215,6 @@ fn task7_installs_twice_preserves_unrelated_hooks_and_reduces_helper_events() {
     fs::remove_dir_all(&state_dir).ok();
     assert_eq!(get_hook_status(&config, &helper), HookStatus::Missing);
 
-    match previous_codex_home {
-        Some(path) => std::env::set_var("CODEX_HOME", path),
-        None => std::env::remove_var("CODEX_HOME"),
-    }
     println!(
         "task7 metadata: platform={}-{} hook_file={}",
         std::env::consts::OS,
