@@ -1,5 +1,6 @@
 use codex_halo_lib::state::{AppSettings, DisplayState, HaloState, SessionStore, Snapshot};
 use codex_halo_lib::{hook_protocol, hooks, platform};
+use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -129,7 +130,7 @@ impl ReducerRuntimeState {
 
 #[tauri::command]
 async fn get_display_state(
-    _app: AppHandle,
+    app: AppHandle,
     runtime: State<'_, ReducerRuntimeState>,
 ) -> Result<DisplayState, String> {
     if !runtime.try_start_scan() {
@@ -137,11 +138,13 @@ async fn get_display_state(
     }
     let scan_epoch = runtime.scan_epoch();
 
-    let scan = match state_dir() {
-        Some(state_dir) => tauri::async_runtime::spawn_blocking(move || read_snapshots(&state_dir))
+    let state_dirs = scan_state_dirs(&app);
+    let scan = if state_dirs.is_empty() {
+        None
+    } else {
+        tauri::async_runtime::spawn_blocking(move || read_snapshots_from_dirs(&state_dirs))
             .await
-            .ok(),
-        None => None,
+            .ok()
     };
     let display = runtime.display_after_scan_at_epoch(scan, now_ms(), scan_epoch);
     runtime.finish_scan();
@@ -157,8 +160,27 @@ fn now_ms() -> i64 {
         .unwrap_or(i64::MAX)
 }
 
-fn state_dir() -> Option<PathBuf> {
-    hooks::runtime_state_dir().ok()
+fn scan_state_dirs(app: &AppHandle) -> Vec<PathBuf> {
+    scan_state_dirs_from_paths(
+        hooks::runtime_state_dir().ok(),
+        app.path()
+            .app_data_dir()
+            .ok()
+            .map(|path| path.join("state")),
+    )
+}
+
+fn scan_state_dirs_from_paths(
+    runtime_state_dir: Option<PathBuf>,
+    legacy_state_dir: Option<PathBuf>,
+) -> Vec<PathBuf> {
+    let mut paths = Vec::with_capacity(2);
+    for path in [runtime_state_dir, legacy_state_dir].into_iter().flatten() {
+        if !paths.iter().any(|existing| existing == &path) {
+            paths.push(path);
+        }
+    }
+    paths
 }
 
 fn app_config_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -336,6 +358,30 @@ where
 fn read_snapshots(path: &Path) -> io::Result<Vec<Snapshot>> {
     let entries = fs::read_dir(path)?.map(|entry| entry.map(|entry| entry.path()));
     read_snapshot_entries(entries, |path| fs::read_to_string(path))
+}
+
+fn read_snapshots_from_dirs(paths: &[PathBuf]) -> io::Result<Vec<Snapshot>> {
+    let mut latest = HashMap::new();
+
+    for path in paths {
+        let snapshots = match read_snapshots(path) {
+            Ok(snapshots) => snapshots,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error),
+        };
+        for snapshot in snapshots {
+            let replace = latest
+                .get(&snapshot.session_key)
+                .map_or(true, |current: &Snapshot| {
+                    snapshot.updated_at_ms > current.updated_at_ms
+                });
+            if replace {
+                latest.insert(snapshot.session_key.clone(), snapshot);
+            }
+        }
+    }
+
+    Ok(latest.into_values().collect())
 }
 
 fn read_snapshot_entries<I, F>(entries: I, mut read_file: F) -> io::Result<Vec<Snapshot>>
@@ -564,6 +610,20 @@ where
         eprintln!("Codex Halo: hook helper unavailable");
     }
     true
+}
+
+fn helper_install_paths(
+    runtime_root: Option<PathBuf>,
+    legacy_app_data_dir: PathBuf,
+) -> Vec<PathBuf> {
+    let mut paths = Vec::with_capacity(2);
+    if let Some(runtime_root) = runtime_root {
+        paths.push(runtime_root);
+    }
+    if !paths.iter().any(|path| path == &legacy_app_data_dir) {
+        paths.push(legacy_app_data_dir);
+    }
+    paths
 }
 
 #[cfg(test)]
@@ -918,12 +978,9 @@ fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
     #[cfg(target_os = "macos")]
     app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-    if let Ok(runtime_root) = hooks::runtime_root() {
-        helper_setup_best_effort(|| {
-            hook_protocol::install_bundled_helper(&runtime_root).map(|_| ())
-        });
-    } else {
-        eprintln!("Codex Halo: hook helper unavailable");
+    let app_data_dir = app.path().app_data_dir()?;
+    for helper_dir in helper_install_paths(hooks::runtime_root().ok(), app_data_dir) {
+        helper_setup_best_effort(|| hook_protocol::install_bundled_helper(&helper_dir).map(|_| ()));
     }
 
     let settings = load_app_settings(app.handle()).unwrap_or_else(|_| {
@@ -1018,24 +1075,104 @@ mod scan_tests {
     }
 
     #[test]
-    fn runtime_scan_state_dir_uses_plugin_runtime_path() {
-        let previous_codex_home = std::env::var_os("CODEX_HOME");
-        let previous_home = std::env::var_os("HOME");
-        std::env::set_var("CODEX_HOME", "/tmp/codex-home");
-
+    fn scan_paths_include_runtime_and_legacy_state_dirs() {
         assert_eq!(
-            state_dir(),
-            Some(PathBuf::from("/tmp/codex-home/codex-halo/state"))
+            scan_state_dirs_from_paths(
+                Some(PathBuf::from("/tmp/codex-home/codex-halo/state")),
+                Some(PathBuf::from("/tmp/app-data/state")),
+            ),
+            [
+                PathBuf::from("/tmp/codex-home/codex-halo/state"),
+                PathBuf::from("/tmp/app-data/state"),
+            ]
+        );
+    }
+
+    #[test]
+    fn startup_helper_paths_include_runtime_and_legacy_directories() {
+        assert_eq!(
+            helper_install_paths(
+                Some(PathBuf::from("/tmp/codex-home/codex-halo")),
+                PathBuf::from("/tmp/app-data"),
+            ),
+            [
+                PathBuf::from("/tmp/codex-home/codex-halo"),
+                PathBuf::from("/tmp/app-data"),
+            ]
+        );
+    }
+
+    fn write_scan_snapshot(directory: &Path, id: u8, snapshot: Snapshot) {
+        fs::create_dir_all(directory).unwrap();
+        let filename = format!("{id:064x}.json");
+        fs::write(
+            directory.join(filename),
+            serde_json::to_vec(&snapshot).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn scan_reads_runtime_and_legacy_state_dirs_and_ignores_missing_dirs() {
+        let root = std::env::temp_dir().join(format!(
+            "codex-halo-dual-scan-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let runtime = root.join("runtime/state");
+        let legacy = root.join("legacy/state");
+        let missing = root.join("missing/state");
+        write_scan_snapshot(
+            &runtime,
+            1,
+            Snapshot::new("runtime-session", HaloState::Executing, 10),
+        );
+        write_scan_snapshot(
+            &legacy,
+            2,
+            Snapshot::new("legacy-session", HaloState::Thinking, 20),
         );
 
-        match previous_codex_home {
-            Some(path) => std::env::set_var("CODEX_HOME", path),
-            None => std::env::remove_var("CODEX_HOME"),
-        }
-        match previous_home {
-            Some(path) => std::env::set_var("HOME", path),
-            None => std::env::remove_var("HOME"),
-        }
+        let snapshots = read_snapshots_from_dirs(&[runtime, legacy, missing]).unwrap();
+
+        assert_eq!(snapshots.len(), 2);
+        assert!(snapshots.iter().any(|snapshot| {
+            snapshot.session_key == "runtime-session" && snapshot.updated_at_ms == 10
+        }));
+        assert!(snapshots.iter().any(|snapshot| {
+            snapshot.session_key == "legacy-session" && snapshot.updated_at_ms == 20
+        }));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn scan_duplicate_session_uses_newest_snapshot() {
+        let root = std::env::temp_dir().join(format!(
+            "codex-halo-duplicate-scan-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let runtime = root.join("runtime/state");
+        let legacy = root.join("legacy/state");
+        write_scan_snapshot(
+            &runtime,
+            1,
+            Snapshot::new("shared-session", HaloState::InputNeeded, 10),
+        );
+        write_scan_snapshot(
+            &legacy,
+            1,
+            Snapshot::new("shared-session", HaloState::Thinking, 20),
+        );
+
+        let snapshots = read_snapshots_from_dirs(&[runtime, legacy]).unwrap();
+        let runtime_state = ReducerRuntimeState::default();
+        let display = runtime_state.display_after_scan(Some(Ok(snapshots)), 25);
+
+        assert_eq!(display.state, HaloState::Thinking);
+        assert_eq!(display.session_count, 1);
+        assert_eq!(display.updated_at_ms, 20);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

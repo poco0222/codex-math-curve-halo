@@ -137,18 +137,37 @@ pub enum HookStatus {
 }
 
 pub fn codex_home() -> Result<PathBuf, HookError> {
-    if let Some(path) = env::var_os("CODEX_HOME").filter(|path| !path.is_empty()) {
+    codex_home_from_environment(
+        env::var_os("CODEX_HOME"),
+        env::var_os("HOME"),
+        env::var_os("USERPROFILE"),
+        env::var_os("HOMEDRIVE"),
+        env::var_os("HOMEPATH"),
+    )
+}
+
+fn codex_home_from_environment(
+    codex_home: Option<std::ffi::OsString>,
+    _home: Option<std::ffi::OsString>,
+    userprofile: Option<std::ffi::OsString>,
+    homedrive: Option<std::ffi::OsString>,
+    homepath: Option<std::ffi::OsString>,
+) -> Result<PathBuf, HookError> {
+    if let Some(path) = codex_home.filter(|path| !path.is_empty()) {
         return Ok(PathBuf::from(path));
     }
 
     #[cfg(windows)]
-    let home = env::var_os("USERPROFILE").or_else(|| {
-        let drive = env::var_os("HOMEDRIVE")?;
-        let path = env::var_os("HOMEPATH")?;
+    let home = userprofile.or_else(|| {
+        let drive = homedrive?;
+        let path = homepath?;
         Some(PathBuf::from(drive).join(path).into_os_string())
     });
     #[cfg(not(windows))]
-    let home = env::var_os("HOME");
+    let home = {
+        let _ = (userprofile, homedrive, homepath);
+        _home
+    };
 
     home.map(|path| PathBuf::from(path).join(".codex"))
         .ok_or(HookError::HomeDirectoryUnavailable)
@@ -158,16 +177,28 @@ pub fn helper_filename() -> &'static str {
     HELPER_FILENAME
 }
 
+fn runtime_root_from(codex_home: &Path) -> PathBuf {
+    codex_home.join("codex-halo")
+}
+
+fn runtime_state_dir_from(codex_home: &Path) -> PathBuf {
+    runtime_root_from(codex_home).join("state")
+}
+
+fn runtime_helper_path_from(codex_home: &Path) -> PathBuf {
+    runtime_root_from(codex_home).join(helper_filename())
+}
+
 pub fn runtime_root() -> Result<PathBuf, HookError> {
-    Ok(codex_home()?.join("codex-halo"))
+    codex_home().map(|path| runtime_root_from(&path))
 }
 
 pub fn runtime_state_dir() -> Result<PathBuf, HookError> {
-    Ok(runtime_root()?.join("state"))
+    codex_home().map(|path| runtime_state_dir_from(&path))
 }
 
 pub fn runtime_helper_path() -> Result<PathBuf, HookError> {
-    Ok(runtime_root()?.join(helper_filename()))
+    codex_home().map(|path| runtime_helper_path_from(&path))
 }
 
 pub fn install_hooks(
@@ -746,58 +777,31 @@ mod tests {
     }
 
     #[test]
-    fn runtime_paths_follow_codex_home_and_require_home() {
-        let previous_codex_home = env::var_os("CODEX_HOME");
-        let previous_home = env::var_os("HOME");
-        #[cfg(windows)]
-        let previous_userprofile = env::var_os("USERPROFILE");
-        #[cfg(windows)]
-        let previous_homedrive = env::var_os("HOMEDRIVE");
-        #[cfg(windows)]
-        let previous_homepath = env::var_os("HOMEPATH");
-        std::env::set_var("CODEX_HOME", "/tmp/codex-home");
+    fn runtime_paths_follow_supplied_codex_home_without_environment_mutation() {
+        let codex_home = Path::new("/tmp/codex-home");
+        let root = runtime_root_from(codex_home);
 
-        let root = PathBuf::from("/tmp/codex-home/codex-halo");
-        assert_eq!(runtime_root().unwrap(), root);
-        assert_eq!(runtime_state_dir().unwrap(), root.join("state"));
-        assert_eq!(runtime_helper_path().unwrap(), root.join(helper_filename()));
-
-        std::env::remove_var("CODEX_HOME");
-        std::env::remove_var("HOME");
-        #[cfg(windows)]
-        {
-            std::env::remove_var("USERPROFILE");
-            std::env::remove_var("HOMEDRIVE");
-            std::env::remove_var("HOMEPATH");
-        }
+        assert_eq!(root, PathBuf::from("/tmp/codex-home/codex-halo"));
+        assert_eq!(runtime_state_dir_from(codex_home), root.join("state"));
+        assert_eq!(
+            runtime_helper_path_from(codex_home),
+            root.join(helper_filename())
+        );
+        assert_eq!(
+            codex_home_from_environment(
+                Some(std::ffi::OsString::from("/tmp/codex-home")),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap(),
+            codex_home
+        );
         assert!(matches!(
-            runtime_root(),
+            codex_home_from_environment(None, None, None, None, None),
             Err(HookError::HomeDirectoryUnavailable)
         ));
-
-        match previous_codex_home {
-            Some(path) => std::env::set_var("CODEX_HOME", path),
-            None => std::env::remove_var("CODEX_HOME"),
-        }
-        match previous_home {
-            Some(path) => std::env::set_var("HOME", path),
-            None => std::env::remove_var("HOME"),
-        }
-        #[cfg(windows)]
-        {
-            match previous_userprofile {
-                Some(path) => std::env::set_var("USERPROFILE", path),
-                None => std::env::remove_var("USERPROFILE"),
-            }
-            match previous_homedrive {
-                Some(path) => std::env::set_var("HOMEDRIVE", path),
-                None => std::env::remove_var("HOMEDRIVE"),
-            }
-            match previous_homepath {
-                Some(path) => std::env::set_var("HOMEPATH", path),
-                None => std::env::remove_var("HOMEPATH"),
-            }
-        }
     }
 
     #[test]
