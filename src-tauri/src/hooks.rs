@@ -322,16 +322,16 @@ pub fn get_hook_status(config_path: &Path, helper_path: &Path) -> HookStatus {
     if hooks.values().any(|events| !events.is_array()) {
         return HookStatus::Invalid;
     }
-    if EVENT_SPECS.iter().any(|spec| {
-        let expected = owned_group(*spec, helper_path, &state_dir);
-        hooks
-            .get(spec.name)
-            .and_then(Value::as_array)
-            .is_some_and(|events| {
-                events
-                    .iter()
-                    .any(|group| has_direct_owned_handler(group) && group != &expected)
-            })
+    if hooks.iter().any(|(event, value)| {
+        let expected = EVENT_SPECS
+            .iter()
+            .find(|spec| spec.name == event)
+            .map(|spec| owned_group(*spec, helper_path, &state_dir));
+        value.as_array().is_some_and(|events| {
+            events
+                .iter()
+                .any(|group| has_direct_owned_handler(group) && expected.as_ref() != Some(group))
+        })
     }) {
         return HookStatus::PartiallyInstalled;
     }
@@ -1209,6 +1209,33 @@ mod tests {
                 "statusMessage": "Codex Halo"
             }]
         }));
+        write_config(&config_path, &config);
+
+        assert_eq!(
+            get_hook_status(&config_path, &helper),
+            HookStatus::PartiallyInstalled
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn status_rejects_an_owned_handler_under_an_unknown_event() {
+        let root = temp_dir("unknown-event-owned");
+        fs::create_dir_all(&root).unwrap();
+        let config_path = root.join("hooks.json");
+        let helper = root.join("helper");
+        let state = root.join("state");
+        write_config(&config_path, &fixture());
+        fs::write(&helper, b"helper").unwrap();
+        install_hooks(&config_path, &helper, &state).unwrap();
+
+        let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+        config["hooks"]["UnknownEvent"] = json!([{
+            "hooks": [{
+                "type": "command",
+                "command": "'stale-helper' --codex-halo --state-dir 'stale-state'"
+            }]
+        }]);
         write_config(&config_path, &config);
 
         assert_eq!(
