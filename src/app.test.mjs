@@ -384,3 +384,14 @@ test('Windows autostart uses the native registry path and required feature', asy
   assert.match(platform, /quote_windows_run_path/);
   assert.match(cargo, /"Win32_System_Registry"/);
 });
+
+test('README has English and Simplified Chinese variants', async () => {
+  const english = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+  const chinese = await readFile(new URL('../README.zh-CN.md', import.meta.url), 'utf8');
+
+  assert.match(english, /README\.zh-CN\.md/);
+  assert.match(chinese, /README\.md/);
+  assert.match(chinese, /本地运行/);
+  assert.match(chinese, /隐私/);
+  assert.match(english, /English|language/i);
+});
