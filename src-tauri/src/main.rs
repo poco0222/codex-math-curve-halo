@@ -1,5 +1,5 @@
 use codex_halo_lib::state::{AppSettings, DisplayState, HaloState, SessionStore, Snapshot};
-use codex_halo_lib::{hook_protocol, platform};
+use codex_halo_lib::{hook_protocol, hooks, platform};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -135,18 +135,52 @@ fn simulate_state(state: HaloState) -> DisplayState {
 }
 
 #[tauri::command]
-fn install_hooks() -> Result<(), String> {
-    Ok(())
+fn install_hooks(app: AppHandle) -> Result<hooks::InstallReport, String> {
+    let (config_path, helper_path, state_dir) = hook_paths(&app)?;
+    hooks::install_hooks(&config_path, &helper_path, &state_dir).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-fn remove_hooks() -> Result<(), String> {
-    Ok(())
+fn remove_hooks(app: AppHandle) -> Result<hooks::RemoveReport, String> {
+    let (config_path, helper_path, state_dir) = hook_paths(&app)?;
+    let report = hooks::remove_hooks(&config_path).map_err(|error| error.to_string())?;
+    remove_hook_artifacts(&helper_path, &state_dir).map_err(|error| error.to_string())?;
+    Ok(report)
 }
 
 #[tauri::command]
-fn get_hook_status() -> bool {
-    false
+fn get_hook_status(app: AppHandle) -> hooks::HookStatus {
+    let Ok((config_path, helper_path, _)) = hook_paths(&app) else {
+        return hooks::HookStatus::Invalid;
+    };
+    hooks::get_hook_status(&config_path, &helper_path)
+}
+
+fn hook_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf, PathBuf), String> {
+    let codex_home = hooks::codex_home().map_err(|error| error.to_string())?;
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    Ok((
+        codex_home.join("hooks.json"),
+        app_data_dir.join(hooks::helper_filename()),
+        app_data_dir.join("state"),
+    ))
+}
+
+fn remove_hook_artifacts(helper_path: &Path, state_dir: &Path) -> io::Result<()> {
+    match fs::remove_file(helper_path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    match fs::remove_dir_all(state_dir) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -407,5 +441,26 @@ mod scan_tests {
         assert!(helper_setup_best_effort(|| {
             Err(hook_protocol::HookError::InvalidInput)
         }));
+    }
+
+    #[test]
+    fn removes_hook_artifacts_without_failing_for_missing_paths() {
+        let root = std::env::temp_dir().join(format!(
+            "codex-halo-artifacts-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let helper = root.join("helper");
+        let state_dir = root.join("state");
+        fs::create_dir_all(&state_dir).unwrap();
+        fs::write(&helper, b"helper").unwrap();
+
+        remove_hook_artifacts(&helper, &state_dir).unwrap();
+
+        assert!(!helper.exists());
+        assert!(!state_dir.exists());
+        remove_hook_artifacts(&helper, &state_dir).unwrap();
+        assert!(root.exists());
+        fs::remove_dir_all(root).unwrap();
     }
 }
