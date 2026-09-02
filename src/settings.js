@@ -122,6 +122,11 @@ async function loadSettings() {
   await refreshDiagnostics();
 }
 
+const listen = window.__TAURI__?.event?.listen;
+if (typeof listen === 'function') {
+  listen('settings-changed', ({ payload }) => applySettings(payload)).catch(() => {});
+}
+
 async function saveCurrentSettings() {
   const settings = readSettings();
   const result = await saveSettings(() => invokeCommand('save_settings', { settings }));

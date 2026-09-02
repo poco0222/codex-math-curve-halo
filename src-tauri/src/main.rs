@@ -271,7 +271,9 @@ fn apply_settings_to_overlay(app: &AppHandle, settings: &AppSettings) {
             eprintln!("Codex Halo: unable to apply overlay visibility");
         }
     }
-    let _ = app.emit_to("main", "settings-changed", settings.clone());
+    for target in ["main", "settings"] {
+        let _ = app.emit_to(target, "settings-changed", settings.clone());
+    }
 }
 
 fn save_settings_transaction<F, G>(
@@ -623,14 +625,12 @@ fn build_tray(app: &mut tauri::App, _enabled: bool) -> Result<(), Box<dyn std::e
         ],
     )?;
     let icon = Image::from_bytes(include_bytes!("../icons/icon.png"))?.to_owned();
-    let mut tray = TrayIconBuilder::with_id("main")
+    let tray = TrayIconBuilder::with_id("main")
         .icon(icon)
         .menu(&menu)
         .tooltip("Codex Halo");
     #[cfg(target_os = "macos")]
-    {
-        tray = tray.icon_as_template(true);
-    }
+    let tray = tray.icon_as_template(true);
     tray.on_menu_event(move |app, event| match event.id.as_ref() {
         "open-settings" => show_settings_or_report(app),
         "toggle-overlay" => {
@@ -998,6 +998,20 @@ mod scan_tests {
         assert_eq!(
             runtime.display_after_scan(None, now + 86_400_000).state,
             HaloState::InputNeeded
+        );
+
+        let runtime = ReducerRuntimeState::default();
+        assert_eq!(
+            runtime.simulate_state(HaloState::Idle, now).updated_at_ms,
+            now
+        );
+        assert_eq!(
+            runtime.display_after_scan(None, now + 60_000).updated_at_ms,
+            now
+        );
+        assert_eq!(
+            runtime.display_after_scan(None, now + 60_001).updated_at_ms,
+            0
         );
     }
 

@@ -136,6 +136,27 @@ test('renderer startup uses exact frontend defaults after get_settings fails', a
   assert.match(mainSource, /settings_transaction[\s\S]*?\.lock\(\)/);
 });
 
+test('settings changes reach both overlay and settings windows', async () => {
+  const mainSource = await readFile(new URL('../src-tauri/src/main.rs', import.meta.url), 'utf8');
+  const settingsSource = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
+
+  assert.match(mainSource, /for target in \["main", "settings"\]/);
+  assert.match(mainSource, /app\.emit_to\(target, "settings-changed", settings\.clone\(\)\)/);
+  assert.match(settingsSource, /listen\('settings-changed', \(\{ payload \}\) => applySettings\(payload\)\)/);
+});
+
+test('macOS private API is target-scoped for cross-target checks', async () => {
+  const cargo = await readFile(new URL('../src-tauri/Cargo.toml', import.meta.url), 'utf8');
+  const config = await readFile(new URL('../src-tauri/tauri.conf.json', import.meta.url), 'utf8');
+  const build = await readFile(new URL('../src-tauri/build.rs', import.meta.url), 'utf8');
+  const globalDependencies = cargo.split('[target.')[0];
+
+  assert.match(cargo, /\[target\.'cfg\(target_os = "macos"\)'\.dependencies\][\s\S]*tauri = \{ version = "2", features = \["macos-private-api"\] \}/);
+  assert.doesNotMatch(globalDependencies, /tauri = \{ version = "2", features = \[[^\]]*"macos-private-api"/);
+  assert.match(config, /"macOSPrivateApi": false/);
+  assert.match(build, /TAURI_ENV_TARGET_TRIPLE=\{target\}/);
+});
+
 test('settings exposes a content-free local diagnostic download', async () => {
   const html = await readFile(new URL('./settings.html', import.meta.url), 'utf8');
   const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');

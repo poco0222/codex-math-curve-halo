@@ -57,7 +57,8 @@ fn expiry_ms(state: HaloState) -> Option<i64> {
         HaloState::Thinking | HaloState::Executing | HaloState::Compacting => {
             Some(ACTIVE_EXPIRY_MS)
         }
-        HaloState::Idle | HaloState::InputNeeded => None,
+        HaloState::Idle => Some(ACTIVE_EXPIRY_MS),
+        HaloState::InputNeeded => None,
     }
 }
 
@@ -337,6 +338,7 @@ mod tests {
     fn expires_active_states_older_than_sixty_seconds() {
         let now = 1_000_000;
         let cases = [
+            HaloState::Idle,
             HaloState::Thinking,
             HaloState::Executing,
             HaloState::Compacting,
@@ -355,6 +357,7 @@ mod tests {
         let now = 1_000_000;
         let cases = [
             (HaloState::Completed, 3_000),
+            (HaloState::Idle, 60_000),
             (HaloState::Thinking, 60_000),
             (HaloState::Executing, 60_000),
             (HaloState::Compacting, 60_000),

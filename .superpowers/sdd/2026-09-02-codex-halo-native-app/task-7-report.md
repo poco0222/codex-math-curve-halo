@@ -204,6 +204,120 @@ fixtures, helper output, snapshot parsing, and reducer behavior.
 No prompt, transcript, tool, model, token, or event payload content was written
 to this report, test output, app diagnostics, or committed files.
 
+## Final Residual Fix
+
+Date: 2026-09-02
+Base: `aaaab8c`
+
+The three Important findings from the final review were fixed in the current
+checkout:
+
+- `src-tauri/Cargo.toml` keeps common Tauri features global and moves
+  `macos-private-api` into `cfg(target_os = "macos")`. The Tauri config flag is
+  `"macOSPrivateApi": false` globally because Tauri 2's config-to-feature
+  handling is not target-scoped; the macOS Cargo target dependency still
+  enables the feature, so `.transparent(true)` remains available on macOS
+  while Windows does not receive the macOS feature. `src-tauri/build.rs` passes
+  Cargo's actual `TARGET` to `TAURI_ENV_TARGET_TRIPLE`, which prevents direct
+  cross-target `cargo check` proc-macro expansion from defaulting to the host
+  macOS target. The Windows native Registry implementation remains unchanged.
+- `apply_settings_to_overlay` emits `settings-changed` to both `main` and
+  `settings`; `src/settings.js` listens and reuses `applySettings`, retaining
+  active-field protection. The JS source regression check covers both targets
+  and the listener.
+- `HaloState::Idle` now uses the existing `60_000ms` expiry. `InputNeeded`
+  remains non-expiring. Completed `3_000ms` and active `60_000ms` behavior stay
+  unchanged, with exact-boundary tests and simulation coverage.
+
+## Final Residual Verification
+
+Focused first:
+
+```text
+cargo test --manifest-path src-tauri/Cargo.toml --lib state::tests
+15 passed; 0 failed
+
+node --test src/app.test.mjs
+13 passed; 0 failed
+
+node scripts/check-renderer.mjs
+renderer self-check: PASS (4 profiles)
+```
+
+The pre-fix Windows reproduction was:
+
+```text
+CODEX_HALO_BUILD_SIDECAR=1 cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-gnu --bin codex-halo
+error[E0433]: cannot find `embed_plist` in `tauri`
+```
+
+Final checks:
+
+```text
+cargo test --manifest-path src-tauri/Cargo.toml
+51 lib + 17 main + 5 helper + 1 integration passed; 0 failed; 0 doc-test failures
+
+node --check src/app.js && node --check src/settings.js && node --test src/app.test.mjs scripts/build-sidecar.test.mjs
+15 passed; 0 failed
+
+node scripts/check-renderer.mjs
+renderer self-check: PASS (4 profiles)
+
+cargo check --manifest-path src-tauri/Cargo.toml
+Finished `dev` profile [unoptimized + debuginfo] successfully
+
+cargo build --manifest-path src-tauri/Cargo.toml --bin codex-halo
+Finished `dev` profile [unoptimized + debuginfo] successfully
+
+CODEX_HALO_BUILD_SIDECAR=1 cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-gnu --lib
+Finished `dev` profile [unoptimized + debuginfo] successfully
+
+CODEX_HALO_BUILD_SIDECAR=1 cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-gnu --bin codex-halo-hook
+Finished `dev` profile [unoptimized + debuginfo] successfully
+
+CODEX_HALO_BUILD_SIDECAR=1 cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-gnu --bin codex-halo
+Finished `dev` profile [unoptimized + debuginfo] successfully
+
+CODEX_HALO_BUILD_SIDECAR=1 cargo check --manifest-path src-tauri/Cargo.toml --target aarch64-apple-darwin --bin codex-halo
+Finished `dev` profile [unoptimized + debuginfo] successfully
+
+cargo tauri build --target aarch64-apple-darwin
+Finished 2 bundles at:
+    /Users/PopoY/Documents/Projects/codex-math-curve-halo/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Codex Halo.app
+    /Users/PopoY/Documents/Projects/codex-math-curve-halo/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Codex Halo_0.1.0_aarch64.dmg
+
+cargo fmt --manifest-path src-tauri/Cargo.toml
+PASS
+
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+PASS
+
+python3 -m json.tool package.json >/dev/null
+python3 -m json.tool src-tauri/tauri.conf.json >/dev/null
+python3 -m json.tool src-tauri/capabilities/default.json >/dev/null
+PASS
+
+git diff --check
+PASS
+```
+
+CodeGraph preflight remained clean:
+
+```text
+codegraph status --json .
+initialized=true, state=complete, pendingChanges=0, reindexRecommended=false
+```
+
+Windows runtime, Windows MSVC build, Registry runtime, transparent window
+runtime, tray runtime, helper execution under Windows shells, and live Codex
+integration remain `NOT RUN`. The target checks above are compile evidence only.
+
+The ignored SDD ledger was updated locally at
+`.superpowers/sdd/2026-09-02-codex-halo-native-app/progress.md`. External dirty
+paths remain untouched and unstaged: `.gitignore`, `.agents/`, `.codegraph/`,
+`.codex/`, `.comet/`, `.impeccable/`, `docs/openspec/`,
+`src-tauri/Cargo.lock`, `src-tauri/gen/`, and `src-tauri/target/`.
+
 ## Untracked Review
 
 Kept out of the Task 7 commit:
