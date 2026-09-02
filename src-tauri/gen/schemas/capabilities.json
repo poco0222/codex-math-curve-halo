@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Default capability for the Codex Halo desktop windows.","local":true,"windows":["main","settings"],"permissions":["core:default","autostart:default"]}}

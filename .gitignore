@@ -1,7 +1,29 @@
 src-tauri/target/
 dist/
 .DS_Store
+Thumbs.db
 state/
 settings-export*.json
 *.local.json
 src-tauri/binaries/codex-halo-hook-*
+
+# Node.js and local environment
+node_modules/
+.env*
+!.env.example
+
+# IDE and logs
+.idea/
+.vscode/
+*.iml
+*.log
+
+# Agent tool state (local to each machine)
+.agents/
+.codex/
+.codegraph/
+# >>> Comet managed project state >>>
+!/.comet/
+/.comet/*
+!/.comet/config.yaml
+# <<< Comet managed project state <<<
