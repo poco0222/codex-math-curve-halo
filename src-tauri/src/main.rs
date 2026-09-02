@@ -56,7 +56,7 @@ fn show_settings(app: &AppHandle) -> Result<(), String> {
     settings.set_focus().map_err(|error| error.to_string())
 }
 
-fn build_windows(app: &mut tauri::App) -> tauri::Result<()> {
+fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let overlay = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("Codex Halo")
         .inner_size(112.0, 112.0)
