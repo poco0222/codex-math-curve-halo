@@ -69,6 +69,7 @@ struct EventSpec {
 #[derive(Debug)]
 pub enum HookError {
     HomeDirectoryUnavailable,
+    InvalidPath,
     RepairRequired,
     Json(serde_json::Error),
     Io(io::Error),
@@ -78,6 +79,7 @@ impl fmt::Display for HookError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::HomeDirectoryUnavailable => "Codex home directory is unavailable",
+            Self::InvalidPath => "Codex hook paths must be absolute",
             Self::RepairRequired => "Codex hooks.json needs repair before it can be changed",
             Self::Json(_) => "Codex hooks.json has invalid JSON",
             Self::Io(_) => "Codex hooks configuration I/O failed",
@@ -90,7 +92,7 @@ impl std::error::Error for HookError {
         match self {
             Self::Json(error) => Some(error),
             Self::Io(error) => Some(error),
-            Self::HomeDirectoryUnavailable | Self::RepairRequired => None,
+            Self::HomeDirectoryUnavailable | Self::InvalidPath | Self::RepairRequired => None,
         }
     }
 }
@@ -156,6 +158,9 @@ pub fn install_hooks(
     helper_path: &Path,
     state_dir: &Path,
 ) -> Result<InstallReport, HookError> {
+    if !helper_path.is_absolute() || !state_dir.is_absolute() {
+        return Err(HookError::InvalidPath);
+    }
     let (mut config, existed) = read_config(config_path)?;
     let original = config.clone();
     let hooks = hooks_object_mut(&mut config)?;
@@ -223,9 +228,6 @@ pub fn remove_hooks(config_path: &Path) -> Result<RemoveReport, HookError> {
             }
         }
         events.retain(|group| {
-            if group.get("hooks").is_some() {
-                return true;
-            }
             let owned = is_owned_handler(group);
             removed_handlers += usize::from(owned);
             !owned
@@ -250,19 +252,23 @@ pub fn remove_hooks(config_path: &Path) -> Result<RemoveReport, HookError> {
 }
 
 pub fn is_owned_handler(value: &Value) -> bool {
-    if value.get("type").and_then(Value::as_str) == Some("command") {
-        return value
+    value.get("type").and_then(Value::as_str) == Some("command")
+        && value
             .get("command")
             .and_then(Value::as_str)
-            .is_some_and(|command| command.contains(OWNED_MARKER));
-    }
-    value
-        .get("hooks")
-        .and_then(Value::as_array)
-        .is_some_and(|handlers| handlers.iter().any(is_owned_handler))
+            .is_some_and(|command| command.contains(OWNED_MARKER))
 }
 
 pub fn get_hook_status(config_path: &Path, helper_path: &Path) -> HookStatus {
+    if !helper_path.is_absolute() {
+        return HookStatus::Invalid;
+    }
+    let Some(state_dir) = helper_path.parent().map(|parent| parent.join("state")) else {
+        return HookStatus::Invalid;
+    };
+    if !state_dir.is_absolute() {
+        return HookStatus::Invalid;
+    }
     let Ok((config, existed)) = read_config(config_path) else {
         return if config_path.is_file() {
             HookStatus::Invalid
@@ -299,9 +305,10 @@ pub fn get_hook_status(config_path: &Path, helper_path: &Path) -> HookStatus {
             let Some(value) = hooks.get(spec.name) else {
                 return false;
             };
-            value
-                .as_array()
-                .is_some_and(|events| events.iter().any(is_owned_handler))
+            value.as_array().is_some_and(|events| {
+                let expected = owned_group(**spec, helper_path, &state_dir);
+                events.iter().any(|group| group == &expected)
+            })
         })
         .count();
     if hooks.values().any(|events| !events.is_array()) {
@@ -318,6 +325,16 @@ pub fn get_hook_status(config_path: &Path, helper_path: &Path) -> HookStatus {
 }
 
 fn read_config(path: &Path) -> Result<(Value, bool), HookError> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(HookError::RepairRequired);
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok((Value::Object(Map::new()), false));
+        }
+        Err(error) => return Err(error.into()),
+    }
     match fs::read(path) {
         Ok(bytes) => Ok((
             serde_json::from_slice(&bytes).map_err(|_| HookError::RepairRequired)?,
@@ -349,7 +366,6 @@ fn hooks_object_mut(config: &mut Value) -> Result<&mut Map<String, Value>, HookE
 
 fn merge_event(events: &mut Vec<Value>, spec: EventSpec, helper_path: &Path, state_dir: &Path) {
     let generated = owned_group(spec, helper_path, state_dir);
-    let generated_handler = generated["hooks"][0].clone();
     let mut found = false;
     let mut index = 0;
 
@@ -386,12 +402,7 @@ fn merge_event(events: &mut Vec<Value>, spec: EventSpec, helper_path: &Path, sta
         }
 
         for handler_index in owned_indices.into_iter().rev() {
-            if !found {
-                handlers[handler_index] = generated_handler.clone();
-                found = true;
-            } else {
-                handlers.remove(handler_index);
-            }
+            handlers.remove(handler_index);
         }
         index += 1;
     }
@@ -407,9 +418,18 @@ fn owned_group(spec: EventSpec, helper_path: &Path, state_dir: &Path) -> Value {
     command.insert(
         "command".to_owned(),
         Value::String(format!(
-            "\"{}\" --codex-halo --state-dir \"{}\"",
-            helper_path.to_string_lossy(),
-            state_dir.to_string_lossy()
+            "{} --codex-halo --state-dir {}",
+            quote_posix_arg(helper_path),
+            quote_posix_arg(state_dir)
+        )),
+    );
+    #[cfg(windows)]
+    command.insert(
+        "commandWindows".to_owned(),
+        Value::String(format!(
+            "{} --codex-halo --state-dir {}",
+            quote_windows_arg(&helper_path.to_string_lossy()),
+            quote_windows_arg(&state_dir.to_string_lossy())
         )),
     );
     if spec.asynchronous {
@@ -429,6 +449,41 @@ fn owned_group(spec: EventSpec, helper_path: &Path, state_dir: &Path) -> Value {
         Value::Array(vec![Value::Object(command)]),
     );
     Value::Object(group)
+}
+
+fn quote_posix_arg(path: &Path) -> String {
+    format!("'{}'", path.to_string_lossy().replace('\'', "'\"'\"'"))
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn quote_windows_arg(value: &str) -> String {
+    let mut quoted = String::from("\"");
+    let mut backslashes = 0;
+
+    for character in value.chars() {
+        if character == '\\' {
+            backslashes += 1;
+            continue;
+        }
+        if character == '"' {
+            for _ in 0..(backslashes * 2 + 1) {
+                quoted.push('\\');
+            }
+            quoted.push('"');
+        } else {
+            for _ in 0..backslashes {
+                quoted.push('\\');
+            }
+            quoted.push(character);
+        }
+        backslashes = 0;
+    }
+
+    for _ in 0..(backslashes * 2) {
+        quoted.push('\\');
+    }
+    quoted.push('"');
+    quoted
 }
 
 fn create_backup(path: &Path) -> Result<PathBuf, HookError> {
@@ -763,6 +818,8 @@ mod tests {
             } else {
                 assert_eq!(command["async"], true);
             }
+            #[cfg(windows)]
+            assert!(command["commandWindows"].as_str().is_some());
         }
         fs::remove_dir_all(root).unwrap();
     }
@@ -825,5 +882,232 @@ mod tests {
         assert_eq!(removed["hooks"]["Stop"][0]["matcher"], "mine");
         assert_eq!(removed["hooks"]["Stop"][0]["hooks"], json!([]));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn mixed_groups_keep_unrelated_handlers_and_get_separate_matchers() {
+        let root = temp_dir("mixed-matchers");
+        fs::create_dir_all(&root).unwrap();
+        let config = root.join("hooks.json");
+        let owned = json!({
+            "type": "command",
+            "command": "old-helper --codex-halo --state-dir old-state"
+        });
+        let unrelated = json!({
+            "type": "command",
+            "command": "python3 ./mine.py"
+        });
+        write_config(
+            &config,
+            &json!({
+                "hooks": {
+                    "SessionStart": [{
+                        "matcher": "stale-start",
+                        "hooks": [owned.clone(), unrelated.clone()]
+                    }],
+                    "PreToolUse": [{
+                        "matcher": "stale-tool",
+                        "hooks": [owned.clone(), unrelated.clone()]
+                    }],
+                    "PreCompact": [{
+                        "matcher": "stale-compact",
+                        "hooks": [owned.clone(), unrelated.clone()]
+                    }],
+                    "UserPromptSubmit": [{
+                        "hooks": [owned, unrelated]
+                    }]
+                }
+            }),
+        );
+
+        install_hooks(&config, &root.join("helper"), &root.join("state")).unwrap();
+
+        let installed: Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
+        let cases = [
+            ("SessionStart", Some("startup|resume|clear|compact")),
+            ("PreToolUse", Some("")),
+            ("PreCompact", Some("manual|auto")),
+            ("UserPromptSubmit", None),
+        ];
+        for (event, matcher) in cases {
+            let groups = installed["hooks"][event].as_array().unwrap();
+            assert!(groups.iter().any(|group| {
+                group["hooks"].as_array().unwrap().iter().any(|handler| {
+                    handler["command"]
+                        .as_str()
+                        .is_some_and(|command| command.contains("--codex-halo"))
+                }) && match matcher {
+                    Some(value) => group["matcher"] == value,
+                    None => group.get("matcher").is_none(),
+                }
+            }));
+            assert_eq!(
+                groups[0]["hooks"][0]["command"], "python3 ./mine.py",
+                "{event}"
+            );
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn relative_paths_fail_without_mutating_config() {
+        let root = temp_dir("relative-paths");
+        fs::create_dir_all(&root).unwrap();
+        let config = root.join("hooks.json");
+        let original = serde_json::to_vec_pretty(&fixture()).unwrap();
+        fs::write(&config, &original).unwrap();
+
+        assert!(install_hooks(&config, Path::new("helper"), &root.join("state")).is_err());
+        assert!(install_hooks(&config, &root.join("helper"), Path::new("state")).is_err());
+        assert_eq!(fs::read(&config).unwrap(), original);
+        assert!(!fs::read_dir(&root)
+            .unwrap()
+            .filter_map(Result::ok)
+            .any(|entry| entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("hooks.json.bak.")));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_config_is_rejected_without_changing_link_or_target() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_dir("config-symlink");
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("target.json");
+        let link = root.join("hooks.json");
+        let original = serde_json::to_vec_pretty(&fixture()).unwrap();
+        fs::write(&target, &original).unwrap();
+        symlink(&target, &link).unwrap();
+
+        assert!(install_hooks(&link, &root.join("helper"), &root.join("state")).is_err());
+        assert!(remove_hooks(&link).is_err());
+        assert!(fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(fs::read(&target).unwrap(), original);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn nested_wrappers_are_not_owned_or_removed() {
+        let nested = json!({
+            "hooks": [{
+                "hooks": [{
+                    "type": "command",
+                    "command": "nested --codex-halo --state-dir state"
+                }]
+            }]
+        });
+        assert!(!is_owned_handler(&nested));
+
+        let root = temp_dir("nested-wrapper");
+        fs::create_dir_all(&root).unwrap();
+        let config = root.join("hooks.json");
+        write_config(
+            &config,
+            &json!({
+                "hooks": {
+                    "Stop": [nested]
+                }
+            }),
+        );
+        remove_hooks(&config).unwrap();
+        let after: Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
+        assert!(after["hooks"]["Stop"][0]["hooks"][0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap()
+            .contains("--codex-halo"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn posix_commands_quote_paths_with_shell_metacharacters() {
+        let root = temp_dir("posix-quoting");
+        fs::create_dir_all(&root).unwrap();
+        let config = root.join("hooks.json");
+        let helper = root.join("helper space/'quote'/$cash/`tick`;&|\\slash");
+        let state = root.join("state space/'quote'/$cash/`tick`;&|\\slash");
+        write_config(&config, &Value::Object(Default::default()));
+
+        install_hooks(&config, &helper, &state).unwrap();
+
+        let installed: Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
+        let command = installed["hooks"]["Stop"][0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap();
+        let quoted_helper = helper.to_string_lossy().replace('\'', "'\"'\"'");
+        let quoted_state = state.to_string_lossy().replace('\'', "'\"'\"'");
+        assert!(command.starts_with(&format!(
+            "'{}' --codex-halo --state-dir '{}'",
+            quoted_helper, quoted_state
+        )));
+        assert!(command.contains("'\"'\"'"));
+        assert!(command.contains("$cash"));
+        assert!(command.contains("`tick`"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn windows_argument_quoting_escapes_quotes_and_trailing_backslashes() {
+        let value = r#"C:\Program Files\Codex "Halo" $cash `tick`;&|\"#;
+        let quoted = quote_windows_arg(value);
+        assert!(quoted.starts_with('"'));
+        assert!(quoted.ends_with('"'));
+        assert!(quoted.contains(r#"\"Halo\""#));
+        assert!(quoted.contains("$cash"));
+        assert!(quoted.contains("`tick`;&|"));
+        assert!(quoted.trim_end_matches('"').ends_with("\\\\"));
+    }
+
+    #[test]
+    fn status_rejects_stale_or_malformed_owned_groups() {
+        let mutations: [(&str, fn(&mut Value)); 5] = [
+            ("wrong-matcher", |config| {
+                config["hooks"]["SessionStart"][0]["matcher"] = json!("stale");
+            }),
+            ("wrong-async", |config| {
+                config["hooks"]["Stop"][0]["hooks"][0]["async"] = json!(false);
+            }),
+            ("relative-helper", |config| {
+                config["hooks"]["Stop"][0]["hooks"][0]["command"] =
+                    json!("helper --codex-halo --state-dir '/absolute/state'");
+            }),
+            ("wrong-state", |config| {
+                config["hooks"]["Stop"][0]["hooks"][0]["command"] =
+                    json!("'/absolute/helper' --codex-halo --state-dir '/wrong/state'");
+            }),
+            ("missing-marker", |config| {
+                config["hooks"]["Stop"][0]["hooks"][0]["command"] =
+                    json!("'/absolute/helper' --state-dir '/absolute/state'");
+            }),
+        ];
+
+        for (name, mutate) in mutations {
+            let root = temp_dir(name);
+            fs::create_dir_all(&root).unwrap();
+            let config_path = root.join("hooks.json");
+            let helper = root.join("helper");
+            let state = root.join("state");
+            write_config(&config_path, &fixture());
+            fs::write(&helper, b"helper").unwrap();
+            install_hooks(&config_path, &helper, &state).unwrap();
+            let mut config: Value =
+                serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+            mutate(&mut config);
+            write_config(&config_path, &config);
+
+            assert_eq!(
+                get_hook_status(&config_path, &helper),
+                HookStatus::PartiallyInstalled,
+                "{name}"
+            );
+            fs::remove_dir_all(root).unwrap();
+        }
     }
 }
