@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Codex Halo Settings</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="settings-page">
+    <main class="settings-shell">
+      <header class="settings-header">
+        <h1>Codex Halo</h1>
+        <label class="switch-row" for="enabled">
+          <span>Overlay enabled</span>
+          <input id="enabled" name="enabled" type="checkbox" checked />
+        </label>
+      </header>
+
+      <form id="settings-form">
+        <fieldset>
+          <legend>Display</legend>
+          <label for="curve-id">Curve profile</label>
+          <select id="curve-id" name="curve_id">
+            <option value="rose-seven">Rose Seven</option>
+            <option value="lissajous-drift">Lissajous Drift</option>
+            <option value="spiral-search">Spiral Search</option>
+            <option value="fourier-flow">Fourier Flow</option>
+          </select>
+
+          <label for="opacity">Opacity</label>
+          <input id="opacity" name="opacity" type="range" min="0.1" max="1" step="0.01" value="1" />
+
+          <div class="two-column">
+            <label for="offset-x">Offset X</label>
+            <label for="offset-y">Offset Y</label>
+            <input id="offset-x" name="offset_x" type="number" value="28" />
+            <input id="offset-y" name="offset_y" type="number" value="140" />
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Renderer</legend>
+          <div class="two-column">
+            <label for="particle-count">Particle count</label>
+            <label for="trail-span">Trail span</label>
+            <input id="particle-count" name="particle_count" type="number" min="24" max="140" value="64" />
+            <input id="trail-span" name="trail_span" type="number" min="0.12" max="0.68" step="0.01" value="0.4" />
+            <label for="duration-ms">Loop duration (ms)</label>
+            <label for="pulse-duration-ms">Pulse duration (ms)</label>
+            <input id="duration-ms" name="duration_ms" type="number" min="1" value="420" />
+            <input id="pulse-duration-ms" name="pulse_duration_ms" type="number" min="1" value="1200" />
+            <label for="rotation-duration-ms">Rotation duration (ms)</label>
+            <label for="stroke-width">Stroke width</label>
+            <input id="rotation-duration-ms" name="rotation_duration_ms" type="number" min="1" value="4200" />
+            <input id="stroke-width" name="stroke_width" type="number" min="2.5" max="7.5" step="0.1" value="4" />
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Hooks</legend>
+          <div class="button-row">
+            <button id="install-hooks" type="button">Install hooks</button>
+            <button id="remove-hooks" type="button">Remove hooks</button>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Simulate state</legend>
+          <div class="state-grid">
+            <button type="button" data-state="idle">Idle</button>
+            <button type="button" data-state="thinking">Thinking</button>
+            <button type="button" data-state="executing">Executing</button>
+            <button type="button" data-state="input_needed">Input needed</button>
+            <button type="button" data-state="completed">Completed</button>
+            <button type="button" data-state="compacting">Compacting</button>
+          </div>
+        </fieldset>
+
+        <label class="switch-row" for="start-at-login">
+          <span>Start at login</span>
+          <input id="start-at-login" name="start_at_login" type="checkbox" />
+        </label>
+      </form>
+    </main>
+  </body>
+</html>

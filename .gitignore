@@ -1,0 +1,6 @@
+src-tauri/target/
+dist/
+.DS_Store
+state/
+settings-export*.json
+*.local.json

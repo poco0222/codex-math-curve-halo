@@ -1,0 +1,9 @@
+{
+  "name": "codex-halo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check:renderer": "node scripts/check-renderer.mjs",
+    "tauri": "cargo tauri"
+  }
+}
