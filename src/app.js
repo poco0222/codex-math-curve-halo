@@ -17,6 +17,7 @@ export const DEFAULT_APP_SETTINGS = Object.freeze({
   rotation_duration_ms: 4200,
   stroke_width: 4,
   start_at_login: false,
+  language: 'en',
 });
 
 function errorCategory(error) {

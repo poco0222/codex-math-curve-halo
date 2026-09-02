@@ -128,7 +128,9 @@ test('renderer startup uses exact frontend defaults after get_settings fails', a
     rotation_duration_ms: 4200,
     stroke_width: 4,
     start_at_login: false,
+    language: 'en',
   });
+  assert.equal(DEFAULT_APP_SETTINGS.language, 'en');
   assert.match(appSource, /const settings = await invokeCommand\('get_settings'\) \?\? DEFAULT_APP_SETTINGS/);
   assert.match(appSource, /window\.setInterval\(displayBridge\.pollDisplayState, POLL_INTERVAL_MS\)/);
   assert.match(settingsSource, /applySettings\(settings\.ok \? settings\.value : DEFAULT_APP_SETTINGS\)/);
