@@ -1,7 +1,12 @@
 # Codex Halo
 
+[简体中文](README.zh-CN.md)
+
 Codex Halo is a small Tauri desktop companion for showing Codex lifecycle
 states as a transparent, click-through mathematical halo.
+
+The settings window supports `English` and `简体中文`, defaults to `English`,
+and stores the selection in local app settings.
 
 ## Run locally
 
@@ -25,16 +30,19 @@ cargo tauri build --target aarch64-apple-darwin
 ## Codex hooks
 
 Use **Install hooks** in settings to add the owned lifecycle commands to the
-user-level Codex hooks configuration. Codex may require the user to review and
-trust new or changed hooks. **Remove hooks** deletes only Codex Halo entries.
+user-level Codex hooks configuration at `~/.codex/hooks.json`. Codex may require
+the user to review and trust new or changed hooks. **Remove hooks** deletes only
+Codex Halo entries.
 Installed commands call the helper copied to the app-data directory and pass
 that app's `state` directory with `--state-dir`; updates replace the helper at
 the same path. Installing hooks never auto-trusts them.
 
-Owned lifecycle hooks run synchronously so state changes keep Codex event order.
-`SessionStart` with `source: "compact"` maps to `thinking`; the source field is
-not stored. State simulation uses the Rust reducer and does not add to the real
-session count.
+The owned `SessionStart`, `Stop`, and `SessionEnd` hooks run synchronously so
+state changes keep Codex event order. `SessionStart` with `source: "compact"`
+maps to `thinking`; the source field is not stored. State simulation uses the
+Rust reducer and does not add to the real session count.
+
+## Settings and diagnostics
 
 Settings includes a local **Export diagnostics** control. It downloads
 `codex-halo-diagnostics.json` with only the current state name and timestamp;
@@ -49,10 +57,11 @@ runner. macOS checks do not establish Windows runtime behavior.
 
 ## Privacy
 
-The hook helper reads only the session identifier and lifecycle event name. It
-stores only hashed session state, state names, and timestamps. Prompts,
-transcripts, tool data, model names, paths, network data, telemetry, and cloud
-sync are not used.
+The hook helper reads `session_id` and the lifecycle event name from hook input,
+plus the optional `source` field in `SessionStart` input to identify
+`source: "compact"`. It stores only a hash of the session identifier, state
+names, and timestamps. Prompts, transcripts, tool data, model names, paths,
+network data, telemetry, and cloud sync are not used.
 
 ## Attribution
 

@@ -1,34 +1,28 @@
 import { formatFormula, getCurveProfile } from './curves.js';
 import { createSerialTaskQueue, DEFAULT_APP_SETTINGS, formatSetupError } from './app.js';
+import {
+  DEFAULT_LANGUAGE,
+  getHookLabel,
+  getStateLabel,
+  getText,
+  localeForLanguage,
+  normalizeLanguage,
+} from './i18n.js';
 
 const invoke = window.__TAURI__?.core?.invoke ?? window.__TAURI__?.invoke;
 const hookStatus = document.getElementById('hook-status');
 const diagnostics = document.getElementById('diagnostics');
 const formula = document.getElementById('formula');
-let setupError = '';
+let currentLanguage = DEFAULT_LANGUAGE;
+let currentHookStatus = 'loading';
+let setupError = null;
 let currentDisplayState = { state: 'idle', updated_at_ms: 0 };
 const saveSettings = createSerialTaskQueue();
 
-const stateLabels = {
-  idle: 'Idle',
-  thinking: 'Thinking',
-  executing: 'Executing',
-  input_needed: 'Input needed',
-  completed: 'Completed',
-  compacting: 'Compacting',
-};
-
-const hookLabels = {
-  installed: 'Installed',
-  missing: 'Missing',
-  invalid: 'Needs repair',
-  partially_installed: 'Partially installed',
-};
-
 function showSetupError(command, error) {
-  setupError = formatSetupError(command, error);
+  setupError = { command, error };
   renderDiagnostics();
-  console.warn(`Codex Halo: ${setupError}`);
+  console.warn(`Codex Halo: ${formatSetupError(command, error)}`);
 }
 
 async function invokeCommand(command, args) {
@@ -43,7 +37,7 @@ async function invokeCommand(command, args) {
 }
 
 function clearSetupError() {
-  setupError = '';
+  setupError = null;
 }
 
 function control(key) {
@@ -65,17 +59,22 @@ function readSettings() {
     rotation_duration_ms: number('rotation_duration_ms'),
     stroke_width: number('stroke_width'),
     start_at_login: control('start_at_login').checked,
+    language: control('language').value,
   };
 }
 
 function applySettings(settings) {
   if (!settings) return;
+  const language = normalizeLanguage(settings.language);
+  control('language').value = language;
   for (const [key, value] of Object.entries(settings)) {
+    if (key === 'language') continue;
     const field = control(key);
     if (!field || document.activeElement === field) continue;
     if (field.type === 'checkbox') field.checked = Boolean(value);
     else field.value = String(value);
   }
+  renderLanguage(language);
   renderFormula(settings);
 }
 
@@ -85,7 +84,15 @@ function renderFormula(settings = readSettings()) {
 }
 
 function renderHookStatus(status) {
-  hookStatus.textContent = `Hooks: ${hookLabels[status] ?? 'Unavailable'}`;
+  currentHookStatus = status;
+  const section = hookStatus.querySelector('[data-i18n="settings.hooks"]');
+  const label = hookStatus.querySelector('[data-hook-status-label]');
+  if (section && label) {
+    section.textContent = getText(currentLanguage, 'settings.hooks');
+    label.textContent = getHookLabel(currentLanguage, status);
+    return;
+  }
+  hookStatus.textContent = `${getText(currentLanguage, 'settings.hooks')}: ${getHookLabel(currentLanguage, status)}`;
 }
 
 function renderDiagnostics(displayState = {}) {
@@ -93,13 +100,32 @@ function renderDiagnostics(displayState = {}) {
     state: displayState.state ?? currentDisplayState.state,
     updated_at_ms: displayState.updated_at_ms ?? currentDisplayState.updated_at_ms,
   };
-  const state = stateLabels[currentDisplayState.state] ?? 'Idle';
+  const state = getStateLabel(currentLanguage, currentDisplayState.state);
   const updatedAt = Number(currentDisplayState.updated_at_ms);
   const timestamp = Number.isFinite(updatedAt) && updatedAt > 0
-    ? new Date(updatedAt).toLocaleString()
-    : 'never';
-  const detail = `State: ${state} | Last event: ${timestamp}`;
-  diagnostics.textContent = setupError ? `${detail} | Setup error: ${setupError}` : detail;
+    ? new Date(updatedAt).toLocaleString(localeForLanguage(currentLanguage))
+    : getText(currentLanguage, 'settings.diagnosticsNever');
+  const detail = `${getText(currentLanguage, 'settings.diagnosticsState')}: ${state} | ${getText(currentLanguage, 'settings.diagnosticsLastEvent')}: ${timestamp}`;
+  if (!setupError) {
+    diagnostics.textContent = detail;
+    return;
+  }
+  const formattedError = formatSetupError(setupError.command, setupError.error, currentLanguage);
+  diagnostics.textContent = `${detail} | ${getText(currentLanguage, 'settings.diagnosticsSetupError')}: ${formattedError}`;
+}
+
+function renderLanguage(language) {
+  currentLanguage = normalizeLanguage(language);
+  document.documentElement.lang = currentLanguage;
+  document.title = getText(currentLanguage, 'settings.title');
+  for (const element of document.querySelectorAll('[data-i18n]')) {
+    element.textContent = getText(currentLanguage, element.dataset.i18n);
+  }
+  for (const element of document.querySelectorAll('[data-i18n-aria-label]')) {
+    element.setAttribute('aria-label', getText(currentLanguage, element.dataset.i18nAriaLabel));
+  }
+  renderHookStatus(currentHookStatus);
+  renderDiagnostics();
 }
 
 async function refreshHookStatus() {
@@ -154,6 +180,7 @@ for (const field of document.querySelectorAll('input, select')) {
   const event = field.type === 'number' || field.type === 'range' ? 'input' : 'change';
   field.addEventListener(event, saveCurrentSettings);
   if (field.id === 'curve-id') field.addEventListener('change', () => renderFormula());
+  if (field.id === 'language') field.addEventListener('change', () => renderLanguage(field.value));
 }
 
 document.getElementById('install-hooks').addEventListener('click', async () => {

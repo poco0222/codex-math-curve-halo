@@ -174,10 +174,15 @@ pub struct AppSettings {
     pub rotation_duration_ms: f32,
     pub stroke_width: f32,
     pub start_at_login: bool,
+    pub language: String,
 }
 
 impl AppSettings {
     pub fn normalize(mut self) -> Result<Self, String> {
+        if self.language != "en" && self.language != "zh-CN" {
+            self.language = "en".to_owned();
+        }
+
         if ![
             self.opacity,
             self.trail_span,
@@ -217,6 +222,7 @@ impl Default for AppSettings {
             rotation_duration_ms: 4_200.0,
             stroke_width: 4.0,
             start_at_login: false,
+            language: "en".to_owned(),
         }
     }
 }
@@ -445,6 +451,26 @@ mod tests {
     }
 
     #[test]
+    fn defaults_to_english_language() {
+        assert_eq!(AppSettings::default().language, "en");
+    }
+
+    #[test]
+    fn normalizes_unsupported_language_to_english() {
+        let mut settings = AppSettings::default();
+        settings.language = "fr".to_owned();
+
+        assert_eq!(settings.normalize().unwrap().language, "en");
+    }
+
+    #[test]
+    fn missing_language_uses_the_english_default() {
+        let settings: AppSettings = serde_json::from_str("{}").unwrap();
+
+        assert_eq!(settings.language, "en");
+    }
+
+    #[test]
     fn rejects_non_finite_settings_numbers() {
         let mut settings = AppSettings::default();
         settings.trail_span = f32::NAN;
@@ -468,6 +494,7 @@ mod tests {
             "rotation_duration_ms",
             "stroke_width",
             "start_at_login",
+            "language",
         ] {
             assert!(value.get(key).is_some(), "missing {key}");
         }

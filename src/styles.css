@@ -70,6 +70,18 @@ body {
   margin-bottom: 12px;
 }
 
+.language-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.language-row select {
+  min-width: 120px;
+}
+
 h1 {
   margin: 0;
   font-size: 20px;

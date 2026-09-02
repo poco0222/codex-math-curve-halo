@@ -1,8 +1,10 @@
 import { createHaloRenderer } from './halo.js';
+import { formatSetupError } from './i18n.js';
+
+export { formatSetupError };
 
 const POLL_INTERVAL_MS = 150;
 const SIMULATION_DURATION_MS = 420;
-const SAFE_SETUP_ERROR = /^start-at-login:(permission|launch-agent|registry|unsupported|reconciliation)$/;
 
 export const DEFAULT_APP_SETTINGS = Object.freeze({
   enabled: true,
@@ -17,6 +19,7 @@ export const DEFAULT_APP_SETTINGS = Object.freeze({
   rotation_duration_ms: 4200,
   stroke_width: 4,
   start_at_login: false,
+  language: 'en',
 });
 
 function errorCategory(error) {
@@ -82,11 +85,6 @@ export function createDisplayStateBridge(invokeCommand, applyDisplayState, optio
       return requestDisplayState('get_display_state', undefined, options.supersedeSimulation === true);
     },
   };
-}
-
-export function formatSetupError(command, error) {
-  const category = typeof error === 'string' ? error.match(SAFE_SETUP_ERROR)?.[1] : null;
-  return category ? `start-at-login setup failed (${category})` : `${command} failed`;
 }
 
 async function boot() {
