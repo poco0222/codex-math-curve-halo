@@ -1,3 +1,4 @@
+use std::fmt;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -8,15 +9,69 @@ pub fn configure_overlay(window: &WebviewWindow) -> tauri::Result<()> {
     window.set_ignore_cursor_events(true)
 }
 
-pub fn set_start_at_login<R: Runtime>(app: &AppHandle<R>, enabled: bool) -> Result<(), String> {
-    if enabled {
-        app.autolaunch()
-            .enable()
-            .map_err(|_| "Codex Halo start-at-login setup failed".to_owned())
+pub fn set_overlay_visibility(window: &WebviewWindow, visible: bool) -> tauri::Result<()> {
+    if visible {
+        window.show()
     } else {
-        app.autolaunch()
-            .disable()
-            .map_err(|_| "Codex Halo start-at-login setup failed".to_owned())
+        window.hide()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AutostartError {
+    Permission,
+    LaunchAgent,
+    Registry,
+    Unsupported,
+}
+
+impl fmt::Display for AutostartError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Permission => "start-at-login:permission",
+            Self::LaunchAgent => "start-at-login:launch-agent",
+            Self::Registry => "start-at-login:registry",
+            Self::Unsupported => "start-at-login:unsupported",
+        })
+    }
+}
+
+fn autostart_error<E: fmt::Display>(error: E) -> AutostartError {
+    let detail = error.to_string().to_ascii_lowercase();
+    if detail.contains("permission denied") || detail.contains("access is denied") {
+        return AutostartError::Permission;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        AutostartError::LaunchAgent
+    }
+    #[cfg(target_os = "windows")]
+    {
+        AutostartError::Registry
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        AutostartError::Unsupported
+    }
+}
+
+pub fn set_start_at_login<R: Runtime>(
+    app: &AppHandle<R>,
+    enabled: bool,
+) -> Result<(), AutostartError> {
+    if !enabled {
+        match app.autolaunch().is_enabled() {
+            Ok(false) => return Ok(()),
+            Err(error) => return Err(autostart_error(error)),
+            Ok(true) => {}
+        }
+    }
+
+    if enabled {
+        app.autolaunch().enable().map_err(autostart_error)
+    } else {
+        app.autolaunch().disable().map_err(autostart_error)
     }
 }
 
@@ -55,6 +110,27 @@ pub fn atomic_replace(source: &Path, target: &Path) -> io::Result<()> {
 
     #[cfg(not(windows))]
     fs::rename(source, target)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn autostart_errors_have_stable_redacted_categories() {
+        assert_eq!(
+            AutostartError::Permission.to_string(),
+            "start-at-login:permission"
+        );
+        assert_eq!(
+            AutostartError::LaunchAgent.to_string(),
+            "start-at-login:launch-agent"
+        );
+        assert_eq!(
+            AutostartError::Registry.to_string(),
+            "start-at-login:registry"
+        );
+    }
 }
 
 pub fn position_overlay(

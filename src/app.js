@@ -1,6 +1,8 @@
 import { createHaloRenderer } from './halo.js';
 
 const POLL_INTERVAL_MS = 150;
+const SIMULATION_DURATION_MS = 420;
+const SAFE_SETUP_ERROR = /^start-at-login:(permission|launch-agent|registry|unsupported|reconciliation)$/;
 
 function errorCategory(error) {
   if (error?.name === 'AbortError') return 'abort';
@@ -25,25 +27,42 @@ export function createDisplayStatePoller(invokeCommand, applyDisplayState) {
   return createDisplayStateBridge(invokeCommand, applyDisplayState).pollDisplayState;
 }
 
-export function createDisplayStateBridge(invokeCommand, applyDisplayState) {
+export function createDisplayStateBridge(invokeCommand, applyDisplayState, options = {}) {
   let latestGeneration = 0;
+  let simulatedUntil = 0;
+  const now = options.now ?? (() => globalThis.performance?.now?.() ?? Date.now());
+  const simulationDurationMs = options.simulationDurationMs ?? SIMULATION_DURATION_MS;
 
-  async function requestDisplayState(command, args) {
+  async function requestDisplayState(command, args, supersedeSimulation = false) {
     const generation = ++latestGeneration;
     const displayState = await invokeCommand(command, args);
-    if (generation === latestGeneration) applyDisplayState(displayState);
+    if (generation === latestGeneration && (supersedeSimulation || now() >= simulatedUntil)) {
+      simulatedUntil = 0;
+      applyDisplayState(displayState);
+    }
     return displayState;
   }
 
   return {
     showDisplayState(displayState) {
       latestGeneration += 1;
+      simulatedUntil = 0;
       applyDisplayState(displayState);
     },
-    pollDisplayState() {
-      return requestDisplayState('get_display_state');
+    showSimulatedDisplayState(displayState) {
+      latestGeneration += 1;
+      simulatedUntil = now() + simulationDurationMs;
+      applyDisplayState(displayState);
+    },
+    pollDisplayState(options = {}) {
+      return requestDisplayState('get_display_state', undefined, options.supersedeSimulation === true);
     },
   };
+}
+
+export function formatSetupError(command, error) {
+  const category = typeof error === 'string' ? error.match(SAFE_SETUP_ERROR)?.[1] : null;
+  return category ? `start-at-login setup failed (${category})` : `${command} failed`;
 }
 
 function boot() {
@@ -66,14 +85,19 @@ function boot() {
   const listen = window.__TAURI__?.event?.listen;
   if (typeof listen === 'function') {
     listen('display-state', ({ payload }) => displayBridge.showDisplayState(payload)).catch(() => {});
+    listen('simulated-display-state', ({ payload }) => displayBridge.showSimulatedDisplayState(payload)).catch(() => {});
     listen('settings-changed', ({ payload }) => applySettings(payload)).catch(() => {});
   }
 
   if (renderer) {
-    renderer.start();
-    invokeCommand('get_settings').then(applySettings);
-    displayBridge.pollDisplayState();
-    window.setInterval(displayBridge.pollDisplayState, POLL_INTERVAL_MS);
+    invokeCommand('get_settings').then(async (settings) => {
+      if (!settings) return;
+      applySettings(settings);
+      renderer.start();
+      await invokeCommand('set_overlay_visible', { visible: settings.enabled });
+      displayBridge.pollDisplayState();
+      window.setInterval(displayBridge.pollDisplayState, POLL_INTERVAL_MS);
+    });
   }
 }
 

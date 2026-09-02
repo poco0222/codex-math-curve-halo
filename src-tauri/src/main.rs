@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 
 const SETTINGS_FILENAME: &str = "settings.json";
@@ -212,8 +212,35 @@ fn apply_settings_to_overlay(app: &AppHandle, settings: &AppSettings) {
         if platform::position_overlay(&overlay, settings.offset_x, settings.offset_y).is_err() {
             eprintln!("Codex Halo: unable to apply overlay position");
         }
+        if platform::set_overlay_visibility(&overlay, settings.enabled).is_err() {
+            eprintln!("Codex Halo: unable to apply overlay visibility");
+        }
     }
     let _ = app.emit_to("main", "settings-changed", settings.clone());
+}
+
+fn save_settings_transaction<F, G>(
+    current: &AppSettings,
+    next: &AppSettings,
+    mut write_settings: F,
+    mut set_autostart: G,
+) -> Result<(), String>
+where
+    F: FnMut(&AppSettings) -> Result<(), String>,
+    G: FnMut(bool) -> Result<(), String>,
+{
+    if current.start_at_login == next.start_at_login {
+        return write_settings(next);
+    }
+
+    set_autostart(next.start_at_login)?;
+    if let Err(error) = write_settings(next) {
+        if set_autostart(current.start_at_login).is_err() {
+            return Err("start-at-login:reconciliation".to_owned());
+        }
+        return Err(error);
+    }
+    Ok(())
 }
 
 fn read_snapshots(path: &Path) -> io::Result<Vec<Snapshot>> {
@@ -256,10 +283,12 @@ fn save_settings(app: AppHandle, settings: AppSettings) -> Result<(), String> {
     let path = app_config_path(&app)?;
     let current = load_settings_file(&path)?;
 
-    if current.start_at_login != settings.start_at_login {
-        platform::set_start_at_login(&app, settings.start_at_login)?;
-    }
-    write_settings_file(&path, &settings)?;
+    save_settings_transaction(
+        &current,
+        &settings,
+        |value| write_settings_file(&path, value),
+        |enabled| platform::set_start_at_login(&app, enabled).map_err(|error| error.to_string()),
+    )?;
     apply_settings_to_overlay(&app, &settings);
     Ok(())
 }
@@ -270,7 +299,7 @@ fn simulate_state(app: AppHandle, state: HaloState) -> Result<DisplayState, Stri
         state,
         ..DisplayState::idle()
     };
-    let _ = app.emit_to("main", "display-state", display.clone());
+    let _ = app.emit_to("main", "simulated-display-state", display.clone());
     Ok(display)
 }
 
@@ -328,6 +357,15 @@ fn remove_hook_artifacts(helper_path: &Path, state_dir: &Path) -> io::Result<()>
 #[tauri::command]
 fn open_settings(app: AppHandle) -> Result<(), String> {
     show_settings(&app)
+}
+
+#[tauri::command]
+fn set_overlay_visible(app: AppHandle, visible: bool) -> Result<(), String> {
+    let overlay = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Codex Halo overlay window not found".to_owned())?;
+    platform::set_overlay_visibility(&overlay, visible)
+        .map_err(|_| "Codex Halo overlay visibility could not be changed".to_owned())
 }
 
 #[tauri::command]
@@ -534,18 +572,28 @@ fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
         .skip_taskbar(true)
         .shadow(false)
         .resizable(false)
-        .visible(true)
+        .visible(false)
         .build()?;
     platform::configure_overlay(&overlay)?;
     if let Err(error) = platform::position_overlay(&overlay, settings.offset_x, settings.offset_y) {
         eprintln!("Codex Halo: unable to position overlay: {error}");
     }
 
-    WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
-        .title("Codex Halo Settings")
-        .inner_size(420.0, 680.0)
-        .visible(false)
-        .build()?;
+    let settings_window =
+        WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
+            .title("Codex Halo Settings")
+            .inner_size(420.0, 680.0)
+            .visible(false)
+            .build()?;
+    settings_window.on_window_event({
+        let settings_window = settings_window.clone();
+        move |event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = settings_window.hide();
+            }
+        }
+    });
 
     build_tray(app, settings.enabled)?;
 
@@ -571,7 +619,8 @@ fn main() {
             remove_hooks,
             get_hook_status,
             open_settings,
-            reset_position
+            reset_position,
+            set_overlay_visible
         ])
         .setup(build_windows);
 
@@ -779,5 +828,51 @@ mod scan_tests {
                 .is_some_and(|extension| extension == "invalid")));
         assert!(!fs::read_to_string(&path).unwrap().contains("prompt"));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn settings_transaction_rolls_back_autostart_when_settings_write_fails() {
+        let current = AppSettings::default();
+        let mut next = current.clone();
+        next.start_at_login = true;
+        let mut autostart_changes = Vec::new();
+
+        let result = save_settings_transaction(
+            &current,
+            &next,
+            |_| Err("settings write failed".to_owned()),
+            |enabled| {
+                autostart_changes.push(enabled);
+                Ok(())
+            },
+        );
+
+        assert_eq!(result, Err("settings write failed".to_owned()));
+        assert_eq!(autostart_changes, [true, false]);
+    }
+
+    #[test]
+    fn settings_transaction_reports_reconciliation_failure() {
+        let current = AppSettings::default();
+        let mut next = current.clone();
+        next.start_at_login = true;
+        let mut autostart_changes = Vec::new();
+
+        let result = save_settings_transaction(
+            &current,
+            &next,
+            |_| Err("settings write failed".to_owned()),
+            |enabled| {
+                autostart_changes.push(enabled);
+                if enabled {
+                    Ok(())
+                } else {
+                    Err("rollback failed".to_owned())
+                }
+            },
+        );
+
+        assert_eq!(result, Err("start-at-login:reconciliation".to_owned()));
+        assert_eq!(autostart_changes, [true, false]);
     }
 }

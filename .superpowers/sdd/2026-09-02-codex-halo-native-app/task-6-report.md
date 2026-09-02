@@ -113,3 +113,75 @@ modify `ChatGPT.app` or private desktop-app data.
 Only Task 6 source, UI, configuration, icon, README, and focused test files are
 included in the commit. Cargo/Tauri generated `Cargo.lock` and `src-tauri/gen`
 files were removed from the working tree and are not part of the change.
+
+## Fix Round 1/5 Evidence
+
+Date: 2026-09-02
+Original commit: `e8a505a`
+
+All five blocking findings were addressed in this fix round.
+
+1. Simulator state now has a `420ms` hold. Scheduled `150ms` polls cannot
+   overwrite it during the renderer morph window. A real display event clears
+   the hold, and an explicit superseding poll remains available. The
+   deterministic test covers simulate -> next scheduled poll -> end of morph
+   window.
+2. The settings window intercepts `CloseRequested`, calls
+   `api.prevent_close()`, and hides the existing window. It can be reopened by
+   tray Open Settings or the single-instance callback.
+3. Settings/autostart writes now use a transaction helper. Autostart changes
+   are rolled back when `settings.json` writing fails; rollback failure returns
+   the fixed `start-at-login:reconciliation` category. Windows disable first
+   checks `is_enabled()` and treats an absent Run value as already disabled.
+4. Autostart failures use fixed categories: `permission`, `launch-agent`,
+   `registry`, `unsupported`, and `reconciliation`. `settings.js` renders only
+   the category, never the raw OS error, path, or payload.
+5. The overlay starts with native visibility false. The renderer applies
+   persisted settings, starts, and then calls `set_overlay_visible`; disabled
+   startup keeps the native window hidden and does not render a visible first
+   frame.
+
+Focused RED/GREEN evidence:
+
+- The simulator hold test first failed because
+  `showSimulatedDisplayState` was absent, then passed.
+- The close/reopen source check first failed because no close handler existed,
+  then passed after the hide handler was added.
+- The persistence transaction tests first failed because
+  `save_settings_transaction` was absent, then passed with rollback and
+  reconciliation cases.
+- The autostart category test first failed because `AutostartError` was absent,
+  then passed with fixed redacted categories.
+- The startup visibility source check first failed because `set_overlay_visible`
+  was absent, then passed after hidden-first startup wiring.
+
+Fix-round verification:
+
+- `cargo test --manifest-path src-tauri/Cargo.toml`: `46 + 11 + 5` tests passed.
+- `node --test src/app.test.mjs scripts/build-sidecar.test.mjs`: `8` tests
+  passed.
+- `node --check src/app.js`
+- `node --check src/settings.js`
+- `npm run check:renderer`: `PASS (4 profiles)`.
+- `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`
+- `python3 -m json.tool src-tauri/tauri.conf.json`
+- `python3 -m json.tool src-tauri/capabilities/default.json`
+- `git diff --check`
+- `cargo build --manifest-path src-tauri/Cargo.toml`: passed.
+
+Fix-round macOS runtime evidence:
+
+- Latest compiled binary showed `Codex Halo Settings` after a second launch.
+- Command-W closed settings while preserving the single `Codex Halo` overlay.
+- A third launch showed `Codex Halo Settings` again, proving reopen behavior.
+- An isolated HOME with persisted `enabled:false` produced zero windows after
+  startup, proving the native overlay stayed hidden.
+
+Environment boundaries:
+
+- Windows runtime: `NOT RUN`.
+- Windows cross-target sidecar build: `NOT RUN` because the host lacks
+  `x86_64-w64-mingw32-dlltool`.
+- Actual Windows Registry/LaunchAgent execution and live Codex integration:
+  `NOT RUN`.
+- The no-op `tauri-build` features edit was not touched in this fix round.

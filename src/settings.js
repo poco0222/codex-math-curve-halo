@@ -1,4 +1,5 @@
 import { formatFormula, getCurveProfile } from './curves.js';
+import { formatSetupError } from './app.js';
 
 const invoke = window.__TAURI__?.core?.invoke ?? window.__TAURI__?.invoke;
 const hookStatus = document.getElementById('hook-status');
@@ -22,8 +23,8 @@ const hookLabels = {
   partially_installed: 'Partially installed',
 };
 
-function showSetupError(command) {
-  setupError = `${command} failed`;
+function showSetupError(command, error) {
+  setupError = formatSetupError(command, error);
   renderDiagnostics();
   console.warn(`Codex Halo: ${setupError}`);
 }
@@ -33,8 +34,8 @@ async function invokeCommand(command, args) {
   try {
     const value = await invoke(command, args);
     return { ok: true, value };
-  } catch (_) {
-    showSetupError(command);
+  } catch (error) {
+    showSetupError(command, error);
     return { ok: false, value: null };
   }
 }
