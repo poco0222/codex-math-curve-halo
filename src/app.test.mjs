@@ -70,6 +70,17 @@ test('settings close requests are intercepted and hidden', async () => {
   assert.match(source, /settings_window\.hide\(\)/);
 });
 
+test('native menu refresh follows the persisted language setting', async () => {
+  const source = await readFile(new URL('../src-tauri/src/main.rs', import.meta.url), 'utf8');
+
+  assert.match(source, /struct TrayMenuItems/);
+  assert.match(source, /tray_menu: Mutex<Option<TrayMenuItems>>/);
+  assert.match(source, /set_text\(/);
+  assert.match(source, /settings_window\.set_title/);
+  assert.match(source, /settings\.language/);
+  assert.match(source, /打开设置/);
+});
+
 test('disabled overlay startup waits for settings before showing or polling', async () => {
   const mainSource = await readFile(new URL('../src-tauri/src/main.rs', import.meta.url), 'utf8');
   const appSource = await readFile(new URL('./app.js', import.meta.url), 'utf8');

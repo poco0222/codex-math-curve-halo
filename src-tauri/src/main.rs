@@ -25,6 +25,23 @@ struct ReducerRuntimeState {
     scan_in_progress: AtomicBool,
     scan_epoch: AtomicU64,
     settings_transaction: Mutex<()>,
+    tray_menu: Mutex<Option<TrayMenuItems>>,
+}
+
+#[derive(Clone)]
+struct TrayMenuItems {
+    open_settings: MenuItem<tauri::Wry>,
+    toggle_overlay: MenuItem<tauri::Wry>,
+    install_hooks: MenuItem<tauri::Wry>,
+    remove_hooks: MenuItem<tauri::Wry>,
+    simulate_idle: MenuItem<tauri::Wry>,
+    simulate_thinking: MenuItem<tauri::Wry>,
+    simulate_executing: MenuItem<tauri::Wry>,
+    simulate_input_needed: MenuItem<tauri::Wry>,
+    simulate_completed: MenuItem<tauri::Wry>,
+    simulate_compacting: MenuItem<tauri::Wry>,
+    reset_position: MenuItem<tauri::Wry>,
+    quit: MenuItem<tauri::Wry>,
 }
 
 impl ReducerRuntimeState {
@@ -269,6 +286,20 @@ fn apply_settings_to_overlay(app: &AppHandle, settings: &AppSettings) {
         }
         if platform::set_overlay_visibility(&overlay, settings.enabled).is_err() {
             eprintln!("Codex Halo: unable to apply overlay visibility");
+        }
+    }
+    let tray_menu = app
+        .state::<ReducerRuntimeState>()
+        .tray_menu
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    if let Some(items) = tray_menu.as_ref() {
+        update_tray_menu(items, settings);
+    }
+    if let Some(settings_window) = app.get_webview_window("settings") {
+        if let Err(error) = settings_window.set_title(settings_window_title(&settings.language)) {
+            eprintln!("Codex Halo: unable to update settings window title: {error}");
         }
     }
     for target in ["main", "settings"] {
@@ -538,90 +569,224 @@ where
     true
 }
 
-fn build_tray(app: &mut tauri::App, _enabled: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let open_settings =
-        MenuItem::with_id(app, "open-settings", "Open Settings", true, None::<&str>)?;
-    let toggle_overlay_item = MenuItem::with_id(
-        app,
-        "toggle-overlay",
-        "Enable/disable overlay",
-        true,
-        None::<&str>,
-    )?;
+fn is_simplified_chinese(language: &str) -> bool {
+    language == "zh-CN"
+}
+
+fn settings_window_title(language: &str) -> &'static str {
+    if is_simplified_chinese(language) {
+        "Codex Halo 设置"
+    } else {
+        "Codex Halo Settings"
+    }
+}
+
+fn update_tray_menu(items: &TrayMenuItems, settings: &AppSettings) {
+    let chinese = is_simplified_chinese(&settings.language);
+    let toggle_overlay = match (chinese, settings.enabled) {
+        (true, true) => "禁用叠加层",
+        (true, false) => "启用叠加层",
+        (false, true) => "Disable overlay",
+        (false, false) => "Enable overlay",
+    };
+    let labels = [
+        (
+            &items.open_settings,
+            if chinese {
+                "打开设置"
+            } else {
+                "Open Settings"
+            },
+        ),
+        (&items.toggle_overlay, toggle_overlay),
+        (
+            &items.install_hooks,
+            if chinese {
+                "安装/修复 Codex hooks"
+            } else {
+                "Install/repair Codex hooks"
+            },
+        ),
+        (
+            &items.remove_hooks,
+            if chinese {
+                "移除 Codex Halo hooks"
+            } else {
+                "Remove Codex Halo hooks"
+            },
+        ),
+        (
+            &items.simulate_idle,
+            if chinese {
+                "模拟空闲"
+            } else {
+                "Simulate Idle"
+            },
+        ),
+        (
+            &items.simulate_thinking,
+            if chinese {
+                "模拟思考"
+            } else {
+                "Simulate Thinking"
+            },
+        ),
+        (
+            &items.simulate_executing,
+            if chinese {
+                "模拟执行"
+            } else {
+                "Simulate Executing"
+            },
+        ),
+        (
+            &items.simulate_input_needed,
+            if chinese {
+                "模拟需要输入"
+            } else {
+                "Simulate Input needed"
+            },
+        ),
+        (
+            &items.simulate_completed,
+            if chinese {
+                "模拟已完成"
+            } else {
+                "Simulate Completed"
+            },
+        ),
+        (
+            &items.simulate_compacting,
+            if chinese {
+                "模拟压缩"
+            } else {
+                "Simulate Compacting"
+            },
+        ),
+        (
+            &items.reset_position,
+            if chinese {
+                "重置位置"
+            } else {
+                "Reset position"
+            },
+        ),
+        (&items.quit, if chinese { "退出" } else { "Quit" }),
+    ];
+    for (item, label) in labels {
+        if let Err(error) = item.set_text(label) {
+            eprintln!("Codex Halo: unable to update tray menu item: {error}");
+        }
+    }
+}
+
+fn build_tray(
+    app: &mut tauri::App,
+    settings: &AppSettings,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let items = TrayMenuItems {
+        open_settings: MenuItem::with_id(
+            app,
+            "open-settings",
+            "Open Settings",
+            true,
+            None::<&str>,
+        )?,
+        toggle_overlay: MenuItem::with_id(
+            app,
+            "toggle-overlay",
+            "Enable overlay",
+            true,
+            None::<&str>,
+        )?,
+        install_hooks: MenuItem::with_id(
+            app,
+            "install-hooks",
+            "Install/repair Codex hooks",
+            true,
+            None::<&str>,
+        )?,
+        remove_hooks: MenuItem::with_id(
+            app,
+            "remove-hooks",
+            "Remove Codex Halo hooks",
+            true,
+            None::<&str>,
+        )?,
+        simulate_idle: MenuItem::with_id(
+            app,
+            "simulate-idle",
+            "Simulate Idle",
+            true,
+            None::<&str>,
+        )?,
+        simulate_thinking: MenuItem::with_id(
+            app,
+            "simulate-thinking",
+            "Simulate Thinking",
+            true,
+            None::<&str>,
+        )?,
+        simulate_executing: MenuItem::with_id(
+            app,
+            "simulate-executing",
+            "Simulate Executing",
+            true,
+            None::<&str>,
+        )?,
+        simulate_input_needed: MenuItem::with_id(
+            app,
+            "simulate-input-needed",
+            "Simulate Input needed",
+            true,
+            None::<&str>,
+        )?,
+        simulate_completed: MenuItem::with_id(
+            app,
+            "simulate-completed",
+            "Simulate Completed",
+            true,
+            None::<&str>,
+        )?,
+        simulate_compacting: MenuItem::with_id(
+            app,
+            "simulate-compacting",
+            "Simulate Compacting",
+            true,
+            None::<&str>,
+        )?,
+        reset_position: MenuItem::with_id(
+            app,
+            "reset-position",
+            "Reset position",
+            true,
+            None::<&str>,
+        )?,
+        quit: MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?,
+    };
+    update_tray_menu(&items, settings);
+
     let separator_one = PredefinedMenuItem::separator(app)?;
-    let install_hooks_item = MenuItem::with_id(
-        app,
-        "install-hooks",
-        "Install/repair Codex hooks",
-        true,
-        None::<&str>,
-    )?;
-    let remove_hooks_item = MenuItem::with_id(
-        app,
-        "remove-hooks",
-        "Remove Codex Halo hooks",
-        true,
-        None::<&str>,
-    )?;
     let separator_two = PredefinedMenuItem::separator(app)?;
-    let simulate_idle =
-        MenuItem::with_id(app, "simulate-idle", "Simulate Idle", true, None::<&str>)?;
-    let simulate_thinking = MenuItem::with_id(
-        app,
-        "simulate-thinking",
-        "Simulate Thinking",
-        true,
-        None::<&str>,
-    )?;
-    let simulate_executing = MenuItem::with_id(
-        app,
-        "simulate-executing",
-        "Simulate Executing",
-        true,
-        None::<&str>,
-    )?;
-    let simulate_input = MenuItem::with_id(
-        app,
-        "simulate-input-needed",
-        "Simulate Input needed",
-        true,
-        None::<&str>,
-    )?;
-    let simulate_completed = MenuItem::with_id(
-        app,
-        "simulate-completed",
-        "Simulate Completed",
-        true,
-        None::<&str>,
-    )?;
-    let simulate_compacting = MenuItem::with_id(
-        app,
-        "simulate-compacting",
-        "Simulate Compacting",
-        true,
-        None::<&str>,
-    )?;
-    let reset = MenuItem::with_id(app, "reset-position", "Reset position", true, None::<&str>)?;
     let separator_three = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[
-            &open_settings,
-            &toggle_overlay_item,
+            &items.open_settings,
+            &items.toggle_overlay,
             &separator_one,
-            &install_hooks_item,
-            &remove_hooks_item,
+            &items.install_hooks,
+            &items.remove_hooks,
             &separator_two,
-            &simulate_idle,
-            &simulate_thinking,
-            &simulate_executing,
-            &simulate_input,
-            &simulate_completed,
-            &simulate_compacting,
-            &reset,
+            &items.simulate_idle,
+            &items.simulate_thinking,
+            &items.simulate_executing,
+            &items.simulate_input_needed,
+            &items.simulate_completed,
+            &items.simulate_compacting,
+            &items.reset_position,
             &separator_three,
-            &quit,
+            &items.quit,
         ],
     )?;
     let icon = Image::from_bytes(include_bytes!("../icons/icon.png"))?.to_owned();
@@ -686,6 +851,11 @@ fn build_tray(app: &mut tauri::App, _enabled: bool) -> Result<(), Box<dyn std::e
         _ => {}
     })
     .build(app)?;
+    let runtime = app.state::<ReducerRuntimeState>();
+    *runtime
+        .tray_menu
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(items.clone());
     Ok(())
 }
 
@@ -718,7 +888,7 @@ fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
 
     let settings_window =
         WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
-            .title("Codex Halo Settings")
+            .title(settings_window_title(&settings.language))
             .inner_size(420.0, 680.0)
             .visible(false)
             .build()?;
@@ -732,7 +902,7 @@ fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
         }
     });
 
-    build_tray(app, settings.enabled)?;
+    build_tray(app, &settings)?;
 
     Ok(())
 }
