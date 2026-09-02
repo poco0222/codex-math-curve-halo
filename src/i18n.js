@@ -174,6 +174,7 @@ export function formatSetupError(command, error, language = DEFAULT_LANGUAGE) {
 
   const prefix = getText(language, 'errors.startAtLogin');
   const label = getText(language, safeSetupErrorKeys[category]);
-  const parentheses = normalizeLanguage(language) === 'zh-CN' ? ['（', '）'] : ['(', ')'];
-  return `${prefix} ${parentheses[0]}${label}${parentheses[1]}`;
+  const isChinese = normalizeLanguage(language) === 'zh-CN';
+  const parentheses = isChinese ? ['（', '）'] : ['(', ')'];
+  return `${prefix}${isChinese ? '' : ' '}${parentheses[0]}${label}${parentheses[1]}`;
 }
