@@ -4,6 +4,21 @@ const POLL_INTERVAL_MS = 150;
 const SIMULATION_DURATION_MS = 420;
 const SAFE_SETUP_ERROR = /^start-at-login:(permission|launch-agent|registry|unsupported|reconciliation)$/;
 
+export const DEFAULT_APP_SETTINGS = Object.freeze({
+  enabled: true,
+  opacity: 1,
+  offset_x: 28,
+  offset_y: 140,
+  curve_id: 'rose-seven',
+  particle_count: 64,
+  trail_span: 0.4,
+  duration_ms: 420,
+  pulse_duration_ms: 1200,
+  rotation_duration_ms: 4200,
+  stroke_width: 4,
+  start_at_login: false,
+});
+
 function errorCategory(error) {
   if (error?.name === 'AbortError') return 'abort';
   if (error?.code) return 'coded-error';
@@ -21,6 +36,15 @@ export function createCommandInvoker(invoke, warn = console.warn.bind(console)) 
       return null;
     }
   }
+}
+
+export function createSerialTaskQueue() {
+  let tail = Promise.resolve();
+  return function enqueue(task) {
+    const next = tail.then(task, task);
+    tail = next.catch(() => {});
+    return next;
+  };
 }
 
 export function createDisplayStatePoller(invokeCommand, applyDisplayState) {
@@ -65,7 +89,7 @@ export function formatSetupError(command, error) {
   return category ? `start-at-login setup failed (${category})` : `${command} failed`;
 }
 
-function boot() {
+async function boot() {
   const canvas = document.getElementById('halo');
   const renderer = canvas ? createHaloRenderer(canvas) : null;
   const invoke = window.__TAURI__?.core?.invoke ?? window.__TAURI__?.invoke;
@@ -89,16 +113,13 @@ function boot() {
     listen('settings-changed', ({ payload }) => applySettings(payload)).catch(() => {});
   }
 
-  if (renderer) {
-    invokeCommand('get_settings').then(async (settings) => {
-      if (!settings) return;
-      applySettings(settings);
-      renderer.start();
-      await invokeCommand('set_overlay_visible', { visible: settings.enabled });
-      displayBridge.pollDisplayState();
-      window.setInterval(displayBridge.pollDisplayState, POLL_INTERVAL_MS);
-    });
-  }
+  if (!renderer) return;
+  const settings = await invokeCommand('get_settings') ?? DEFAULT_APP_SETTINGS;
+  applySettings(settings);
+  renderer.start();
+  await invokeCommand('set_overlay_visible', { visible: settings.enabled });
+  displayBridge.pollDisplayState();
+  window.setInterval(displayBridge.pollDisplayState, POLL_INTERVAL_MS);
 }
 
 if (typeof document !== 'undefined' && typeof window !== 'undefined' && document.body?.classList.contains('overlay-page')) boot();

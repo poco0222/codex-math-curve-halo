@@ -214,3 +214,132 @@ Kept out of the Task 7 commit:
 - ignored `src-tauri/target/` and target-suffixed generated sidecars.
 
 Only Task 7 README, integration test, and report are intended for staging.
+
+## Final Fix Batch
+
+Date: 2026-09-02
+Base: `99fc549`
+
+The final reviewer findings were implemented in the current checkout. The
+approved scope stayed app-only: no real `~/.codex/hooks.json`, `ChatGPT.app`,
+network, paid Codex turn, database, or worktree access was used.
+
+Implemented:
+
+- All eight owned lifecycle handlers are synchronous. This is the approved
+  intentional deviation from the earlier asynchronous proposal. `SessionStart`
+  reads non-persisted `source` and maps `compact` to `thinking`; other startup,
+  resume, and clear sources remain `idle`.
+- Simulation now enters `ReducerRuntimeState` and the same Rust reducer path.
+  It uses the reducer expiry rules, preserves real `session_count`, does not
+  write a real snapshot, and yields to a newer real disk snapshot.
+- Successful hook removal clears real sessions and advances a scan epoch, so a
+  pre-removal scan cannot restore stale state. Simulation state is retained.
+- Settings saves are serialized in the frontend queue and backend runtime
+  mutex. Existing autostart rollback and redacted error categories remain.
+- Renderer startup and settings loading use the exact frontend
+  `DEFAULT_APP_SETTINGS` when `get_settings` fails, then continue polling.
+- Hook install requires a regular non-symlink helper before config mutation.
+  Unix config mode bits are retained across backup/temp/replacement; Windows
+  new config artifacts use the existing owner-only ACL helper.
+- Windows start-at-login bypasses the plugin operation and writes a quoted
+  current executable path to HKCU `SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run`.
+- Settings now exports `codex-halo-diagnostics.json` through browser-native
+  `Blob` download with only `state` and `updated_at_ms`.
+
+Focused evidence before the final full run:
+
+- `cargo test --manifest-path src-tauri/Cargo.toml --lib`: 50 passed.
+- `cargo test --manifest-path src-tauri/Cargo.toml --bin codex-halo`: 17 passed.
+- `cargo test --manifest-path src-tauri/Cargo.toml --test task7_integration`: 1 passed.
+- `node --test src/app.test.mjs`: 11 passed.
+- `node --check src/app.js`, `node --check src/settings.js`, and
+  `npm run check:renderer`: passed.
+- `CODEX_HALO_BUILD_SIDECAR=1 cargo check --manifest-path src-tauri/Cargo.toml
+  --target x86_64-pc-windows-gnu --lib`: passed.
+- `CODEX_HALO_BUILD_SIDECAR=1 cargo check --manifest-path src-tauri/Cargo.toml
+  --target x86_64-pc-windows-gnu --bin codex-halo-hook`: passed.
+
+Final full-suite commands and exact results will be appended below. Windows
+application/runtime, registry runtime, Windows `cmd.exe`/PowerShell helper
+execution, and live Codex integration remain `NOT RUN`.
+
+## Final Full Verification
+
+Date: 2026-09-02
+
+Passed:
+
+```text
+codegraph status --json .
+initialized=true, state=complete, pendingChanges=0, reindexRecommended=false
+
+cargo test --manifest-path src-tauri/Cargo.toml
+51 lib + 17 main + 5 helper + 1 integration passed; 0 doc-test failures
+
+cargo check --manifest-path src-tauri/Cargo.toml
+Finished dev profile successfully
+
+node --check src/app.js
+PASS
+
+node --check src/settings.js
+PASS
+
+npm run check:renderer
+renderer self-check: PASS (4 profiles)
+
+node --test src/app.test.mjs scripts/build-sidecar.test.mjs
+13 passed; 0 failed
+
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+PASS
+
+python3 -m json.tool package.json
+python3 -m json.tool src-tauri/tauri.conf.json
+python3 -m json.tool src-tauri/capabilities/default.json
+PASS
+
+git diff --check
+PASS
+
+npm run build:sidecar -- --target aarch64-apple-darwin
+Finished release profile successfully
+
+cargo tauri build --target aarch64-apple-darwin
+Built `Codex Halo.app` and `Codex Halo_0.1.0_aarch64.dmg`
+```
+
+The macOS bundle contains an arm64 executable helper at
+`Contents/MacOS/codex-halo-hook` with mode `0755`. `Info.plist` reports version
+`0.1.0` and identifier `com.codex-halo.app`. The build emitted the existing
+non-blocking identifier warning because the identifier ends in `.app`.
+
+Windows target evidence:
+
+- `CODEX_HALO_BUILD_SIDECAR=1 cargo check --manifest-path
+  src-tauri/Cargo.toml --target x86_64-pc-windows-gnu --lib`: passed.
+- `CODEX_HALO_BUILD_SIDECAR=1 cargo check --manifest-path
+  src-tauri/Cargo.toml --target x86_64-pc-windows-gnu --bin codex-halo-hook`:
+  passed.
+- Full application `cargo check --target x86_64-pc-windows-gnu` was blocked by
+  the existing Tauri resource path: first the target-suffixed helper was
+  absent; a temporary helper and ICO then reached `tauri-winres` but failed
+  because `x86_64-w64-mingw32-windres` is not installed. A pure target source
+  check with `CODEX_HALO_BUILD_SIDECAR=1` then reached the existing
+  `tauri::generate_context!()` `embed_plist` error caused by the enabled
+  `macos-private-api` feature. Temporary helper and ICO files were removed.
+- Windows MSVC build, Windows runtime, Registry runtime, transparent window,
+  tray, `cmd.exe`/PowerShell helper execution, and live Codex hooks: `NOT RUN`.
+
+Repository boundary:
+
+- No real `~/.codex/hooks.json` was read or changed.
+- No `ChatGPT.app`, network, paid Codex turn, database, or remote deployment
+  was used.
+- External dirty paths remain untouched and unstaged: `.gitignore`, `.agents/`,
+  `.codegraph/`, `.codex/`, `.comet/`, `.impeccable/`, `docs/openspec/`,
+  `src-tauri/Cargo.lock`, `src-tauri/gen/`, and `src-tauri/target/`.
+- The ignored SDD ledger was updated locally at
+  `.superpowers/sdd/2026-09-02-codex-halo-native-app/progress.md`; it is not
+  part of the commit.

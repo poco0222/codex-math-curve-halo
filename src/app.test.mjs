@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { createDisplayStateBridge, formatSetupError } from './app.js';
+import {
+  createDisplayStateBridge,
+  createSerialTaskQueue,
+  DEFAULT_APP_SETTINGS,
+  formatSetupError,
+} from './app.js';
 
 test('an in-flight poll cannot overwrite a newer simulated display event', async () => {
   let releasePoll;
@@ -79,4 +84,86 @@ test('autostart disable treats an absent entry as already disabled', async () =>
 
   assert.match(source, /if !enabled/);
   assert.match(source, /Ok\(false\) => return Ok\(\(\)\)/);
+});
+
+test('settings saves run in enqueue order even when later work resolves first', async () => {
+  const queue = createSerialTaskQueue();
+  const started = [];
+  const finished = [];
+  let releaseFirst;
+  const first = queue(async () => {
+    started.push('first');
+    await new Promise((resolve) => { releaseFirst = resolve; });
+    finished.push('first');
+  });
+  const second = queue(async () => {
+    started.push('second');
+    finished.push('second');
+  });
+
+  await Promise.resolve();
+  assert.deepEqual(started, ['first']);
+  releaseFirst();
+  await Promise.all([first, second]);
+
+  assert.deepEqual(started, ['first', 'second']);
+  assert.deepEqual(finished, ['first', 'second']);
+});
+
+test('renderer startup uses exact frontend defaults after get_settings fails', async () => {
+  const appSource = await readFile(new URL('./app.js', import.meta.url), 'utf8');
+  const settingsSource = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
+  const mainSource = await readFile(new URL('../src-tauri/src/main.rs', import.meta.url), 'utf8');
+
+  assert.deepEqual(DEFAULT_APP_SETTINGS, {
+    enabled: true,
+    opacity: 1,
+    offset_x: 28,
+    offset_y: 140,
+    curve_id: 'rose-seven',
+    particle_count: 64,
+    trail_span: 0.4,
+    duration_ms: 420,
+    pulse_duration_ms: 1200,
+    rotation_duration_ms: 4200,
+    stroke_width: 4,
+    start_at_login: false,
+  });
+  assert.match(appSource, /const settings = await invokeCommand\('get_settings'\) \?\? DEFAULT_APP_SETTINGS/);
+  assert.match(appSource, /window\.setInterval\(displayBridge\.pollDisplayState, POLL_INTERVAL_MS\)/);
+  assert.match(settingsSource, /applySettings\(settings\.ok \? settings\.value : DEFAULT_APP_SETTINGS\)/);
+  assert.match(mainSource, /settings_transaction: Mutex<\(\)>/);
+  assert.match(mainSource, /settings_transaction[\s\S]*?\.lock\(\)/);
+});
+
+test('settings exposes a content-free local diagnostic download', async () => {
+  const html = await readFile(new URL('./settings.html', import.meta.url), 'utf8');
+  const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
+
+  assert.match(html, /id="export-diagnostics"/);
+  assert.match(source, /new Blob\(/);
+  assert.match(source, /codex-halo-diagnostics\.json/);
+  assert.match(source, /state: currentDisplayState\.state/);
+  assert.match(source, /updated_at_ms: currentDisplayState\.updated_at_ms/);
+  assert.doesNotMatch(source, /prompt|transcript|tool_input|tool_response|model|cwd/);
+});
+
+test('owned hook lifecycle commands are synchronous and compact source is handled', async () => {
+  const hooks = await readFile(new URL('../src-tauri/src/hooks.rs', import.meta.url), 'utf8');
+  const protocol = await readFile(new URL('../src-tauri/src/hook_protocol.rs', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(hooks, /asynchronous: true/);
+  assert.match(hooks, /asynchronous: false/);
+  assert.match(protocol, /source: Option<String>/);
+  assert.match(protocol, /source\.as_deref\(\) == Some\("compact"\)/);
+});
+
+test('Windows autostart uses the native registry path and required feature', async () => {
+  const platform = await readFile(new URL('../src-tauri/src/platform.rs', import.meta.url), 'utf8');
+  const cargo = await readFile(new URL('../src-tauri/Cargo.toml', import.meta.url), 'utf8');
+
+  assert.match(platform, /Win32::System::Registry/);
+  assert.match(platform, /RegSetValueExW/);
+  assert.match(platform, /quote_windows_run_path/);
+  assert.match(cargo, /"Win32_System_Registry"/);
 });

@@ -18,6 +18,8 @@ static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 pub struct HookInput {
     session_id: String,
     hook_event_name: String,
+    #[serde(default)]
+    source: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -75,7 +77,13 @@ pub fn parse_hook_input(bytes: &[u8]) -> Result<HookInput, HookError> {
 
 pub fn map_event(input: &HookInput) -> Option<HookAction> {
     match input.hook_event_name.as_str() {
-        "SessionStart" => Some(HookAction::Set(HaloState::Idle)),
+        "SessionStart" => Some(HookAction::Set(
+            if input.source.as_deref() == Some("compact") {
+                HaloState::Thinking
+            } else {
+                HaloState::Idle
+            },
+        )),
         "UserPromptSubmit" => Some(HookAction::Set(HaloState::Thinking)),
         "PreToolUse" => Some(HookAction::Set(HaloState::Executing)),
         "PermissionRequest" => Some(HookAction::Set(HaloState::InputNeeded)),
@@ -228,18 +236,18 @@ fn private_temp_file(dir: &Path, stem: &str) -> io::Result<(PathBuf, fs::File)> 
 }
 
 #[cfg(unix)]
-fn set_private_permissions(path: &Path, mode: u32) -> io::Result<()> {
+pub(crate) fn set_private_permissions(path: &Path, mode: u32) -> io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(path, fs::Permissions::from_mode(mode))
 }
 
 #[cfg(all(not(unix), not(windows)))]
-fn set_private_permissions(_path: &Path, _mode: u32) -> io::Result<()> {
+pub(crate) fn set_private_permissions(_path: &Path, _mode: u32) -> io::Result<()> {
     Ok(())
 }
 
 #[cfg(windows)]
-fn set_private_permissions(path: &Path, _mode: u32) -> io::Result<()> {
+pub(crate) fn set_private_permissions(path: &Path, _mode: u32) -> io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use std::ptr::null_mut;
     use windows_sys::Win32::Foundation::LocalFree;
@@ -339,6 +347,29 @@ mod tests {
             let input = parse_hook_input(&fixture(event)).unwrap();
             assert_eq!(map_event(&input), Some(expected), "{event}");
         }
+    }
+
+    #[test]
+    fn compact_session_start_enters_thinking_without_persisting_source() {
+        let input = parse_hook_input(
+            br#"{"session_id":"thr_123","hook_event_name":"SessionStart","source":"compact","prompt":"secret","cwd":"/private/project"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            map_event(&input),
+            Some(HookAction::Set(HaloState::Thinking))
+        );
+        let state_dir = temp_path("compact-source");
+        write_snapshot(&state_dir, &input, HaloState::Thinking, 1_234_567).unwrap();
+        let contents = fs::read_to_string(
+            state_dir.join("e3091fe2986effba7b815449e32060814fed909a796454920df65f816a3a5889.json"),
+        )
+        .unwrap();
+        assert!(!contents.contains("source"));
+        assert!(!contents.contains("prompt"));
+        assert!(!contents.contains("cwd"));
+        fs::remove_dir_all(state_dir).unwrap();
     }
 
     #[test]

@@ -136,6 +136,22 @@ impl SessionStore {
         reduce_snapshots(&snapshots, now_ms)
     }
 
+    pub fn display_state_with_override(
+        &self,
+        simulation: Option<&Snapshot>,
+        now_ms: i64,
+    ) -> DisplayState {
+        let real = self.display_state(now_ms);
+        let Some(simulation) = simulation.filter(|snapshot| is_current(snapshot, now_ms)) else {
+            return real;
+        };
+        DisplayState {
+            state: simulation.state,
+            session_count: real.session_count,
+            updated_at_ms: simulation.updated_at_ms,
+        }
+    }
+
     pub fn clear_expired(&mut self, now_ms: i64) {
         self.sessions
             .retain(|_, snapshot| is_current(snapshot, now_ms));

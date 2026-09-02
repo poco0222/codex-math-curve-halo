@@ -427,7 +427,7 @@ these fields:
 
 Assert:
 
-- `SessionStart` -> `idle`;
+- `SessionStart` -> `idle`, except `source: "compact"` -> `thinking`;
 - `UserPromptSubmit` -> `thinking`;
 - `PreToolUse` -> `executing`;
 - `PermissionRequest` -> `input_needed`;
@@ -569,9 +569,10 @@ Each owned command must include:
 codex-halo-hook --codex-halo --state-dir "<absolute app-data state dir>"
 ```
 
-Use `async: true` for `SessionStart`, `UserPromptSubmit`, `PreToolUse`,
-`PermissionRequest`, `PreCompact`, `PostCompact`, and `Stop`. Add
-`SessionEnd` synchronously; Codex may ignore `async` for that event.
+Leave all eight owned lifecycle commands synchronous. This is an intentional
+correctness deviation from the earlier asynchronous proposal: Codex background
+hook completion can reorder state, and the local helper is fast enough for the
+foreground path.
 
 Use matcher values supported by Codex:
 

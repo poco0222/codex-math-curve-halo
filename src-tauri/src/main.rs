@@ -10,16 +10,21 @@ use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+#[cfg(target_os = "macos")]
 use tauri_plugin_autostart::MacosLauncher;
 
 const SETTINGS_FILENAME: &str = "settings.json";
 const SETTINGS_INVALID_LIMIT: u32 = 64;
+const SIMULATION_SESSION_KEY: &str = "__codex_halo_simulation__";
 static SETTINGS_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Default)]
 struct ReducerRuntimeState {
     store: Mutex<SessionStore>,
+    simulation: Mutex<Option<Snapshot>>,
     scan_in_progress: AtomicBool,
+    scan_epoch: AtomicU64,
+    settings_transaction: Mutex<()>,
 }
 
 impl ReducerRuntimeState {
@@ -33,26 +38,75 @@ impl ReducerRuntimeState {
         self.scan_in_progress.store(false, Ordering::Release);
     }
 
+    fn scan_epoch(&self) -> u64 {
+        self.scan_epoch.load(Ordering::Acquire)
+    }
+
     fn display_after_scan(
         &self,
         scan: Option<io::Result<Vec<Snapshot>>>,
         now_ms: i64,
     ) -> DisplayState {
+        self.display_after_scan_at_epoch(scan, now_ms, self.scan_epoch())
+    }
+
+    fn display_after_scan_at_epoch(
+        &self,
+        scan: Option<io::Result<Vec<Snapshot>>>,
+        now_ms: i64,
+        scan_epoch: u64,
+    ) -> DisplayState {
         let mut store = self
             .store
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut simulation = self
+            .simulation
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
-        if let Some(Ok(snapshots)) = scan {
-            let mut next = SessionStore::default();
-            for snapshot in snapshots {
-                next.upsert(snapshot);
+        if scan_epoch == self.scan_epoch() {
+            if let Some(Ok(snapshots)) = scan {
+                if simulation.as_ref().is_some_and(|simulated| {
+                    snapshots
+                        .iter()
+                        .any(|snapshot| snapshot.updated_at_ms > simulated.updated_at_ms)
+                }) {
+                    *simulation = None;
+                }
+                let mut next = SessionStore::default();
+                for snapshot in snapshots {
+                    next.upsert(snapshot);
+                }
+                *store = next;
             }
-            *store = next;
         }
 
         store.clear_expired(now_ms);
-        store.display_state(now_ms)
+        store.display_state_with_override(simulation.as_ref(), now_ms)
+    }
+
+    fn simulate_state(&self, state: HaloState, now_ms: i64) -> DisplayState {
+        let mut store = self
+            .store
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut simulation = self
+            .simulation
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *simulation = Some(Snapshot::new(SIMULATION_SESSION_KEY, state, now_ms));
+        store.clear_expired(now_ms);
+        store.display_state_with_override(simulation.as_ref(), now_ms)
+    }
+
+    fn clear_real_sessions(&self) {
+        self.scan_epoch.fetch_add(1, Ordering::AcqRel);
+        let mut store = self
+            .store
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *store = SessionStore::default();
     }
 }
 
@@ -64,6 +118,7 @@ async fn get_display_state(
     if !runtime.try_start_scan() {
         return Ok(runtime.display_after_scan(None, now_ms()));
     }
+    let scan_epoch = runtime.scan_epoch();
 
     let scan = match state_dir(&app) {
         Some(state_dir) => tauri::async_runtime::spawn_blocking(move || read_snapshots(&state_dir))
@@ -71,7 +126,7 @@ async fn get_display_state(
             .ok(),
         None => None,
     };
-    let display = runtime.display_after_scan(scan, now_ms());
+    let display = runtime.display_after_scan_at_epoch(scan, now_ms(), scan_epoch);
     runtime.finish_scan();
     Ok(display)
 }
@@ -278,12 +333,18 @@ where
 }
 
 #[tauri::command]
-fn get_settings(app: AppHandle) -> Result<AppSettings, String> {
+fn get_settings(
+    app: AppHandle,
+    runtime: State<'_, ReducerRuntimeState>,
+) -> Result<AppSettings, String> {
+    let _guard = runtime
+        .settings_transaction
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     load_app_settings(&app)
 }
 
-#[tauri::command]
-fn save_settings(app: AppHandle, settings: AppSettings) -> Result<(), String> {
+fn save_settings_unlocked(app: AppHandle, settings: AppSettings) -> Result<(), String> {
     let settings = settings.normalize()?;
     let path = app_config_path(&app)?;
     let current = load_settings_file(&path)?;
@@ -298,14 +359,34 @@ fn save_settings(app: AppHandle, settings: AppSettings) -> Result<(), String> {
     Ok(())
 }
 
+fn save_settings_inner(
+    app: AppHandle,
+    settings: AppSettings,
+    runtime: &ReducerRuntimeState,
+) -> Result<(), String> {
+    let _guard = runtime
+        .settings_transaction
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    save_settings_unlocked(app, settings)
+}
+
 #[tauri::command]
-fn simulate_state(app: AppHandle, state: HaloState) -> Result<DisplayState, String> {
-    let display = DisplayState {
-        state,
-        ..DisplayState::idle()
-    };
-    let _ = app.emit_to("main", "simulated-display-state", display.clone());
-    Ok(display)
+fn save_settings(
+    app: AppHandle,
+    settings: AppSettings,
+    runtime: State<'_, ReducerRuntimeState>,
+) -> Result<(), String> {
+    save_settings_inner(app, settings, &runtime)
+}
+
+#[tauri::command]
+fn simulate_state(
+    app: AppHandle,
+    state: HaloState,
+    runtime: State<'_, ReducerRuntimeState>,
+) -> Result<DisplayState, String> {
+    Ok(simulate_state_inner(&app, state, &runtime))
 }
 
 #[tauri::command]
@@ -315,14 +396,25 @@ fn install_hooks(app: AppHandle) -> Result<hooks::InstallReport, String> {
         .map_err(|_| "Codex Halo hooks could not be installed".to_owned())
 }
 
-#[tauri::command]
-fn remove_hooks(app: AppHandle) -> Result<hooks::RemoveReport, String> {
-    let (config_path, helper_path, state_dir) = hook_paths(&app)?;
+fn remove_hooks_inner(
+    app: &AppHandle,
+    runtime: &ReducerRuntimeState,
+) -> Result<hooks::RemoveReport, String> {
+    let (config_path, helper_path, state_dir) = hook_paths(app)?;
     let report = hooks::remove_hooks(&config_path)
         .map_err(|_| "Codex Halo hooks could not be removed".to_owned())?;
     remove_hook_artifacts(&helper_path, &state_dir)
         .map_err(|_| "Codex Halo hook artifacts could not be removed".to_owned())?;
+    runtime.clear_real_sessions();
     Ok(report)
+}
+
+#[tauri::command]
+fn remove_hooks(
+    app: AppHandle,
+    runtime: State<'_, ReducerRuntimeState>,
+) -> Result<hooks::RemoveReport, String> {
+    remove_hooks_inner(&app, &runtime)
 }
 
 #[tauri::command]
@@ -373,13 +465,27 @@ fn set_overlay_visible(app: AppHandle, visible: bool) -> Result<(), String> {
         .map_err(|_| "Codex Halo overlay visibility could not be changed".to_owned())
 }
 
-#[tauri::command]
-fn reset_position(app: AppHandle) -> Result<AppSettings, String> {
-    let mut settings = get_settings(app.clone())?;
+fn reset_position_inner(
+    app: AppHandle,
+    runtime: &ReducerRuntimeState,
+) -> Result<AppSettings, String> {
+    let _guard = runtime
+        .settings_transaction
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut settings = load_app_settings(&app)?;
     settings.offset_x = AppSettings::default().offset_x;
     settings.offset_y = AppSettings::default().offset_y;
-    save_settings(app, settings.clone())?;
+    save_settings_unlocked(app, settings.clone())?;
     Ok(settings)
+}
+
+#[tauri::command]
+fn reset_position(
+    app: AppHandle,
+    runtime: State<'_, ReducerRuntimeState>,
+) -> Result<AppSettings, String> {
+    reset_position_inner(app, &runtime)
 }
 
 fn show_settings(app: &AppHandle) -> Result<(), String> {
@@ -396,11 +502,28 @@ fn show_settings_or_report(app: &AppHandle) {
     }
 }
 
-fn toggle_overlay(app: AppHandle) -> Result<AppSettings, String> {
-    let mut settings = get_settings(app.clone())?;
+fn toggle_overlay_inner(
+    app: AppHandle,
+    runtime: &ReducerRuntimeState,
+) -> Result<AppSettings, String> {
+    let _guard = runtime
+        .settings_transaction
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut settings = load_app_settings(&app)?;
     settings.enabled = !settings.enabled;
-    save_settings(app, settings.clone())?;
+    save_settings_unlocked(app, settings.clone())?;
     Ok(settings)
+}
+
+fn simulate_state_inner(
+    app: &AppHandle,
+    state: HaloState,
+    runtime: &ReducerRuntimeState,
+) -> DisplayState {
+    let display = runtime.simulate_state(state, now_ms());
+    let _ = app.emit_to("main", "simulated-display-state", display.clone());
+    display
 }
 
 fn helper_setup_best_effort<F>(install: F) -> bool
@@ -511,7 +634,8 @@ fn build_tray(app: &mut tauri::App, _enabled: bool) -> Result<(), Box<dyn std::e
     tray.on_menu_event(move |app, event| match event.id.as_ref() {
         "open-settings" => show_settings_or_report(app),
         "toggle-overlay" => {
-            if toggle_overlay(app.clone()).is_err() {
+            let runtime = app.state::<ReducerRuntimeState>();
+            if toggle_overlay_inner(app.clone(), &runtime).is_err() {
                 eprintln!("Codex Halo: unable to change overlay setting");
             }
         }
@@ -522,33 +646,41 @@ fn build_tray(app: &mut tauri::App, _enabled: bool) -> Result<(), Box<dyn std::e
             show_settings_or_report(app);
         }
         "remove-hooks" => {
-            if remove_hooks(app.clone()).is_err() {
+            let runtime = app.state::<ReducerRuntimeState>();
+            if remove_hooks_inner(app, &runtime).is_err() {
                 eprintln!("Codex Halo: unable to remove hooks");
             }
             show_settings_or_report(app);
         }
         "reset-position" => {
-            if reset_position(app.clone()).is_err() {
+            let runtime = app.state::<ReducerRuntimeState>();
+            if reset_position_inner(app.clone(), &runtime).is_err() {
                 eprintln!("Codex Halo: unable to reset position");
             }
         }
         "simulate-idle" => {
-            let _ = simulate_state(app.clone(), HaloState::Idle);
+            let runtime = app.state::<ReducerRuntimeState>();
+            let _ = simulate_state_inner(app, HaloState::Idle, &runtime);
         }
         "simulate-thinking" => {
-            let _ = simulate_state(app.clone(), HaloState::Thinking);
+            let runtime = app.state::<ReducerRuntimeState>();
+            let _ = simulate_state_inner(app, HaloState::Thinking, &runtime);
         }
         "simulate-executing" => {
-            let _ = simulate_state(app.clone(), HaloState::Executing);
+            let runtime = app.state::<ReducerRuntimeState>();
+            let _ = simulate_state_inner(app, HaloState::Executing, &runtime);
         }
         "simulate-input-needed" => {
-            let _ = simulate_state(app.clone(), HaloState::InputNeeded);
+            let runtime = app.state::<ReducerRuntimeState>();
+            let _ = simulate_state_inner(app, HaloState::InputNeeded, &runtime);
         }
         "simulate-completed" => {
-            let _ = simulate_state(app.clone(), HaloState::Completed);
+            let runtime = app.state::<ReducerRuntimeState>();
+            let _ = simulate_state_inner(app, HaloState::Completed, &runtime);
         }
         "simulate-compacting" => {
-            let _ = simulate_state(app.clone(), HaloState::Compacting);
+            let runtime = app.state::<ReducerRuntimeState>();
+            let _ = simulate_state_inner(app, HaloState::Compacting, &runtime);
         }
         "quit" => app.exit(0),
         _ => {}
@@ -610,11 +742,13 @@ fn main() {
         .manage(ReducerRuntimeState::default())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_settings_or_report(app);
-        }))
-        .plugin(tauri_plugin_autostart::init(
-            MacosLauncher::LaunchAgent,
-            None,
-        ))
+        }));
+    #[cfg(target_os = "macos")]
+    let builder = builder.plugin(tauri_plugin_autostart::init(
+        MacosLauncher::LaunchAgent,
+        None,
+    ));
+    let builder = builder
         .invoke_handler(tauri::generate_handler![
             get_display_state,
             get_settings,
@@ -779,6 +913,92 @@ mod scan_tests {
         assert_eq!(display.state, HaloState::Executing);
         assert_eq!(display.session_count, 2);
         assert_eq!(display.updated_at_ms, now - 100);
+    }
+
+    #[test]
+    fn simulation_overrides_display_without_inflating_real_session_count() {
+        let now = 1_000_000;
+        let runtime = ReducerRuntimeState::default();
+        runtime.display_after_scan(
+            Some(Ok(vec![Snapshot::new("real", HaloState::Executing, now)])),
+            now,
+        );
+
+        let display = runtime.simulate_state(HaloState::Completed, now + 1);
+
+        assert_eq!(display.state, HaloState::Completed);
+        assert_eq!(display.session_count, 1);
+        assert_eq!(display.updated_at_ms, now + 1);
+    }
+
+    #[test]
+    fn newer_real_scan_supersedes_simulation() {
+        let now = 1_000_000;
+        let runtime = ReducerRuntimeState::default();
+        runtime.simulate_state(HaloState::Completed, now);
+
+        let display = runtime.display_after_scan_at_epoch(
+            Some(Ok(vec![Snapshot::new(
+                "real",
+                HaloState::Thinking,
+                now + 1,
+            )])),
+            now + 1,
+            runtime.scan_epoch(),
+        );
+
+        assert_eq!(display.state, HaloState::Thinking);
+        assert_eq!(display.session_count, 1);
+    }
+
+    #[test]
+    fn clearing_real_sessions_blocks_an_in_flight_scan_but_keeps_simulation() {
+        let now = 1_000_000;
+        let runtime = ReducerRuntimeState::default();
+        runtime.display_after_scan(
+            Some(Ok(vec![Snapshot::new("real", HaloState::Executing, now)])),
+            now,
+        );
+        runtime.simulate_state(HaloState::InputNeeded, now + 1);
+        let stale_epoch = runtime.scan_epoch();
+        runtime.clear_real_sessions();
+
+        let display = runtime.display_after_scan_at_epoch(
+            Some(Ok(vec![Snapshot::new(
+                "stale",
+                HaloState::Executing,
+                now + 2,
+            )])),
+            now + 2,
+            stale_epoch,
+        );
+
+        assert_eq!(display.state, HaloState::InputNeeded);
+        assert_eq!(display.session_count, 0);
+    }
+
+    #[test]
+    fn simulation_expiry_matches_completed_and_input_needed_rules() {
+        let now = 1_000_000;
+        let runtime = ReducerRuntimeState::default();
+
+        assert_eq!(
+            runtime.simulate_state(HaloState::Completed, now).state,
+            HaloState::Completed
+        );
+        assert_eq!(
+            runtime.display_after_scan(None, now + 3_001).state,
+            HaloState::Idle
+        );
+
+        assert_eq!(
+            runtime.simulate_state(HaloState::InputNeeded, now).state,
+            HaloState::InputNeeded
+        );
+        assert_eq!(
+            runtime.display_after_scan(None, now + 86_400_000).state,
+            HaloState::InputNeeded
+        );
     }
 
     #[test]

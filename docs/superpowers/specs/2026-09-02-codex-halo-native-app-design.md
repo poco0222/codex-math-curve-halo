@@ -153,10 +153,13 @@ the repository root or depends on the current working directory. App updates
 replace the helper at that stable app-data path, so the hook definition does
 not need to change on every update.
 
-Every owned command is asynchronous where Codex permits it, returns quickly,
-and never returns a blocking decision. For `Stop`, where Codex expects JSON on
-successful stdout, the helper emits `{}`. Hook failures are best-effort and
-must not stop a Codex turn.
+Every owned command is synchronous, including lifecycle handlers that Codex
+permits to run asynchronously. This is an intentional correctness deviation:
+the local helper is fast, while background hook completion can otherwise
+reorder state or recreate a completed session after `SessionEnd`. Commands
+return quickly and never return a blocking decision. For `Stop`, where Codex
+expects JSON on successful stdout, the helper emits `{}`. Hook failures are
+best-effort and must not stop a Codex turn.
 
 ### Event mapping
 
@@ -175,8 +178,10 @@ must not stop a Codex turn.
 not required for the first state machine. They may be added later if observed
 events show a real display gap.
 
-The helper reads only `session_id`, `hook_event_name`, and the event-specific
-state needed for mapping. It does not persist `prompt`, `tool_input`,
+The helper reads only `session_id`, `hook_event_name`, optional `source` for
+`SessionStart`, and the event-specific state needed for mapping. A compact
+session start maps to `thinking`; normal startup, resume, and clear map to
+`idle`. It does not persist `source`, `prompt`, `tool_input`,
 `tool_response`, `transcript_path`, `cwd`, or `model`.
 
 ### Snapshot format

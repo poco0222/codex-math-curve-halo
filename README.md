@@ -31,6 +31,19 @@ Installed commands call the helper copied to the app-data directory and pass
 that app's `state` directory with `--state-dir`; updates replace the helper at
 the same path. Installing hooks never auto-trusts them.
 
+Owned lifecycle hooks run synchronously so state changes keep Codex event order.
+`SessionStart` with `source: "compact"` maps to `thinking`; the source field is
+not stored. State simulation uses the Rust reducer and does not add to the real
+session count.
+
+Settings includes a local **Export diagnostics** control. It downloads
+`codex-halo-diagnostics.json` with only the current state name and timestamp;
+no prompt, transcript, tool, model, or path data is exported.
+
+On Windows, start-at-login writes a quoted current executable path to the
+current-user `Run` registry value. Windows runtime and registry checks still
+require a Windows runner.
+
 Windows packaging and native runtime checks require a Windows x86_64 MSVC
 runner. macOS checks do not establish Windows runtime behavior.
 

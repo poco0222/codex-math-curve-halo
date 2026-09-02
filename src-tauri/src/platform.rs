@@ -1,8 +1,10 @@
 use std::fmt;
+#[cfg(not(windows))]
 use std::fs;
 use std::io;
 use std::path::Path;
 use tauri::{AppHandle, PhysicalPosition, Position, Runtime, WebviewWindow};
+#[cfg(target_os = "macos")]
 use tauri_plugin_autostart::ManagerExt;
 
 pub fn configure_overlay(window: &WebviewWindow) -> tauri::Result<()> {
@@ -25,6 +27,10 @@ pub enum AutostartError {
     Unsupported,
 }
 
+pub fn quote_windows_run_path(path: &Path) -> String {
+    format!("\"{}\"", path.to_string_lossy().replace('"', "\\\""))
+}
+
 impl fmt::Display for AutostartError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
@@ -36,6 +42,7 @@ impl fmt::Display for AutostartError {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn autostart_error<E: fmt::Display>(error: E) -> AutostartError {
     let detail = error.to_string().to_ascii_lowercase();
     if detail.contains("permission denied") || detail.contains("access is denied") {
@@ -46,17 +53,32 @@ fn autostart_error<E: fmt::Display>(error: E) -> AutostartError {
     {
         AutostartError::LaunchAgent
     }
-    #[cfg(target_os = "windows")]
-    {
-        AutostartError::Registry
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        AutostartError::Unsupported
-    }
 }
 
 pub fn set_start_at_login<R: Runtime>(
+    app: &AppHandle<R>,
+    enabled: bool,
+) -> Result<(), AutostartError> {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app;
+        return set_windows_start_at_login(enabled);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        return set_macos_start_at_login(app, enabled);
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = (app, enabled);
+        Err(AutostartError::Unsupported)
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn set_macos_start_at_login<R: Runtime>(
     app: &AppHandle<R>,
     enabled: bool,
 ) -> Result<(), AutostartError> {
@@ -72,6 +94,80 @@ pub fn set_start_at_login<R: Runtime>(
         app.autolaunch().enable().map_err(autostart_error)
     } else {
         app.autolaunch().disable().map_err(autostart_error)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn set_windows_start_at_login(enabled: bool) -> Result<(), AutostartError> {
+    use std::ptr::null_mut;
+    use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
+    use windows_sys::Win32::System::Registry::{
+        RegCloseKey, RegDeleteValueW, RegOpenKeyExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER,
+        KEY_SET_VALUE, REG_SZ,
+    };
+
+    const RUN_KEY: &str = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
+    const RUN_VALUE: &str = "Codex Halo";
+    let key_name = RUN_KEY.encode_utf16().chain(Some(0)).collect::<Vec<_>>();
+    let value_name = RUN_VALUE.encode_utf16().chain(Some(0)).collect::<Vec<_>>();
+    let mut key: HKEY = null_mut();
+    let open_result = unsafe {
+        RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            key_name.as_ptr(),
+            0,
+            KEY_SET_VALUE,
+            &mut key,
+        )
+    };
+    if open_result != ERROR_SUCCESS {
+        return if !enabled && open_result == ERROR_FILE_NOT_FOUND {
+            Ok(())
+        } else {
+            Err(map_registry_error(open_result))
+        };
+    }
+
+    let result = if enabled {
+        let path = std::env::current_exe().map_err(|_| AutostartError::Registry)?;
+        let quoted = quote_windows_run_path(&path);
+        let data = quoted.encode_utf16().chain(Some(0)).collect::<Vec<_>>();
+        unsafe {
+            RegSetValueExW(
+                key,
+                value_name.as_ptr(),
+                0,
+                REG_SZ,
+                data.as_ptr() as *const u8,
+                (data.len() * std::mem::size_of::<u16>()) as u32,
+            )
+        }
+    } else {
+        let result = unsafe { RegDeleteValueW(key, value_name.as_ptr()) };
+        if result == ERROR_FILE_NOT_FOUND {
+            ERROR_SUCCESS
+        } else {
+            result
+        }
+    };
+    let close_result = unsafe { RegCloseKey(key) };
+    if result != ERROR_SUCCESS {
+        Err(map_registry_error(result))
+    } else if close_result != ERROR_SUCCESS {
+        Err(map_registry_error(close_result))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn map_registry_error(code: u32) -> AutostartError {
+    use windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED;
+
+    if code == ERROR_ACCESS_DENIED {
+        AutostartError::Permission
+    } else {
+        AutostartError::Registry
     }
 }
 
@@ -129,6 +225,14 @@ mod tests {
         assert_eq!(
             AutostartError::Registry.to_string(),
             "start-at-login:registry"
+        );
+    }
+
+    #[test]
+    fn quotes_windows_run_paths_with_spaces() {
+        assert_eq!(
+            quote_windows_run_path(Path::new(r#"C:\Program Files\Codex Halo\Codex Halo.exe"#)),
+            r#""C:\Program Files\Codex Halo\Codex Halo.exe""#
         );
     }
 }

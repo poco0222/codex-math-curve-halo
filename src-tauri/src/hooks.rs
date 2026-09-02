@@ -20,37 +20,37 @@ const EVENT_SPECS: [EventSpec; 8] = [
     EventSpec {
         name: "SessionStart",
         matcher: Some("startup|resume|clear|compact"),
-        asynchronous: true,
+        asynchronous: false,
     },
     EventSpec {
         name: "UserPromptSubmit",
         matcher: None,
-        asynchronous: true,
+        asynchronous: false,
     },
     EventSpec {
         name: "PreToolUse",
         matcher: Some(""),
-        asynchronous: true,
+        asynchronous: false,
     },
     EventSpec {
         name: "PermissionRequest",
         matcher: Some(""),
-        asynchronous: true,
+        asynchronous: false,
     },
     EventSpec {
         name: "PreCompact",
         matcher: Some("manual|auto"),
-        asynchronous: true,
+        asynchronous: false,
     },
     EventSpec {
         name: "PostCompact",
         matcher: Some("manual|auto"),
-        asynchronous: true,
+        asynchronous: false,
     },
     EventSpec {
         name: "Stop",
         matcher: None,
-        asynchronous: true,
+        asynchronous: false,
     },
     EventSpec {
         name: "SessionEnd",
@@ -71,6 +71,7 @@ pub enum HookError {
     HomeDirectoryUnavailable,
     InvalidPath,
     RepairRequired,
+    HelperUnavailable,
     Json(serde_json::Error),
     Io(io::Error),
 }
@@ -81,6 +82,7 @@ impl fmt::Display for HookError {
             Self::HomeDirectoryUnavailable => "Codex home directory is unavailable",
             Self::InvalidPath => "Codex hook paths must be absolute",
             Self::RepairRequired => "Codex hooks.json needs repair before it can be changed",
+            Self::HelperUnavailable => "Codex Halo hook helper is unavailable",
             Self::Json(_) => "Codex hooks.json has invalid JSON",
             Self::Io(_) => "Codex hooks configuration I/O failed",
         })
@@ -92,7 +94,10 @@ impl std::error::Error for HookError {
         match self {
             Self::Json(error) => Some(error),
             Self::Io(error) => Some(error),
-            Self::HomeDirectoryUnavailable | Self::InvalidPath | Self::RepairRequired => None,
+            Self::HomeDirectoryUnavailable
+            | Self::InvalidPath
+            | Self::RepairRequired
+            | Self::HelperUnavailable => None,
         }
     }
 }
@@ -160,6 +165,9 @@ pub fn install_hooks(
 ) -> Result<InstallReport, HookError> {
     if !helper_path.is_absolute() || !state_dir.is_absolute() {
         return Err(HookError::InvalidPath);
+    }
+    if !is_regular_file(helper_path) {
+        return Err(HookError::HelperUnavailable);
     }
     let (mut config, existed) = read_config(config_path)?;
     let original = config.clone();
@@ -259,6 +267,12 @@ pub fn is_owned_handler(value: &Value) -> bool {
             .is_some_and(|command| command.contains(OWNED_MARKER))
 }
 
+fn is_regular_file(path: &Path) -> bool {
+    fs::symlink_metadata(path)
+        .map(|metadata| metadata.file_type().is_file())
+        .unwrap_or(false)
+}
+
 fn has_direct_owned_handler(value: &Value) -> bool {
     is_owned_handler(value)
         || value
@@ -280,14 +294,14 @@ pub fn get_hook_status(config_path: &Path, helper_path: &Path) -> HookStatus {
     let Ok((config, existed)) = read_config(config_path) else {
         return if config_path.is_file() {
             HookStatus::Invalid
-        } else if helper_path.is_file() {
+        } else if is_regular_file(helper_path) {
             HookStatus::PartiallyInstalled
         } else {
             HookStatus::Missing
         };
     };
     if !existed {
-        return if helper_path.is_file() {
+        return if is_regular_file(helper_path) {
             HookStatus::PartiallyInstalled
         } else {
             HookStatus::Missing
@@ -298,7 +312,7 @@ pub fn get_hook_status(config_path: &Path, helper_path: &Path) -> HookStatus {
         return HookStatus::Invalid;
     }
     let Some(hooks_value) = config.get("hooks") else {
-        return if helper_path.is_file() {
+        return if is_regular_file(helper_path) {
             HookStatus::PartiallyInstalled
         } else {
             HookStatus::Missing
@@ -336,9 +350,9 @@ pub fn get_hook_status(config_path: &Path, helper_path: &Path) -> HookStatus {
         return HookStatus::PartiallyInstalled;
     }
 
-    if installed_events == EVENT_SPECS.len() && helper_path.is_file() {
+    if installed_events == EVENT_SPECS.len() && is_regular_file(helper_path) {
         HookStatus::Installed
-    } else if installed_events == 0 && !helper_path.is_file() {
+    } else if installed_events == 0 && !is_regular_file(helper_path) {
         HookStatus::Missing
     } else {
         HookStatus::PartiallyInstalled
@@ -554,9 +568,11 @@ fn copy_new_file(source_path: &Path, destination_path: &Path) -> io::Result<()> 
         Err(error) => return Err(error),
     };
     let result = (|| {
+        preserve_config_permissions(source_path, destination_path)?;
         io::copy(&mut source, &mut destination)?;
         destination.flush()?;
-        destination.sync_all()
+        destination.sync_all()?;
+        Ok(())
     })();
     if result.is_err() {
         let _ = fs::remove_file(destination_path);
@@ -575,6 +591,7 @@ fn atomic_write_json(path: &Path, value: &Value) -> Result<(), HookError> {
         .file_name()
         .ok_or(HookError::RepairRequired)?
         .to_string_lossy();
+    let permissions = config_permissions(path)?;
 
     for _ in 0..TEMP_LIMIT {
         let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
@@ -589,6 +606,7 @@ fn atomic_write_json(path: &Path, value: &Value) -> Result<(), HookError> {
             Err(error) => return Err(error.into()),
         };
         let result: io::Result<()> = (|| {
+            apply_config_permissions(&temp, permissions)?;
             file.write_all(&bytes)?;
             file.flush()?;
             file.sync_all()?;
@@ -602,6 +620,51 @@ fn atomic_write_json(path: &Path, value: &Value) -> Result<(), HookError> {
         return result.map_err(HookError::from);
     }
     Err(io::Error::new(io::ErrorKind::AlreadyExists, "temporary path unavailable").into())
+}
+
+#[cfg(unix)]
+fn config_permissions(path: &Path) -> io::Result<u32> {
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::symlink_metadata(path)
+        .map(|metadata| metadata.permissions().mode() & 0o7777)
+        .or_else(|error| {
+            (error.kind() == io::ErrorKind::NotFound)
+                .then_some(0o600)
+                .ok_or(error)
+        })
+}
+
+#[cfg(not(unix))]
+fn config_permissions(_path: &Path) -> io::Result<()> {
+    Ok(())
+}
+
+#[cfg(unix)]
+fn apply_config_permissions(path: &Path, mode: u32) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::set_permissions(path, fs::Permissions::from_mode(mode))
+}
+
+#[cfg(windows)]
+fn apply_config_permissions(path: &Path, _mode: ()) -> io::Result<()> {
+    crate::hook_protocol::set_private_permissions(path, 0o600)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn apply_config_permissions(_path: &Path, _mode: ()) -> io::Result<()> {
+    Ok(())
+}
+
+#[cfg(windows)]
+fn preserve_config_permissions(_source: &Path, destination: &Path) -> io::Result<()> {
+    crate::hook_protocol::set_private_permissions(destination, 0o600)
+}
+
+#[cfg(not(windows))]
+fn preserve_config_permissions(source: &Path, destination: &Path) -> io::Result<()> {
+    apply_config_permissions(destination, config_permissions(source)?)
 }
 
 #[cfg(test)]
@@ -662,6 +725,14 @@ mod tests {
         fs::write(path, serde_json::to_vec_pretty(value).unwrap()).unwrap();
     }
 
+    fn install_with_helper(config: &Path, helper: &Path, state: &Path) {
+        if let Some(parent) = helper.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(helper, b"helper").unwrap();
+        install_hooks(config, helper, state).unwrap();
+    }
+
     #[test]
     fn install_preserves_unrelated_handlers() {
         let root = temp_dir("preserve");
@@ -669,7 +740,7 @@ mod tests {
         let config = root.join("hooks.json");
         write_config(&config, &fixture());
 
-        install_hooks(&config, &root.join("codex-halo-hook"), &root.join("state")).unwrap();
+        install_with_helper(&config, &root.join("codex-halo-hook"), &root.join("state"));
 
         let installed: Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
         assert_eq!(
@@ -688,8 +759,8 @@ mod tests {
         let helper = root.join("codex-halo-hook");
         let state = root.join("state");
 
-        install_hooks(&config, &helper, &state).unwrap();
-        install_hooks(&config, &helper, &state).unwrap();
+        install_with_helper(&config, &helper, &state);
+        install_with_helper(&config, &helper, &state);
 
         let installed: Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
         assert_eq!(owned_count(&installed), EVENTS.len());
@@ -702,7 +773,7 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let config = root.join("hooks.json");
         write_config(&config, &fixture());
-        install_hooks(&config, &root.join("codex-halo-hook"), &root.join("state")).unwrap();
+        install_with_helper(&config, &root.join("codex-halo-hook"), &root.join("state"));
 
         remove_hooks(&config).unwrap();
 
@@ -735,7 +806,7 @@ mod tests {
         let config = root.join("hooks.json");
         write_config(&config, &fixture());
 
-        install_hooks(&config, &root.join("helper"), &root.join("state")).unwrap();
+        install_with_helper(&config, &root.join("helper"), &root.join("state"));
 
         assert!(serde_json::from_slice::<Value>(&fs::read(&config).unwrap()).is_ok());
         assert!(!fs::read_dir(&root)
@@ -758,7 +829,7 @@ mod tests {
         let helper = root.join("helper");
         let state = root.join("state");
 
-        install_hooks(&config, &helper, &state).unwrap();
+        install_with_helper(&config, &helper, &state);
 
         let backups = || {
             fs::read_dir(&root)
@@ -776,8 +847,89 @@ mod tests {
         assert_eq!(first_backups.len(), 1);
         assert_eq!(fs::read(first_backups[0].path()).unwrap(), original);
 
-        install_hooks(&config, &helper, &state).unwrap();
+        install_with_helper(&config, &helper, &state);
         assert_eq!(backups().len(), 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn missing_helper_is_rejected_before_config_changes() {
+        let root = temp_dir("missing-helper");
+        fs::create_dir_all(&root).unwrap();
+        let config = root.join("hooks.json");
+        let original = serde_json::to_vec_pretty(&fixture()).unwrap();
+        fs::write(&config, &original).unwrap();
+
+        let error =
+            install_hooks(&config, &root.join("missing-helper"), &root.join("state")).unwrap_err();
+
+        assert!(matches!(error, HookError::HelperUnavailable));
+        assert_eq!(fs::read(&config).unwrap(), original);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_helper_is_rejected_before_config_changes() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_dir("symlink-helper");
+        fs::create_dir_all(&root).unwrap();
+        let config = root.join("hooks.json");
+        let target = root.join("helper-target");
+        let helper = root.join("helper");
+        let original = serde_json::to_vec_pretty(&fixture()).unwrap();
+        fs::write(&config, &original).unwrap();
+        fs::write(&target, b"helper").unwrap();
+        symlink(&target, &helper).unwrap();
+
+        assert!(matches!(
+            install_hooks(&config, &helper, &root.join("state")),
+            Err(HookError::HelperUnavailable)
+        ));
+        assert_eq!(fs::read(&config).unwrap(), original);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn install_and_remove_preserve_a0600_config_mode() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = temp_dir("permissions");
+        fs::create_dir_all(&root).unwrap();
+        let config = root.join("hooks.json");
+        let helper = root.join("helper");
+        let state = root.join("state");
+        write_config(&config, &fixture());
+        fs::write(&helper, b"helper").unwrap();
+        fs::set_permissions(&config, fs::Permissions::from_mode(0o600)).unwrap();
+
+        install_with_helper(&config, &helper, &state);
+        assert_eq!(
+            fs::metadata(&config).unwrap().permissions().mode() & 0o7777,
+            0o600
+        );
+        let backup = fs::read_dir(&root)
+            .unwrap()
+            .filter_map(Result::ok)
+            .find(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("hooks.json.bak.")
+            })
+            .unwrap();
+        assert_eq!(
+            fs::metadata(backup.path()).unwrap().permissions().mode() & 0o7777,
+            0o600
+        );
+
+        remove_hooks(&config).unwrap();
+        assert_eq!(
+            fs::metadata(&config).unwrap().permissions().mode() & 0o7777,
+            0o600
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -790,7 +942,7 @@ mod tests {
         write_config(&config, &fixture());
         let helper = root.join("codex-halo-hook.exe");
 
-        install_hooks(&config, &helper, &root.join("state")).unwrap();
+        install_with_helper(&config, &helper, &root.join("state"));
 
         let installed: Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
         let command = installed["hooks"]["SessionStart"][0]["hooks"][0]["command"]
@@ -807,7 +959,7 @@ mod tests {
         let config = root.join("hooks.json");
         write_config(&config, &fixture());
 
-        install_hooks(&config, &root.join("helper"), &root.join("state")).unwrap();
+        install_with_helper(&config, &root.join("helper"), &root.join("state"));
 
         let installed: Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
         for event in EVENTS {
@@ -817,13 +969,13 @@ mod tests {
     }
 
     #[test]
-    fn generated_groups_use_the_required_matchers_and_async_values() {
+    fn generated_groups_use_the_required_matchers_and_synchronous_handlers() {
         let root = temp_dir("shape");
         fs::create_dir_all(&root).unwrap();
         let config = root.join("hooks.json");
         write_config(&config, &Value::Object(Default::default()));
 
-        install_hooks(&config, &root.join("helper"), &root.join("state")).unwrap();
+        install_with_helper(&config, &root.join("helper"), &root.join("state"));
 
         let installed: Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
         assert_eq!(
@@ -841,11 +993,7 @@ mod tests {
             assert_eq!(command["type"], "command");
             assert!(command["command"].as_str().unwrap().contains(OWNED_MARKER));
             assert_eq!(command["statusMessage"], "Codex Halo");
-            if event == "SessionEnd" {
-                assert!(command["async"].is_null());
-            } else {
-                assert_eq!(command["async"], true);
-            }
+            assert!(command["async"].is_null());
             #[cfg(windows)]
             assert!(command["commandWindows"].as_str().is_some());
         }
@@ -869,7 +1017,7 @@ mod tests {
             get_hook_status(&config, &helper),
             HookStatus::PartiallyInstalled
         );
-        install_hooks(&config, &helper, &state).unwrap();
+        install_with_helper(&config, &helper, &state);
         assert_eq!(get_hook_status(&config, &helper), HookStatus::Installed);
         fs::remove_dir_all(root).unwrap();
     }
@@ -902,7 +1050,7 @@ mod tests {
                 }
             }),
         );
-        install_hooks(&config, &root.join("helper"), &root.join("state")).unwrap();
+        install_with_helper(&config, &root.join("helper"), &root.join("state"));
 
         remove_hooks(&config).unwrap();
 
@@ -948,7 +1096,7 @@ mod tests {
             }),
         );
 
-        install_hooks(&config, &root.join("helper"), &root.join("state")).unwrap();
+        install_with_helper(&config, &root.join("helper"), &root.join("state"));
 
         let installed: Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
         let cases = [
@@ -1063,7 +1211,7 @@ mod tests {
         let state = root.join("state space/'quote'/$cash/`tick`;&|\\slash");
         write_config(&config, &Value::Object(Default::default()));
 
-        install_hooks(&config, &helper, &state).unwrap();
+        install_with_helper(&config, &helper, &state);
 
         let installed: Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
         let command = installed["hooks"]["Stop"][0]["hooks"][0]["command"]
@@ -1174,7 +1322,7 @@ mod tests {
             let state = root.join("state");
             write_config(&config_path, &fixture());
             fs::write(&helper, b"helper").unwrap();
-            install_hooks(&config_path, &helper, &state).unwrap();
+            install_with_helper(&config_path, &helper, &state);
             let mut config: Value =
                 serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
             mutate(&mut config);
@@ -1198,7 +1346,7 @@ mod tests {
         let state = root.join("state");
         write_config(&config_path, &fixture());
         fs::write(&helper, b"helper").unwrap();
-        install_hooks(&config_path, &helper, &state).unwrap();
+        install_with_helper(&config_path, &helper, &state);
 
         let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
         config["hooks"]["Stop"].as_array_mut().unwrap().push(json!({
@@ -1227,7 +1375,7 @@ mod tests {
         let state = root.join("state");
         write_config(&config_path, &fixture());
         fs::write(&helper, b"helper").unwrap();
-        install_hooks(&config_path, &helper, &state).unwrap();
+        install_with_helper(&config_path, &helper, &state);
 
         let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
         config["hooks"]["UnknownEvent"] = json!([{

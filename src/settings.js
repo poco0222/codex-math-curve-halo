@@ -1,11 +1,13 @@
 import { formatFormula, getCurveProfile } from './curves.js';
-import { formatSetupError } from './app.js';
+import { createSerialTaskQueue, DEFAULT_APP_SETTINGS, formatSetupError } from './app.js';
 
 const invoke = window.__TAURI__?.core?.invoke ?? window.__TAURI__?.invoke;
 const hookStatus = document.getElementById('hook-status');
 const diagnostics = document.getElementById('diagnostics');
 const formula = document.getElementById('formula');
 let setupError = '';
+let currentDisplayState = { state: 'idle', updated_at_ms: 0 };
+const saveSettings = createSerialTaskQueue();
 
 const stateLabels = {
   idle: 'Idle',
@@ -87,8 +89,12 @@ function renderHookStatus(status) {
 }
 
 function renderDiagnostics(displayState = {}) {
-  const state = stateLabels[displayState.state] ?? 'Idle';
-  const updatedAt = Number(displayState.updated_at_ms);
+  currentDisplayState = {
+    state: displayState.state ?? currentDisplayState.state,
+    updated_at_ms: displayState.updated_at_ms ?? currentDisplayState.updated_at_ms,
+  };
+  const state = stateLabels[currentDisplayState.state] ?? 'Idle';
+  const updatedAt = Number(currentDisplayState.updated_at_ms);
   const timestamp = Number.isFinite(updatedAt) && updatedAt > 0
     ? new Date(updatedAt).toLocaleString()
     : 'never';
@@ -111,18 +117,33 @@ async function loadSettings() {
     invokeCommand('get_settings'),
     invokeCommand('get_hook_status'),
   ]);
-  if (settings.ok) applySettings(settings.value);
+  applySettings(settings.ok ? settings.value : DEFAULT_APP_SETTINGS);
   if (status.ok) renderHookStatus(status.value);
   await refreshDiagnostics();
 }
 
 async function saveCurrentSettings() {
-  const result = await invokeCommand('save_settings', { settings: readSettings() });
+  const settings = readSettings();
+  const result = await saveSettings(() => invokeCommand('save_settings', { settings }));
   if (result.ok) {
     clearSetupError();
     renderFormula();
   }
 }
+
+document.getElementById('export-diagnostics').addEventListener('click', () => {
+  const payload = {
+    state: currentDisplayState.state,
+    updated_at_ms: currentDisplayState.updated_at_ms,
+  };
+  const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'codex-halo-diagnostics.json';
+  link.click();
+  URL.revokeObjectURL(url);
+});
 
 for (const field of document.querySelectorAll('input, select')) {
   const event = field.type === 'number' || field.type === 'range' ? 'input' : 'change';
@@ -147,7 +168,7 @@ document.getElementById('remove-hooks').addEventListener('click', async () => {
 });
 
 document.getElementById('reset-position').addEventListener('click', async () => {
-  const result = await invokeCommand('reset_position');
+  const result = await saveSettings(() => invokeCommand('reset_position'));
   if (result.ok) {
     clearSetupError();
     applySettings(result.value);
