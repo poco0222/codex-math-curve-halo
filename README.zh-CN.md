@@ -26,13 +26,17 @@ macOS 打包时，使用带目标后缀的 helper 并执行打包：
 cargo tauri build --target aarch64-apple-darwin
 ```
 
-## Codex hooks
+## Codex Plugin hooks
 
-在设置中使用 **安装 hooks**，将 Codex Halo 自有的生命周期命令添加到用户级
-Codex hooks 配置 `~/.codex/hooks.json` 中。Codex 可能要求用户检查并信任新增或
-变更的 hooks。**移除 hooks** 只会删除 Codex Halo 的条目。已安装的命令会调用
-复制到应用数据目录中的 helper，并使用 `--state-dir` 传入该应用的 `state` 目录；
-更新时会在同一路径替换 helper。安装 hooks 不会自动信任它们。
+推荐使用 `codex-halo` Plugin。先安装并启动 Codex Halo 原生应用一次，再通过本地
+或团队 marketplace 添加 Plugin，启用后在 `/hooks` 中检查并信任 hooks，最后启动
+新的 Codex session。原生应用会把 helper 安装到 `CODEX_HOME/codex-halo`；Plugin
+负责生命周期 hooks，Tauri 应用继续负责光环、托盘、设置和 reducer。
+
+兼容用的 **安装兼容 hooks** 仍保留给已有安装和迁移场景，只会改动
+`~/.codex/hooks.json` 中 Codex Halo 自有条目，并保留其他 hooks。**移除兼容 hooks**
+也只删除 Codex Halo 条目。已有手动安装时，在启用 Plugin 后执行一次移除即可避免
+重复监听。Plugin 和兼容流程都不会自动信任 hooks。
 
 自有的 `SessionStart`、`Stop` 和 `SessionEnd` hooks 会同步运行，以保持状态变化
 与 Codex 事件顺序一致。带有 `source: "compact"` 的 `SessionStart` 会映射为

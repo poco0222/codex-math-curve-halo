@@ -21,7 +21,7 @@
       "Lifecycle hooks"
     ],
     "defaultPrompt": [
-      "Install Codex Halo hooks for this Codex environment."
+      "Enable Codex Halo lifecycle hooks for this Codex environment."
     ],
     "brandColor": "#339CFF",
     "composerIcon": "./assets/icon.png",

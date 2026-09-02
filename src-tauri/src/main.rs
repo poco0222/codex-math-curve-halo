@@ -646,8 +646,8 @@ mod tray_tests {
             [
                 "Open Settings",
                 "Disable overlay",
-                "Install/repair Codex hooks",
-                "Remove Codex Halo hooks",
+                "Install/repair legacy hooks",
+                "Remove legacy hooks",
                 "Simulate Idle",
                 "Simulate Thinking",
                 "Simulate Executing",
@@ -671,8 +671,8 @@ mod tray_tests {
             [
                 "打开设置",
                 "禁用叠加层",
-                "安装/修复 Codex hooks",
-                "移除 Codex Halo hooks",
+                "安装/修复兼容 hooks",
+                "移除兼容 hooks",
                 "模拟空闲",
                 "模拟思考",
                 "模拟执行",
@@ -723,14 +723,14 @@ fn tray_labels(settings: &AppSettings) -> [&'static str; 12] {
         },
         toggle_overlay,
         if chinese {
-            "安装/修复 Codex hooks"
+            "安装/修复兼容 hooks"
         } else {
-            "Install/repair Codex hooks"
+            "Install/repair legacy hooks"
         },
         if chinese {
-            "移除 Codex Halo hooks"
+            "移除兼容 hooks"
         } else {
-            "Remove Codex Halo hooks"
+            "Remove legacy hooks"
         },
         if chinese {
             "模拟空闲"
@@ -823,14 +823,14 @@ fn build_tray(
         install_hooks: MenuItem::with_id(
             app,
             "install-hooks",
-            "Install/repair Codex hooks",
+            "Install/repair legacy hooks",
             true,
             None::<&str>,
         )?,
         remove_hooks: MenuItem::with_id(
             app,
             "remove-hooks",
-            "Remove Codex Halo hooks",
+            "Remove legacy hooks",
             true,
             None::<&str>,
         )?,

@@ -5,15 +5,13 @@ This package registers Codex lifecycle hooks for the Codex Halo desktop app.
 ## Local setup
 
 1. Install and start the Codex Halo desktop app.
-2. Build the helper for the current target from the repository root:
+   The app installs the native helper under `CODEX_HOME/codex-halo`.
+2. Add this plugin through a local or team Codex marketplace.
+3. Enable the plugin and review its hooks in `/hooks` once.
+4. Start a new Codex session.
 
-   ```bash
-   npm run build:plugin -- --target aarch64-apple-darwin
-   ```
-
-3. Add this plugin through a local Codex marketplace.
-4. Enable the plugin and review its hooks in `/hooks` once.
-5. Start a new Codex session.
+If an older manual hook install is still present, remove its Codex Halo entries from
+the native app's legacy compatibility control after enabling this Plugin.
 
 The hooks write only hashed session state, state names, and timestamps under
 `CODEX_HOME/codex-halo/state`. Prompts, transcripts, tool inputs, model names,

@@ -132,6 +132,19 @@ test('settings page exposes a persisted language selector', async () => {
   assert.match(source, /document\.documentElement\.lang/);
 });
 
+test('settings page labels manual hook controls as legacy compatibility controls', async () => {
+  const html = await readFile(new URL('./settings.html', import.meta.url), 'utf8');
+  const i18n = await readFile(new URL('./i18n.js', import.meta.url), 'utf8');
+
+  assert.match(html, /data-i18n="settings\.pluginManaged"/);
+  assert.match(html, /data-i18n="settings\.legacyHooks"/);
+  assert.match(html, /data-i18n="settings\.installLegacyHooks"/);
+  assert.match(html, /data-i18n="settings\.removeLegacyHooks"/);
+  assert.match(i18n, /'settings\.pluginManaged': 'Plugin hooks are managed by Codex'/);
+  assert.match(i18n, /'settings\.installLegacyHooks': 'Install legacy hooks'/);
+  assert.match(i18n, /'settings\.removeLegacyHooks': 'Remove legacy hooks'/);
+});
+
 test('settings language flow saves once and redraws raw setup errors', async () => {
   class FakeElement {
     constructor({ id = '', type = 'text', value = '', checked = false, dataset = {}, children = [] } = {}) {
@@ -186,7 +199,7 @@ test('settings language flow saves once and redraws raw setup errors', async () 
   ];
   const hookLabel = new FakeElement({ dataset: { hookStatusLabel: '' } });
   const hookStatus = new FakeElement({ children: [
-    new FakeElement({ dataset: { i18n: 'settings.hooks' } }),
+    new FakeElement({ dataset: { i18n: 'settings.legacyHooks' } }),
     hookLabel,
   ] });
   const diagnostics = new FakeElement({ dataset: { i18n: 'settings.diagnosticsLoading' } });

@@ -85,14 +85,14 @@ function renderFormula(settings = readSettings()) {
 
 function renderHookStatus(status) {
   currentHookStatus = status;
-  const section = hookStatus.querySelector('[data-i18n="settings.hooks"]');
+  const section = hookStatus.querySelector('[data-i18n="settings.legacyHooks"]');
   const label = hookStatus.querySelector('[data-hook-status-label]');
   if (section && label) {
-    section.textContent = getText(currentLanguage, 'settings.hooks');
+    section.textContent = getText(currentLanguage, 'settings.legacyHooks');
     label.textContent = getHookLabel(currentLanguage, status);
     return;
   }
-  hookStatus.textContent = `${getText(currentLanguage, 'settings.hooks')}: ${getHookLabel(currentLanguage, status)}`;
+  hookStatus.textContent = `${getText(currentLanguage, 'settings.legacyHooks')}: ${getHookLabel(currentLanguage, status)}`;
 }
 
 function renderDiagnostics(displayState = {}) {

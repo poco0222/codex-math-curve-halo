@@ -40,7 +40,7 @@ export function sidecarOutputPath(projectRoot, targetTriple) {
   return join(projectRoot, 'src-tauri', 'binaries', sidecarFilename(targetTriple));
 }
 
-export function buildSidecar(targetTriple, output = sidecarOutputPath(PROJECT_ROOT, targetTriple)) {
+function buildSidecar(targetTriple) {
   const manifest = join(PROJECT_ROOT, 'src-tauri', 'Cargo.toml');
   const env = { ...process.env, CODEX_HALO_BUILD_SIDECAR: '1' };
   execFileSync('cargo', [
@@ -62,6 +62,7 @@ export function buildSidecar(targetTriple, output = sidecarOutputPath(PROJECT_RO
     'release',
     `codex-halo-hook${targetTriple.includes('windows') ? '.exe' : ''}`,
   );
+  const output = sidecarOutputPath(PROJECT_ROOT, targetTriple);
   mkdirSync(dirname(output), { recursive: true });
   copyFileSync(source, output);
   if (!targetTriple.includes('windows')) chmodSync(output, 0o755);

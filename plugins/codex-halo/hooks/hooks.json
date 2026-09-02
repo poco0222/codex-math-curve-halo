@@ -6,8 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT}/bin/codex-halo-hook\" --codex-halo",
-            "commandWindows": "& \"$env:PLUGIN_ROOT\\bin\\codex-halo-hook.exe\" --codex-halo",
+            "command": "sh \"${PLUGIN_ROOT}/hooks/run-helper.sh\"",
+            "commandWindows": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"$env:PLUGIN_ROOT\\hooks\\run-helper.ps1\"",
             "timeout": 5,
             "statusMessage": "Updating Codex Halo"
           }
@@ -19,8 +19,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT}/bin/codex-halo-hook\" --codex-halo",
-            "commandWindows": "& \"$env:PLUGIN_ROOT\\bin\\codex-halo-hook.exe\" --codex-halo",
+            "command": "sh \"${PLUGIN_ROOT}/hooks/run-helper.sh\"",
+            "commandWindows": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"$env:PLUGIN_ROOT\\hooks\\run-helper.ps1\"",
             "timeout": 5,
             "statusMessage": "Updating Codex Halo"
           }
@@ -33,8 +33,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT}/bin/codex-halo-hook\" --codex-halo",
-            "commandWindows": "& \"$env:PLUGIN_ROOT\\bin\\codex-halo-hook.exe\" --codex-halo",
+            "command": "sh \"${PLUGIN_ROOT}/hooks/run-helper.sh\"",
+            "commandWindows": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"$env:PLUGIN_ROOT\\hooks\\run-helper.ps1\"",
             "timeout": 5,
             "statusMessage": "Updating Codex Halo"
           }
@@ -47,8 +47,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT}/bin/codex-halo-hook\" --codex-halo",
-            "commandWindows": "& \"$env:PLUGIN_ROOT\\bin\\codex-halo-hook.exe\" --codex-halo",
+            "command": "sh \"${PLUGIN_ROOT}/hooks/run-helper.sh\"",
+            "commandWindows": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"$env:PLUGIN_ROOT\\hooks\\run-helper.ps1\"",
             "timeout": 5,
             "statusMessage": "Updating Codex Halo"
           }
@@ -61,8 +61,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT}/bin/codex-halo-hook\" --codex-halo",
-            "commandWindows": "& \"$env:PLUGIN_ROOT\\bin\\codex-halo-hook.exe\" --codex-halo",
+            "command": "sh \"${PLUGIN_ROOT}/hooks/run-helper.sh\"",
+            "commandWindows": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"$env:PLUGIN_ROOT\\hooks\\run-helper.ps1\"",
             "timeout": 5,
             "statusMessage": "Updating Codex Halo"
           }
@@ -75,8 +75,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT}/bin/codex-halo-hook\" --codex-halo",
-            "commandWindows": "& \"$env:PLUGIN_ROOT\\bin\\codex-halo-hook.exe\" --codex-halo",
+            "command": "sh \"${PLUGIN_ROOT}/hooks/run-helper.sh\"",
+            "commandWindows": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"$env:PLUGIN_ROOT\\hooks\\run-helper.ps1\"",
             "timeout": 5,
             "statusMessage": "Updating Codex Halo"
           }
@@ -88,8 +88,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT}/bin/codex-halo-hook\" --codex-halo",
-            "commandWindows": "& \"$env:PLUGIN_ROOT\\bin\\codex-halo-hook.exe\" --codex-halo",
+            "command": "sh \"${PLUGIN_ROOT}/hooks/run-helper.sh\"",
+            "commandWindows": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"$env:PLUGIN_ROOT\\hooks\\run-helper.ps1\"",
             "timeout": 5,
             "statusMessage": "Updating Codex Halo"
           }
@@ -101,8 +101,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT}/bin/codex-halo-hook\" --codex-halo",
-            "commandWindows": "& \"$env:PLUGIN_ROOT\\bin\\codex-halo-hook.exe\" --codex-halo",
+            "command": "sh \"${PLUGIN_ROOT}/hooks/run-helper.sh\"",
+            "commandWindows": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"$env:PLUGIN_ROOT\\hooks\\run-helper.ps1\"",
             "timeout": 3,
             "statusMessage": "Updating Codex Halo"
           }

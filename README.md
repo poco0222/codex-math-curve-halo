@@ -27,15 +27,23 @@ For a macOS package build, generate the target-suffixed helper and bundle with:
 cargo tauri build --target aarch64-apple-darwin
 ```
 
-## Codex hooks
+## Codex Plugin hooks
 
-Use **Install hooks** in settings to add the owned lifecycle commands to the
-user-level Codex hooks configuration at `~/.codex/hooks.json`. Codex may require
-the user to review and trust new or changed hooks. **Remove hooks** deletes only
-Codex Halo entries.
-Installed commands call the helper copied to the app-data directory and pass
-that app's `state` directory with `--state-dir`; updates replace the helper at
-the same path. Installing hooks never auto-trusts them.
+The preferred setup is the `codex-halo` Plugin. Install and start the native
+app once, add the Plugin through a local or team marketplace, enable it,
+review/trust its hooks once in `/hooks`, and start a new Codex session. The
+native app installs the helper under `CODEX_HOME/codex-halo`; the Plugin owns
+the lifecycle hook definition while the Tauri app keeps the overlay, tray,
+settings, and reducer.
+
+The legacy **Install legacy hooks** control remains available for existing installs and
+migration. After enabling the Plugin, use **Remove legacy hooks** once when an older
+manual install is still present; it preserves unrelated entries in
+`~/.codex/hooks.json`.
+
+The Plugin helper uses the shared `CODEX_HOME/codex-halo/state` directory. Codex
+may require the user to review and trust new or changed hooks. Installing a
+Plugin never auto-trusts them.
 
 The owned `SessionStart`, `Stop`, and `SessionEnd` hooks run synchronously so
 state changes keep Codex event order. `SessionStart` with `source: "compact"`
