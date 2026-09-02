@@ -5,11 +5,14 @@ use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(windows)]
 const HELPER_FILENAME: &str = "codex-halo-hook.exe";
 #[cfg(not(windows))]
 const HELPER_FILENAME: &str = "codex-halo-hook";
+
+static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Deserialize)]
 pub struct HookInput {
@@ -93,8 +96,7 @@ pub fn write_snapshot(
     prepare_private_dir(state_dir)?;
     let session_key = session_key(input);
     let path = state_dir.join(format!("{session_key}.json"));
-    let temp_path = state_dir.join(format!("{session_key}.json.tmp"));
-    let mut file = private_new_file(&temp_path)?;
+    let (temp_path, mut file) = private_temp_file(state_dir, &format!("{session_key}.json"))?;
     let result = (|| {
         serde_json::to_writer(&mut file, &Snapshot::new(session_key, state, now_ms))?;
         file.flush()?;
@@ -110,24 +112,24 @@ pub fn write_snapshot(
 
 pub fn remove_snapshot(state_dir: &Path, input: &HookInput) -> Result<(), HookError> {
     let path = snapshot_path(state_dir, input);
-    match fs::remove_file(path) {
+    let remove_result = match fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error.into()),
-    }
+    };
+    remove_result.and(cleanup_session_temps(state_dir, input))
 }
 
 pub fn install_helper(source: &Path, app_data_dir: &Path) -> Result<PathBuf, HookError> {
     prepare_private_dir(app_data_dir)?;
     let destination = app_data_dir.join(HELPER_FILENAME);
-    let temp_path = app_data_dir.join(format!("{HELPER_FILENAME}.tmp"));
+    let (temp_path, mut target) = private_temp_file(app_data_dir, HELPER_FILENAME)?;
     let result = (|| {
         let mut source = fs::File::open(source)?;
-        let mut target = private_file(&temp_path)?;
         io::copy(&mut source, &mut target)?;
         target.flush()?;
+        set_private_permissions(&temp_path, 0o700)?;
         fs::rename(&temp_path, &destination)?;
-        set_private_permissions(&destination, 0o700)?;
         Ok(destination.clone())
     })();
 
@@ -142,6 +144,28 @@ pub fn install_bundled_helper(app_data_dir: &Path) -> Result<PathBuf, HookError>
     install_helper(&source, app_data_dir)
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
+fn windows_private_acl_descriptor(is_directory: bool) -> &'static str {
+    if is_directory {
+        "D:P(A;OICI;FA;;;OW)"
+    } else {
+        "D:P(A;;FA;;;OW)"
+    }
+}
+
+pub fn is_snapshot_filename(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let Some(key) = name.strip_suffix(".json") else {
+        return false;
+    };
+    key.len() == 64
+        && key
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
 fn snapshot_path(state_dir: &Path, input: &HookInput) -> PathBuf {
     state_dir.join(format!("{}.json", session_key(input)))
 }
@@ -150,25 +174,57 @@ fn session_key(input: &HookInput) -> String {
     format!("{:x}", Sha256::digest(input.session_id.as_bytes()))
 }
 
+fn cleanup_session_temps(state_dir: &Path, input: &HookInput) -> Result<(), HookError> {
+    let prefix = format!("{}.json.tmp", session_key(input));
+    let entries = match fs::read_dir(state_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+
+    for entry in entries {
+        let entry = entry?;
+        let name = entry.file_name();
+        if name.to_str().is_some_and(|name| name.starts_with(&prefix)) {
+            match fs::remove_file(entry.path()) {
+                Ok(()) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+    }
+    Ok(())
+}
+
 fn prepare_private_dir(path: &Path) -> io::Result<()> {
     fs::create_dir_all(path)?;
     set_private_permissions(path, 0o700)
 }
 
-fn private_file(path: &Path) -> io::Result<fs::File> {
-    let file = OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .open(path)?;
-    set_private_permissions(path, 0o600)?;
+fn private_new_file(path: &Path) -> io::Result<fs::File> {
+    let file = OpenOptions::new().create_new(true).write(true).open(path)?;
+    if let Err(error) = set_private_permissions(path, 0o600) {
+        drop(file);
+        let _ = fs::remove_file(path);
+        return Err(error);
+    }
     Ok(file)
 }
 
-fn private_new_file(path: &Path) -> io::Result<fs::File> {
-    let file = OpenOptions::new().create_new(true).write(true).open(path)?;
-    set_private_permissions(path, 0o600)?;
-    Ok(file)
+fn private_temp_file(dir: &Path, stem: &str) -> io::Result<(PathBuf, fs::File)> {
+    for _ in 0..64 {
+        let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let path = dir.join(format!("{stem}.tmp.{}.{}", std::process::id(), sequence));
+        match private_new_file(&path) {
+            Ok(file) => return Ok((path, file)),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "unable to allocate a private temp file",
+    ))
 }
 
 #[cfg(unix)]
@@ -177,9 +233,60 @@ fn set_private_permissions(path: &Path, mode: u32) -> io::Result<()> {
     fs::set_permissions(path, fs::Permissions::from_mode(mode))
 }
 
-#[cfg(not(unix))]
+#[cfg(all(not(unix), not(windows)))]
 fn set_private_permissions(_path: &Path, _mode: u32) -> io::Result<()> {
     Ok(())
+}
+
+#[cfg(windows)]
+fn set_private_permissions(path: &Path, _mode: u32) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use std::ptr::null_mut;
+    use windows_sys::Win32::Foundation::LocalFree;
+    use windows_sys::Win32::Security::Authorization::{
+        ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+    };
+    use windows_sys::Win32::Security::{
+        SetFileSecurityW, DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION,
+        PSECURITY_DESCRIPTOR,
+    };
+
+    let descriptor = windows_private_acl_descriptor(path.is_dir())
+        .encode_utf16()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    let filename = path
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    let mut security_descriptor: PSECURITY_DESCRIPTOR = null_mut();
+    let mut descriptor_size = 0;
+
+    unsafe {
+        if ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            descriptor.as_ptr(),
+            SDDL_REVISION_1,
+            &mut security_descriptor,
+            &mut descriptor_size,
+        ) == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+
+        let result = SetFileSecurityW(
+            filename.as_ptr(),
+            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+            security_descriptor,
+        );
+        let error = if result == 0 {
+            Some(io::Error::last_os_error())
+        } else {
+            None
+        };
+        let _ = LocalFree(security_descriptor);
+        error.map_or(Ok(()), Err)
+    }
 }
 
 #[cfg(test)]
@@ -305,17 +412,24 @@ mod tests {
         let input = parse_hook_input(&fixture("SessionEnd")).unwrap();
         write_snapshot(&state_dir, &input, HaloState::Thinking, 100).unwrap();
         let unrelated = state_dir.join("unrelated.json");
+        let key = "e3091fe2986effba7b815449e32060814fed909a796454920df65f816a3a5889";
+        let fixed_temp = state_dir.join(format!("{key}.json.tmp"));
+        let crash_temp = state_dir.join(format!("{key}.json.tmp.crash-residue"));
         fs::write(&unrelated, "{}").unwrap();
+        fs::write(&fixed_temp, "{}").unwrap();
+        fs::write(&crash_temp, "{}").unwrap();
 
         remove_snapshot(&state_dir, &input).unwrap();
 
         assert_eq!(fs::read_dir(&state_dir).unwrap().count(), 1);
         assert!(unrelated.exists());
+        assert!(!fixed_temp.exists());
+        assert!(!crash_temp.exists());
         fs::remove_dir_all(state_dir).unwrap();
     }
 
     #[test]
-    fn does_not_truncate_an_in_progress_snapshot_temp_file() {
+    fn fixed_crash_residue_does_not_block_a_unique_snapshot_temp() {
         let state_dir = temp_path("temp-race");
         fs::create_dir_all(&state_dir).unwrap();
         let input = parse_hook_input(&fixture("PreToolUse")).unwrap();
@@ -323,9 +437,11 @@ mod tests {
         let temp_path = state_dir.join(format!("{key}.json.tmp"));
         fs::write(&temp_path, b"in-progress").unwrap();
 
-        assert!(write_snapshot(&state_dir, &input, HaloState::Executing, 100).is_err());
+        write_snapshot(&state_dir, &input, HaloState::Executing, 100).unwrap();
         assert_eq!(fs::read(&temp_path).unwrap(), b"in-progress");
-        assert!(!state_dir.join(format!("{key}.json")).exists());
+        assert!(state_dir.join(format!("{key}.json")).exists());
+        remove_snapshot(&state_dir, &input).unwrap();
+        assert!(!temp_path.exists());
         fs::remove_dir_all(state_dir).unwrap();
     }
 
@@ -356,5 +472,37 @@ mod tests {
         }
 
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn helper_install_does_not_follow_a_preexisting_temp_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_path("helper-symlink");
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("bundled-helper");
+        let app_data_dir = root.join("app-data");
+        let outside = root.join("outside");
+        fs::write(&source, b"helper-v2").unwrap();
+        fs::write(&outside, b"must-remain").unwrap();
+        fs::create_dir_all(&app_data_dir).unwrap();
+        symlink(
+            &outside,
+            app_data_dir.join(format!("{HELPER_FILENAME}.tmp")),
+        )
+        .unwrap();
+
+        let installed = install_helper(&source, &app_data_dir).unwrap();
+
+        assert_eq!(fs::read(&outside).unwrap(), b"must-remain");
+        assert_eq!(fs::read(&installed).unwrap(), b"helper-v2");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn windows_private_descriptors_allow_only_the_owner() {
+        assert_eq!(windows_private_acl_descriptor(true), "D:P(A;OICI;FA;;;OW)");
+        assert_eq!(windows_private_acl_descriptor(false), "D:P(A;;FA;;;OW)");
     }
 }

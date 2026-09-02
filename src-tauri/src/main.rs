@@ -101,6 +101,9 @@ where
 
     for path in entries {
         let path = path?;
+        if !hook_protocol::is_snapshot_filename(&path) {
+            continue;
+        }
         let Ok(contents) = read_file(&path) else {
             continue;
         };
@@ -165,12 +168,24 @@ fn show_settings_or_report(app: &AppHandle) {
     }
 }
 
+fn helper_setup_best_effort<F>(install: F) -> bool
+where
+    F: FnOnce() -> Result<(), hook_protocol::HookError>,
+{
+    if install().is_err() {
+        eprintln!("Codex Halo: hook helper unavailable");
+    }
+    true
+}
+
 fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "macos")]
     app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
     let app_data_dir = app.path().app_data_dir()?;
-    hook_protocol::install_bundled_helper(&app_data_dir)?;
+    helper_setup_best_effort(|| {
+        hook_protocol::install_bundled_helper(&app_data_dir).map(|_| ())
+    });
 
     let settings = AppSettings::default();
     let overlay = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
@@ -290,9 +305,13 @@ mod scan_tests {
         let runtime = runtime_with_input_needed(now);
         let reads = Cell::new(0);
         let entries = vec![
-            Ok(PathBuf::from("first.json")),
+            Ok(PathBuf::from(
+                "e3091fe2986effba7b815449e32060814fed909a796454920df65f816a3a5889.json",
+            )),
             Err(io::Error::new(io::ErrorKind::Other, "entry failed")),
-            Ok(PathBuf::from("last.json")),
+            Ok(PathBuf::from(
+                "1629ea86a7e4d9c7cc074bbc86dde1871ab8a9a2abfaf3c8a73acdb97ace9f06.json",
+            )),
         ];
         let scan = read_snapshot_entries(entries, |_| {
             reads.set(reads.get() + 1);
@@ -309,15 +328,26 @@ mod scan_tests {
     #[test]
     fn mixed_valid_and_corrupt_files_keep_valid_snapshots() {
         let entries = vec![
-            Ok(PathBuf::from("valid.json")),
-            Ok(PathBuf::from("corrupt.json")),
-            Ok(PathBuf::from("unreadable.json")),
+            Ok(PathBuf::from(
+                "e3091fe2986effba7b815449e32060814fed909a796454920df65f816a3a5889.json",
+            )),
+            Ok(PathBuf::from(
+                "e3091fe2986effba7b815449e32060814fed909a796454920df65f816a3a5889.corrupt.json",
+            )),
+            Ok(PathBuf::from(
+                "e3091fe2986effba7b815449e32060814fed909a796454920df65f816a3a5889.unreadable.json",
+            )),
         ];
         let snapshots = read_snapshot_entries(entries, |path| match path.to_str().unwrap() {
-            "valid.json" => Ok(
+            "e3091fe2986effba7b815449e32060814fed909a796454920df65f816a3a5889.json" => Ok(
                 r#"{"session_key":"valid","state":"executing","updated_at_ms":999900}"#.to_owned(),
             ),
-            "corrupt.json" => Ok("{".to_owned()),
+            "e3091fe2986effba7b815449e32060814fed909a796454920df65f816a3a5889.corrupt.json" => {
+                Ok("{".to_owned())
+            }
+            "e3091fe2986effba7b815449e32060814fed909a796454920df65f816a3a5889.unreadable.json" => {
+                Err(io::Error::new(io::ErrorKind::PermissionDenied, "denied"))
+            }
             _ => Err(io::Error::new(io::ErrorKind::PermissionDenied, "denied")),
         })
         .unwrap();
@@ -325,6 +355,34 @@ mod scan_tests {
         assert_eq!(snapshots.len(), 1);
         assert_eq!(snapshots[0].session_key, "valid");
         assert_eq!(snapshots[0].state, HaloState::Executing);
+    }
+
+    #[test]
+    fn reader_accepts_only_exact_lowercase_sha256_json_names() {
+        let valid =
+            PathBuf::from("e3091fe2986effba7b815449e32060814fed909a796454920df65f816a3a5889.json");
+        let entries = vec![
+            Ok(valid.clone()),
+            Ok(PathBuf::from(
+                "e3091fe2986effba7b815449e32060814fed909a796454920df65f816a3a5889.json.tmp",
+            )),
+            Ok(PathBuf::from(
+                "e3091fe2986effba7b815449e32060814fed909a796454920df65f816a3a5889.json.tmp.crash",
+            )),
+            Ok(PathBuf::from(
+                "E3091FE2986EFFBA7B815449E32060814FED909A796454920DF65F816A3A5889.json",
+            )),
+            Ok(PathBuf::from("short.json")),
+        ];
+
+        let snapshots = read_snapshot_entries(entries, |path| {
+            assert_eq!(path, valid.as_path());
+            Ok(r#"{"session_key":"valid","state":"executing","updated_at_ms":999900}"#.to_owned())
+        })
+        .unwrap();
+
+        assert_eq!(snapshots.len(), 1);
+        assert_eq!(snapshots[0].session_key, "valid");
     }
 
     #[test]
@@ -342,5 +400,12 @@ mod scan_tests {
         assert_eq!(display.state, HaloState::Executing);
         assert_eq!(display.session_count, 2);
         assert_eq!(display.updated_at_ms, now - 100);
+    }
+
+    #[test]
+    fn helper_copy_failure_does_not_propagate_from_setup() {
+        assert!(helper_setup_best_effort(|| {
+            Err(hook_protocol::HookError::InvalidInput)
+        }));
     }
 }

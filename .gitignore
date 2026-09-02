@@ -4,3 +4,4 @@ dist/
 state/
 settings-export*.json
 *.local.json
+src-tauri/binaries/codex-halo-hook-*

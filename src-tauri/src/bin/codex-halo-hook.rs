@@ -61,13 +61,19 @@ fn run(
 fn parse_state_dir(args: impl IntoIterator<Item = OsString>) -> Option<PathBuf> {
     let mut args = args.into_iter();
     let mut state_dir = None;
+    let mut marker_seen = false;
 
     while let Some(arg) = args.next() {
-        if arg == "--codex-halo" {
+        if arg == "--codex-halo" && !marker_seen {
+            marker_seen = true;
             continue;
         }
         if arg == "--state-dir" && state_dir.is_none() {
-            state_dir = args.next().map(PathBuf::from);
+            let value = args.next()?;
+            if value.to_str().is_some_and(|value| value.starts_with('-')) {
+                return None;
+            }
+            state_dir = Some(PathBuf::from(value));
             continue;
         }
         return None;
@@ -189,5 +195,53 @@ mod tests {
         assert!(stderr.is_empty());
         assert_eq!(fs::read_dir(&state_dir).unwrap().count(), 0);
         fs::remove_dir_all(state_dir).unwrap();
+    }
+
+    #[test]
+    fn rejects_ambiguous_or_unknown_command_line_arguments() {
+        let cases = [
+            vec!["--state-dir".into(), "--codex-halo".into()],
+            vec![
+                "--state-dir".into(),
+                "/tmp/state".into(),
+                "--state-dir".into(),
+                "/tmp/other".into(),
+            ],
+            vec![
+                "--state-dir".into(),
+                "/tmp/state".into(),
+                "--unknown".into(),
+            ],
+            vec!["--codex-halo".into()],
+            vec![
+                "--codex-halo".into(),
+                "--codex-halo".into(),
+                "--state-dir".into(),
+                "/tmp/state".into(),
+            ],
+            Vec::new(),
+        ];
+
+        for args in cases {
+            assert!(parse_state_dir(args).is_none());
+        }
+    }
+
+    #[test]
+    fn invalid_arguments_are_exit_zero_no_side_effects() {
+        let state_dir = temp_path("invalid-args");
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        run(
+            ["--state-dir".into(), "--codex-halo".into()],
+            br#"{"session_id":"private-id","prompt":"secret"}"#.as_slice(),
+            &mut stdout,
+            &mut stderr,
+        );
+
+        assert_eq!(stdout, b"{}\n");
+        assert!(!String::from_utf8(stderr).unwrap().contains("secret"));
+        assert!(!state_dir.exists());
     }
 }
