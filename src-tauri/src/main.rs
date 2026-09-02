@@ -56,7 +56,17 @@ fn show_settings(app: &AppHandle) -> Result<(), String> {
     settings.set_focus().map_err(|error| error.to_string())
 }
 
+fn show_settings_or_report(app: &AppHandle) {
+    if let Err(error) = show_settings(app) {
+        eprintln!("Codex Halo: unable to show settings: {error}");
+    }
+}
+
 fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(target_os = "macos")]
+    app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+    let settings = AppSettings::default();
     let overlay = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("Codex Halo")
         .inner_size(112.0, 112.0)
@@ -68,6 +78,9 @@ fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
         .visible(true)
         .build()?;
     platform::configure_overlay(&overlay)?;
+    if let Err(error) = platform::position_overlay(&overlay, settings.offset_x, settings.offset_y) {
+        eprintln!("Codex Halo: unable to position overlay: {error}");
+    }
 
     WebviewWindowBuilder::new(
         app,
@@ -87,7 +100,7 @@ fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
         .menu(&menu)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "open-settings" => {
-                let _ = show_settings(app);
+                show_settings_or_report(app);
             }
             "quit" => app.exit(0),
             _ => {}
@@ -100,7 +113,7 @@ fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
 fn main() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            let _ = show_settings(app);
+            show_settings_or_report(app);
         }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .invoke_handler(tauri::generate_handler![
