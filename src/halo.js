@@ -25,6 +25,7 @@ const STATE_STYLES = {
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const positive = (value, fallback) => (Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : fallback);
+const opacityValue = (value) => clamp(Number.isFinite(Number(value)) ? Number(value) : 1, 0, 1);
 const normalize = (value) => ((value % 1) + 1) % 1;
 
 function hexToRgb(color) {
@@ -68,6 +69,12 @@ export function createHaloRenderer(canvas, options = {}) {
   let frameId = null;
   let running = false;
   let animationStartedAt = null;
+
+  function applyOpacity() {
+    if (canvas.style) canvas.style.opacity = String(opacityValue(settings.opacity));
+  }
+
+  applyOpacity();
 
   function styleAt(time) {
     if (!transition) return currentStyle;
@@ -147,7 +154,7 @@ export function createHaloRenderer(canvas, options = {}) {
     const points = sampleCurve(curve, progress, detailScale, settings, 72);
     const strokeWidth = clamp(positive(settings.stroke_width, DEFAULT_SETTINGS.stroke_width), 2.5, 7.5);
     const color = style.color;
-    const alpha = clamp(Number(settings.opacity) || 0, 0, 1) * style.alpha;
+    const alpha = style.alpha;
 
     drawPath(points, angle, color, strokeWidth * 3, alpha * 0.12, 10);
     drawPath(points, angle, color, strokeWidth * 1.8, alpha * 0.34, 4);
@@ -185,7 +192,7 @@ export function createHaloRenderer(canvas, options = {}) {
     },
     setSettings(nextSettings = {}) {
       settings = { ...settings, ...nextSettings };
-      if (canvas.style) canvas.style.opacity = String(clamp(Number(settings.opacity) || 0, 0, 1));
+      applyOpacity();
     },
     start() {
       if (running) return;

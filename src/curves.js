@@ -39,6 +39,35 @@ const fourierDefaults = {
   y_mix: 1,
 };
 
+const roseParameters = (settings) => ({
+  petals: clamp(Math.round(numberSetting(settings, 'petals', roseDefaults.petals)), 3, 11),
+  radius: clamp(numberSetting(settings, 'radius', roseDefaults.radius), 24, 38),
+  detail: clamp(numberSetting(settings, 'detail', roseDefaults.detail), 0, 8),
+  phase: numberSetting(settings, 'phase', roseDefaults.phase),
+});
+
+const lissajousParameters = (settings) => ({
+  xFrequency: clamp(numberSetting(settings, 'x_frequency', lissajousDefaults.x_frequency), 1, 7),
+  yFrequency: clamp(numberSetting(settings, 'y_frequency', lissajousDefaults.y_frequency), 1, 7),
+  xPhase: numberSetting(settings, 'x_phase', lissajousDefaults.x_phase),
+  yPhase: numberSetting(settings, 'y_phase', lissajousDefaults.y_phase),
+  drift: clamp(numberSetting(settings, 'drift', lissajousDefaults.drift), 0, 8),
+});
+
+const spiralParameters = (settings) => ({
+  turns: clamp(numberSetting(settings, 'turns', spiralDefaults.turns), 0.5, 3),
+  radius: clamp(numberSetting(settings, 'radius', spiralDefaults.radius), 26, 38),
+  modulation: clamp(numberSetting(settings, 'modulation', spiralDefaults.modulation), 0, 0.35),
+  phase: numberSetting(settings, 'phase', spiralDefaults.phase),
+});
+
+const fourierParameters = (settings) => ({
+  pulseMix: clamp(numberSetting(settings, 'pulse_mix', fourierDefaults.pulse_mix), 0, 0.4),
+  phase: numberSetting(settings, 'phase', fourierDefaults.phase),
+  xMix: clamp(numberSetting(settings, 'x_mix', fourierDefaults.x_mix), 0.7, 1.3),
+  yMix: clamp(numberSetting(settings, 'y_mix', fourierDefaults.y_mix), 0.7, 1.3),
+});
+
 export const curveProfiles = [
   {
     id: 'rose-seven',
@@ -53,11 +82,8 @@ export const curveProfiles = [
     rotate: (progress) => TAU * progress,
     point: (progress, detailScale = 0, settings = roseDefaults) => {
       const t = normalizeProgress(progress) * TAU;
-      const detail = clamp(numberSetting(settings, 'detail', roseDefaults.detail), 0, 8);
+      const { petals, radius, detail, phase } = roseParameters(settings);
       const detailScaleValue = detailValue(detailScale);
-      const petals = clamp(Math.round(numberSetting(settings, 'petals', roseDefaults.petals)), 3, 11);
-      const radius = clamp(numberSetting(settings, 'radius', roseDefaults.radius), 24, 38);
-      const phase = numberSetting(settings, 'phase', roseDefaults.phase);
       const petalRadius = radius + detail * Math.cos(petals * t + phase) + detailScaleValue * 2 * Math.sin(2 * t);
       return {
         x: 50 + petalRadius * Math.cos(t + phase),
@@ -65,9 +91,8 @@ export const curveProfiles = [
       };
     },
     formula: (settings) => {
-      const petals = formulaNumber(numberSetting(settings, 'petals', roseDefaults.petals));
-      const radius = formulaNumber(numberSetting(settings, 'radius', roseDefaults.radius));
-      return `r(t) = ${radius} + ${formulaNumber(numberSetting(settings, 'detail', roseDefaults.detail))} cos(${petals}t),  x = 50 + r cos(t),  y = 50 + r sin(t)`;
+      const { petals, radius, detail, phase } = roseParameters(settings);
+      return `r(t,d) = ${formulaNumber(radius)} + ${formulaNumber(detail)} cos(${formulaNumber(petals)}t + ${formulaNumber(phase)}) + 2d sin(2t),  x = 50 + r cos(t + ${formulaNumber(phase)}),  y = 50 + r sin(t + ${formulaNumber(phase)}),  d ∈ [0,1]`;
     },
   },
   {
@@ -83,11 +108,7 @@ export const curveProfiles = [
     rotate: (progress) => TAU * progress * 0.72,
     point: (progress, detailScale = 0, settings = lissajousDefaults) => {
       const t = normalizeProgress(progress) * TAU;
-      const xFrequency = clamp(numberSetting(settings, 'x_frequency', lissajousDefaults.x_frequency), 1, 7);
-      const yFrequency = clamp(numberSetting(settings, 'y_frequency', lissajousDefaults.y_frequency), 1, 7);
-      const xPhase = numberSetting(settings, 'x_phase', lissajousDefaults.x_phase);
-      const yPhase = numberSetting(settings, 'y_phase', lissajousDefaults.y_phase);
-      const drift = clamp(numberSetting(settings, 'drift', lissajousDefaults.drift), 0, 8);
+      const { xFrequency, yFrequency, xPhase, yPhase, drift } = lissajousParameters(settings);
       const detailScaleValue = detailValue(detailScale);
       return {
         x: 50 + 34 * Math.sin(xFrequency * t + xPhase) + drift * detailScaleValue * Math.sin(t),
@@ -95,9 +116,8 @@ export const curveProfiles = [
       };
     },
     formula: (settings) => {
-      const xFrequency = formulaNumber(numberSetting(settings, 'x_frequency', lissajousDefaults.x_frequency));
-      const yFrequency = formulaNumber(numberSetting(settings, 'y_frequency', lissajousDefaults.y_frequency));
-      return `x(t) = 50 + 34 sin(${xFrequency}t),  y(t) = 50 + 34 sin(${yFrequency}t + π/2)`;
+      const { xFrequency, yFrequency, xPhase, yPhase, drift } = lissajousParameters(settings);
+      return `x(t,d) = 50 + 34 sin(${formulaNumber(xFrequency)}t + ${formulaNumber(xPhase)}) + ${formulaNumber(drift)}d sin(t),  y(t,d) = 50 + 34 sin(${formulaNumber(yFrequency)}t + ${formulaNumber(yPhase)}) + ${formulaNumber(drift)}d cos(t),  d ∈ [0,1]`;
     },
   },
   {
@@ -113,10 +133,7 @@ export const curveProfiles = [
     rotate: (progress) => TAU * progress * 1.2,
     point: (progress, detailScale = 0, settings = spiralDefaults) => {
       const p = normalizeProgress(progress);
-      const turns = clamp(numberSetting(settings, 'turns', spiralDefaults.turns), 0.5, 3);
-      const radius = clamp(numberSetting(settings, 'radius', spiralDefaults.radius), 26, 38);
-      const modulation = clamp(numberSetting(settings, 'modulation', spiralDefaults.modulation), 0, 0.35);
-      const phase = numberSetting(settings, 'phase', spiralDefaults.phase);
+      const { turns, radius, modulation, phase } = spiralParameters(settings);
       const detailScaleValue = detailValue(detailScale);
       const angle = TAU * turns * p + phase;
       const wave = 1 + modulation * (1 + detailScaleValue) * Math.cos(TAU * 2 * p + phase);
@@ -127,10 +144,8 @@ export const curveProfiles = [
       };
     },
     formula: (settings) => {
-      const turns = formulaNumber(numberSetting(settings, 'turns', spiralDefaults.turns));
-      const radius = formulaNumber(numberSetting(settings, 'radius', spiralDefaults.radius));
-      const modulation = formulaNumber(numberSetting(settings, 'modulation', spiralDefaults.modulation));
-      return `θ(t) = ${turns}·2πt,  r(t) = (4 + ${radius}t)(1 + ${modulation} cos(4πt))`;
+      const { turns, radius, modulation, phase } = spiralParameters(settings);
+      return `θ(t) = ${formulaNumber(turns)}·2πt + ${formulaNumber(phase)},  r(t,d) = min(68,(4 + ${formulaNumber(radius)}t)(1 + ${formulaNumber(modulation)}(1 + d) cos(4πt + ${formulaNumber(phase)}))),  d ∈ [0,1]`;
     },
   },
   {
@@ -146,10 +161,7 @@ export const curveProfiles = [
     rotate: (progress) => TAU * progress * 0.86,
     point: (progress, detailScale = 0, settings = fourierDefaults) => {
       const t = normalizeProgress(progress) * TAU;
-      const pulseMix = clamp(numberSetting(settings, 'pulse_mix', fourierDefaults.pulse_mix), 0, 0.4);
-      const xMix = clamp(numberSetting(settings, 'x_mix', fourierDefaults.x_mix), 0.7, 1.3);
-      const yMix = clamp(numberSetting(settings, 'y_mix', fourierDefaults.y_mix), 0.7, 1.3);
-      const phase = numberSetting(settings, 'phase', fourierDefaults.phase);
+      const { pulseMix, phase, xMix, yMix } = fourierParameters(settings);
       const detailScaleValue = detailValue(detailScale);
       const pulse = 1 + pulseMix * (0.5 + 0.5 * Math.sin(2 * t + phase));
       const harmonic = 1 + detailScaleValue * 0.12;
@@ -159,8 +171,8 @@ export const curveProfiles = [
       };
     },
     formula: (settings) => {
-      const pulseMix = formulaNumber(numberSetting(settings, 'pulse_mix', fourierDefaults.pulse_mix));
-      return `x(t) = 50 + 24 sin(t) + 8 sin(2t) + 4 cos(3t),  y(t) = 50 + 22 cos(t) + 10 cos(2t),  pulse = 1 + ${pulseMix} sin(2t)`;
+      const { pulseMix, phase, xMix, yMix } = fourierParameters(settings);
+      return `P(t) = 1 + ${formulaNumber(pulseMix)}(0.5 + 0.5 sin(2t + ${formulaNumber(phase)})),  x(t,d) = 50 + ${formulaNumber(xMix)}P(t)(24 sin(t + ${formulaNumber(phase)}) + 8 sin(2t) + 4(1 + 0.12d) cos(3t)),  y(t,d) = 50 + ${formulaNumber(yMix)}P(t)(22 cos(t) + 10 cos(2t + ${formulaNumber(phase)}) + 4(1 + 0.12d) sin(3t)),  d ∈ [0,1]`;
     },
   },
 ];
