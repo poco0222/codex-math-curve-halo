@@ -1,7 +1,9 @@
 use codex_halo_lib::platform;
 use codex_halo_lib::state::{AppSettings, DisplayState, HaloState, SessionStore, Snapshot};
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::menu::{Menu, MenuItem};
@@ -9,23 +11,64 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::MacosLauncher;
 
-#[tauri::command]
-fn get_display_state(app: AppHandle, store: State<'_, Mutex<SessionStore>>) -> DisplayState {
-    let now_ms = now_ms();
-    let snapshots = state_dir(&app).and_then(|state_dir| read_snapshots(&state_dir));
-    let mut store = store
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+#[derive(Default)]
+struct ReducerRuntimeState {
+    store: Mutex<SessionStore>,
+    scan_in_progress: AtomicBool,
+}
 
-    if let Some(snapshots) = snapshots {
-        *store = SessionStore::default();
-        for snapshot in snapshots {
-            store.upsert(snapshot);
-        }
+impl ReducerRuntimeState {
+    fn try_start_scan(&self) -> bool {
+        self.scan_in_progress
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
     }
 
-    store.clear_expired(now_ms);
-    store.display_state(now_ms)
+    fn finish_scan(&self) {
+        self.scan_in_progress.store(false, Ordering::Release);
+    }
+
+    fn display_after_scan(
+        &self,
+        scan: Option<io::Result<Vec<Snapshot>>>,
+        now_ms: i64,
+    ) -> DisplayState {
+        let mut store = self
+            .store
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        if let Some(Ok(snapshots)) = scan {
+            let mut next = SessionStore::default();
+            for snapshot in snapshots {
+                next.upsert(snapshot);
+            }
+            *store = next;
+        }
+
+        store.clear_expired(now_ms);
+        store.display_state(now_ms)
+    }
+}
+
+#[tauri::command]
+async fn get_display_state(
+    app: AppHandle,
+    runtime: State<'_, ReducerRuntimeState>,
+) -> Result<DisplayState, String> {
+    if !runtime.try_start_scan() {
+        return Ok(runtime.display_after_scan(None, now_ms()));
+    }
+
+    let scan = match state_dir(&app) {
+        Some(state_dir) => tauri::async_runtime::spawn_blocking(move || read_snapshots(&state_dir))
+            .await
+            .ok(),
+        None => None,
+    };
+    let display = runtime.display_after_scan(scan, now_ms());
+    runtime.finish_scan();
+    Ok(display)
 }
 
 fn now_ms() -> i64 {
@@ -44,20 +87,30 @@ fn state_dir(app: &AppHandle) -> Option<PathBuf> {
         .map(|path| path.join("state"))
 }
 
-fn read_snapshots(path: &Path) -> Option<Vec<Snapshot>> {
-    let entries = match fs::read_dir(path) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Some(Vec::new()),
-        Err(_) => return None,
-    };
+fn read_snapshots(path: &Path) -> io::Result<Vec<Snapshot>> {
+    let entries = fs::read_dir(path)?.map(|entry| entry.map(|entry| entry.path()));
+    read_snapshot_entries(entries, |path| fs::read_to_string(path))
+}
 
-    Some(
-        entries
-            .filter_map(Result::ok)
-            .filter_map(|entry| fs::read_to_string(entry.path()).ok())
-            .filter_map(|contents| serde_json::from_str::<Snapshot>(&contents).ok())
-            .collect(),
-    )
+fn read_snapshot_entries<I, F>(entries: I, mut read_file: F) -> io::Result<Vec<Snapshot>>
+where
+    I: IntoIterator<Item = io::Result<PathBuf>>,
+    F: FnMut(&Path) -> io::Result<String>,
+{
+    let mut snapshots = Vec::new();
+
+    for path in entries {
+        let path = path?;
+        let Ok(contents) = read_file(&path) else {
+            continue;
+        };
+        let Ok(snapshot) = serde_json::from_str::<Snapshot>(&contents) else {
+            continue;
+        };
+        snapshots.push(snapshot);
+    }
+
+    Ok(snapshots)
 }
 
 #[tauri::command]
@@ -162,7 +215,7 @@ fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
 
 fn main() {
     let builder = tauri::Builder::default()
-        .manage(Mutex::new(SessionStore::default()))
+        .manage(ReducerRuntimeState::default())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_settings_or_report(app);
         }))
@@ -182,4 +235,109 @@ fn main() {
     builder
         .run(tauri::generate_context!())
         .expect("error while running Codex Halo");
+}
+
+#[cfg(test)]
+mod scan_tests {
+    use super::*;
+    use std::cell::Cell;
+    use std::io;
+
+    fn runtime_with_input_needed(now_ms: i64) -> ReducerRuntimeState {
+        let runtime = ReducerRuntimeState::default();
+        runtime.display_after_scan(
+            Some(Ok(vec![Snapshot::new(
+                "old",
+                HaloState::InputNeeded,
+                now_ms,
+            )])),
+            now_ms,
+        );
+        runtime
+    }
+
+    #[test]
+    fn scan_gate_rejects_overlapping_scans() {
+        let runtime = ReducerRuntimeState::default();
+
+        assert!(runtime.try_start_scan());
+        assert!(!runtime.try_start_scan());
+        runtime.finish_scan();
+        assert!(runtime.try_start_scan());
+        runtime.finish_scan();
+    }
+
+    #[test]
+    fn initial_directory_read_failure_preserves_store() {
+        let now = 1_000_000;
+        let runtime = runtime_with_input_needed(now);
+        let missing =
+            std::env::temp_dir().join(format!("codex-halo-missing-{}-{now}", std::process::id()));
+        let scan = read_snapshots(&missing);
+
+        assert!(scan.is_err());
+        let display = runtime.display_after_scan(Some(scan), now);
+        assert_eq!(display.state, HaloState::InputNeeded);
+        assert_eq!(display.session_count, 1);
+    }
+
+    #[test]
+    fn mid_iteration_error_preserves_store() {
+        let now = 1_000_000;
+        let runtime = runtime_with_input_needed(now);
+        let reads = Cell::new(0);
+        let entries = vec![
+            Ok(PathBuf::from("first.json")),
+            Err(io::Error::new(io::ErrorKind::Other, "entry failed")),
+            Ok(PathBuf::from("last.json")),
+        ];
+        let scan = read_snapshot_entries(entries, |_| {
+            reads.set(reads.get() + 1);
+            Ok(r#"{"session_key":"new","state":"thinking","updated_at_ms":999900}"#.to_owned())
+        });
+
+        assert!(scan.is_err());
+        assert_eq!(reads.get(), 1);
+        let display = runtime.display_after_scan(Some(scan), now);
+        assert_eq!(display.state, HaloState::InputNeeded);
+        assert_eq!(display.session_count, 1);
+    }
+
+    #[test]
+    fn mixed_valid_and_corrupt_files_keep_valid_snapshots() {
+        let entries = vec![
+            Ok(PathBuf::from("valid.json")),
+            Ok(PathBuf::from("corrupt.json")),
+            Ok(PathBuf::from("unreadable.json")),
+        ];
+        let snapshots = read_snapshot_entries(entries, |path| match path.to_str().unwrap() {
+            "valid.json" => Ok(
+                r#"{"session_key":"valid","state":"executing","updated_at_ms":999900}"#.to_owned(),
+            ),
+            "corrupt.json" => Ok("{".to_owned()),
+            _ => Err(io::Error::new(io::ErrorKind::PermissionDenied, "denied")),
+        })
+        .unwrap();
+
+        assert_eq!(snapshots.len(), 1);
+        assert_eq!(snapshots[0].session_key, "valid");
+        assert_eq!(snapshots[0].state, HaloState::Executing);
+    }
+
+    #[test]
+    fn successful_scan_replaces_entire_store() {
+        let now = 1_000_000;
+        let runtime = runtime_with_input_needed(now);
+        let display = runtime.display_after_scan(
+            Some(Ok(vec![
+                Snapshot::new("a", HaloState::Thinking, now - 200),
+                Snapshot::new("b", HaloState::Executing, now - 100),
+            ])),
+            now,
+        );
+
+        assert_eq!(display.state, HaloState::Executing);
+        assert_eq!(display.session_count, 2);
+        assert_eq!(display.updated_at_ms, now - 100);
+    }
 }

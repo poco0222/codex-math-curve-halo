@@ -67,6 +67,10 @@ fn is_expired(snapshot: &Snapshot, now_ms: i64) -> bool {
         .unwrap_or(false)
 }
 
+fn is_current(snapshot: &Snapshot, now_ms: i64) -> bool {
+    snapshot.updated_at_ms <= now_ms && !is_expired(snapshot, now_ms)
+}
+
 impl Default for HaloState {
     fn default() -> Self {
         Self::Idle
@@ -99,7 +103,7 @@ impl Default for DisplayState {
 pub fn reduce_snapshots(snapshots: &[Snapshot], now_ms: i64) -> DisplayState {
     let current = snapshots
         .iter()
-        .filter(|snapshot| !is_expired(snapshot, now_ms))
+        .filter(|snapshot| is_current(snapshot, now_ms))
         .collect::<Vec<_>>();
 
     let selected = current
@@ -134,7 +138,7 @@ impl SessionStore {
 
     pub fn clear_expired(&mut self, now_ms: i64) {
         self.sessions
-            .retain(|_, snapshot| !is_expired(snapshot, now_ms));
+            .retain(|_, snapshot| is_current(snapshot, now_ms));
     }
 }
 
@@ -287,6 +291,47 @@ mod tests {
                 HaloState::Idle,
             );
         }
+    }
+
+    #[test]
+    fn keeps_states_at_exact_expiry_boundaries() {
+        let now = 1_000_000;
+        let cases = [
+            (HaloState::Completed, 3_000),
+            (HaloState::Thinking, 60_000),
+            (HaloState::Executing, 60_000),
+            (HaloState::Compacting, 60_000),
+        ];
+
+        for (state, age_ms) in cases {
+            let display = reduce_snapshots(&[Snapshot::new("a", state, now - age_ms)], now);
+            assert_eq!(display.state, state);
+            assert_eq!(display.updated_at_ms, now - age_ms);
+        }
+    }
+
+    #[test]
+    fn rejects_future_timestamps_after_clock_rollback() {
+        let now = 1_000_000;
+        let display = reduce_snapshots(
+            &[
+                Snapshot::new("fresh", HaloState::Thinking, now - 100),
+                Snapshot::new("future", HaloState::Thinking, now + 1),
+            ],
+            now,
+        );
+
+        assert_eq!(display.state, HaloState::Thinking);
+        assert_eq!(display.session_count, 1);
+        assert_eq!(display.updated_at_ms, now - 100);
+        assert_eq!(
+            reduce_snapshots(
+                &[Snapshot::new("future", HaloState::Executing, now + 1)],
+                now,
+            )
+            .state,
+            HaloState::Idle,
+        );
     }
 
     #[test]
