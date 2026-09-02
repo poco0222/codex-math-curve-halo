@@ -112,7 +112,7 @@ impl ReducerRuntimeState {
 
 #[tauri::command]
 async fn get_display_state(
-    app: AppHandle,
+    _app: AppHandle,
     runtime: State<'_, ReducerRuntimeState>,
 ) -> Result<DisplayState, String> {
     if !runtime.try_start_scan() {
@@ -120,7 +120,7 @@ async fn get_display_state(
     }
     let scan_epoch = runtime.scan_epoch();
 
-    let scan = match state_dir(&app) {
+    let scan = match state_dir() {
         Some(state_dir) => tauri::async_runtime::spawn_blocking(move || read_snapshots(&state_dir))
             .await
             .ok(),
@@ -140,11 +140,8 @@ fn now_ms() -> i64 {
         .unwrap_or(i64::MAX)
 }
 
-fn state_dir(app: &AppHandle) -> Option<PathBuf> {
-    app.path()
-        .app_data_dir()
-        .ok()
-        .map(|path| path.join("state"))
+fn state_dir() -> Option<PathBuf> {
+    hooks::runtime_state_dir().ok()
 }
 
 fn app_config_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -693,8 +690,13 @@ fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
     #[cfg(target_os = "macos")]
     app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-    let app_data_dir = app.path().app_data_dir()?;
-    helper_setup_best_effort(|| hook_protocol::install_bundled_helper(&app_data_dir).map(|_| ()));
+    if let Ok(runtime_root) = hooks::runtime_root() {
+        helper_setup_best_effort(|| {
+            hook_protocol::install_bundled_helper(&runtime_root).map(|_| ())
+        });
+    } else {
+        eprintln!("Codex Halo: hook helper unavailable");
+    }
 
     let settings = load_app_settings(app.handle()).unwrap_or_else(|_| {
         eprintln!("Codex Halo: using default settings");
@@ -785,6 +787,27 @@ mod scan_tests {
             now_ms,
         );
         runtime
+    }
+
+    #[test]
+    fn runtime_scan_state_dir_uses_plugin_runtime_path() {
+        let previous_codex_home = std::env::var_os("CODEX_HOME");
+        let previous_home = std::env::var_os("HOME");
+        std::env::set_var("CODEX_HOME", "/tmp/codex-home");
+
+        assert_eq!(
+            state_dir(),
+            Some(PathBuf::from("/tmp/codex-home/codex-halo/state"))
+        );
+
+        match previous_codex_home {
+            Some(path) => std::env::set_var("CODEX_HOME", path),
+            None => std::env::remove_var("CODEX_HOME"),
+        }
+        match previous_home {
+            Some(path) => std::env::set_var("HOME", path),
+            None => std::env::remove_var("HOME"),
+        }
     }
 
     #[test]

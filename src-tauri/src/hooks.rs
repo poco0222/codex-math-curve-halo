@@ -158,6 +158,18 @@ pub fn helper_filename() -> &'static str {
     HELPER_FILENAME
 }
 
+pub fn runtime_root() -> Result<PathBuf, HookError> {
+    Ok(codex_home()?.join("codex-halo"))
+}
+
+pub fn runtime_state_dir() -> Result<PathBuf, HookError> {
+    Ok(runtime_root()?.join("state"))
+}
+
+pub fn runtime_helper_path() -> Result<PathBuf, HookError> {
+    Ok(runtime_root()?.join(helper_filename()))
+}
+
 pub fn install_hooks(
     config_path: &Path,
     helper_path: &Path,
@@ -731,6 +743,61 @@ mod tests {
         }
         fs::write(helper, b"helper").unwrap();
         install_hooks(config, helper, state).unwrap();
+    }
+
+    #[test]
+    fn runtime_paths_follow_codex_home_and_require_home() {
+        let previous_codex_home = env::var_os("CODEX_HOME");
+        let previous_home = env::var_os("HOME");
+        #[cfg(windows)]
+        let previous_userprofile = env::var_os("USERPROFILE");
+        #[cfg(windows)]
+        let previous_homedrive = env::var_os("HOMEDRIVE");
+        #[cfg(windows)]
+        let previous_homepath = env::var_os("HOMEPATH");
+        std::env::set_var("CODEX_HOME", "/tmp/codex-home");
+
+        let root = PathBuf::from("/tmp/codex-home/codex-halo");
+        assert_eq!(runtime_root().unwrap(), root);
+        assert_eq!(runtime_state_dir().unwrap(), root.join("state"));
+        assert_eq!(runtime_helper_path().unwrap(), root.join(helper_filename()));
+
+        std::env::remove_var("CODEX_HOME");
+        std::env::remove_var("HOME");
+        #[cfg(windows)]
+        {
+            std::env::remove_var("USERPROFILE");
+            std::env::remove_var("HOMEDRIVE");
+            std::env::remove_var("HOMEPATH");
+        }
+        assert!(matches!(
+            runtime_root(),
+            Err(HookError::HomeDirectoryUnavailable)
+        ));
+
+        match previous_codex_home {
+            Some(path) => std::env::set_var("CODEX_HOME", path),
+            None => std::env::remove_var("CODEX_HOME"),
+        }
+        match previous_home {
+            Some(path) => std::env::set_var("HOME", path),
+            None => std::env::remove_var("HOME"),
+        }
+        #[cfg(windows)]
+        {
+            match previous_userprofile {
+                Some(path) => std::env::set_var("USERPROFILE", path),
+                None => std::env::remove_var("USERPROFILE"),
+            }
+            match previous_homedrive {
+                Some(path) => std::env::set_var("HOMEDRIVE", path),
+                None => std::env::remove_var("HOMEDRIVE"),
+            }
+            match previous_homepath {
+                Some(path) => std::env::set_var("HOMEPATH", path),
+                None => std::env::remove_var("HOMEPATH"),
+            }
+        }
     }
 
     #[test]
