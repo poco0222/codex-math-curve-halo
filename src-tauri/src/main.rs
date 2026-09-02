@@ -1,5 +1,5 @@
-use codex_halo_lib::platform;
 use codex_halo_lib::state::{AppSettings, DisplayState, HaloState, SessionStore, Snapshot};
+use codex_halo_lib::{hook_protocol, platform};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -168,6 +168,9 @@ fn show_settings_or_report(app: &AppHandle) {
 fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "macos")]
     app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+    let app_data_dir = app.path().app_data_dir()?;
+    hook_protocol::install_bundled_helper(&app_data_dir)?;
 
     let settings = AppSettings::default();
     let overlay = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))

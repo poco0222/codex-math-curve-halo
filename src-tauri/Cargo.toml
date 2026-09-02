@@ -5,10 +5,15 @@ description = "Codex Halo desktop companion"
 authors = ["Codex Halo"]
 edition = "2021"
 build = "build.rs"
+default-run = "codex-halo"
 
 [lib]
 name = "codex_halo_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "codex-halo-hook"
+path = "src/bin/codex-halo-hook.rs"
 
 [build-dependencies]
 tauri-build = { version = "2" }
