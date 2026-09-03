@@ -1,0 +1,47 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Codex Halo: Run",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "cargo tauri dev",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "RUST_BACKTRACE": "1"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false
+      }
+    },
+    {
+      "name": "Codex Halo: Package",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "cargo tauri build",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "RUST_BACKTRACE": "1"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false
+      }
+    },
+    {
+      "name": "Codex Halo: Install Plugin",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "codex plugin marketplace add \"${workspaceFolder}\" && codex plugin add codex-halo@personal",
+      "cwd": "${workspaceFolder}",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false
+      }
+    }
+  ]
+}

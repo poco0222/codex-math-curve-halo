@@ -16,7 +16,8 @@ node_modules/
 
 # IDE and logs
 .idea/
-.vscode/
+.vscode/*
+!.vscode/launch.json
 *.iml
 *.log
 
