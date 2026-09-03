@@ -120,16 +120,74 @@ pub fn should_spawn_halo(codex_active: bool, halo_exists: bool, owned_child_exis
 
 pub fn run(config_path: PathBuf) -> Result<(), LifecycleError> {
     let mut owned_child = None;
-    let result = finish_run(run_loop(&config_path, &mut owned_child), &mut owned_child);
+    run_with(
+        &config_path,
+        &mut owned_child,
+        read_config,
+        process_listing,
+        || thread::sleep(POLL_INTERVAL),
+        |_| false,
+        spawn_halo,
+        report,
+    )
+}
+
+fn run_with<C, RC, PL, SL, ST, SP, RP>(
+    config_path: &Path,
+    owned_child: &mut Option<C>,
+    mut read_config: RC,
+    mut process_listing: PL,
+    mut sleep: SL,
+    mut should_stop: ST,
+    mut spawn: SP,
+    mut report_error: RP,
+) -> Result<(), LifecycleError>
+where
+    C: ManagedChild,
+    RC: FnMut(&Path) -> Result<LifecycleConfig, LifecycleError>,
+    PL: FnMut() -> Result<String, LifecycleError>,
+    SL: FnMut(),
+    ST: FnMut(usize) -> bool,
+    SP: FnMut(&Path) -> Result<C, LifecycleError>,
+    RP: FnMut(&LifecycleError),
+{
+    let result = run_loop(
+        config_path,
+        owned_child,
+        &mut read_config,
+        &mut process_listing,
+        &mut sleep,
+        &mut should_stop,
+        &mut spawn,
+    );
+    let result = finish_run(result, owned_child);
     if let Err(error) = &result {
-        report(error);
+        report_error(error);
     }
     result
 }
 
-fn run_loop(config_path: &Path, owned_child: &mut Option<Child>) -> Result<(), LifecycleError> {
+fn run_loop<C, RC, PL, SL, ST, SP>(
+    config_path: &Path,
+    owned_child: &mut Option<C>,
+    read_config: &mut RC,
+    process_listing: &mut PL,
+    sleep: &mut SL,
+    should_stop: &mut ST,
+    spawn: &mut SP,
+) -> Result<(), LifecycleError>
+where
+    C: ManagedChild,
+    RC: FnMut(&Path) -> Result<LifecycleConfig, LifecycleError>,
+    PL: FnMut() -> Result<String, LifecycleError>,
+    SL: FnMut(),
+    ST: FnMut(usize) -> bool,
+    SP: FnMut(&Path) -> Result<C, LifecycleError>,
+{
+    let mut iteration = 0;
+
     loop {
-        let config = match read_config(&config_path) {
+        let config = match read_config(config_path) {
             Ok(config) => config,
             Err(LifecycleError::ConfigMissing) => {
                 stop_owned_child(owned_child)?;
@@ -141,16 +199,18 @@ fn run_loop(config_path: &Path, owned_child: &mut Option<Child>) -> Result<(), L
         };
 
         if !config.enabled {
-            watch_iteration(false, "", owned_child, || spawn_halo(&config.halo_path))?;
+            watch_iteration(false, "", owned_child, || spawn(&config.halo_path))?;
             return Ok(());
         }
 
         let listing = process_listing()?;
-        watch_iteration(true, &listing, owned_child, || {
-            spawn_halo(&config.halo_path)
-        })?;
+        watch_iteration(true, &listing, owned_child, || spawn(&config.halo_path))?;
 
-        thread::sleep(POLL_INTERVAL);
+        iteration += 1;
+        sleep();
+        if should_stop(iteration) {
+            return Ok(());
+        }
     }
 }
 
@@ -333,7 +393,7 @@ fn report(error: &LifecycleError) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::ffi::OsString;
     use std::io;
     use std::path::PathBuf;
@@ -407,6 +467,7 @@ mod tests {
 
     struct FakeChild {
         exited: bool,
+        shared_exited: Option<Rc<Cell<bool>>>,
         fail_stop: bool,
         events: Rc<RefCell<Vec<&'static str>>>,
     }
@@ -414,7 +475,10 @@ mod tests {
     impl ManagedChild for FakeChild {
         fn has_exited(&mut self) -> io::Result<bool> {
             self.events.borrow_mut().push("try_wait");
-            Ok(self.exited)
+            Ok(self
+                .shared_exited
+                .as_ref()
+                .map_or(self.exited, |exited| exited.get()))
         }
 
         fn stop(&mut self) -> io::Result<()> {
@@ -454,6 +518,7 @@ mod tests {
                 event_log.borrow_mut().push("spawn");
                 Ok(FakeChild {
                     exited: false,
+                    shared_exited: None,
                     fail_stop: false,
                     events: event_log.clone(),
                 })
@@ -470,10 +535,120 @@ mod tests {
     }
 
     #[test]
+    fn loop_runner_harness_wires_config_listing_sleep_and_child_lifecycle() {
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let child_exited = Rc::new(Cell::new(false));
+        let config_reads = Cell::new(0);
+        let listing_reads = Cell::new(0);
+        let sleep_calls = Cell::new(0);
+        let spawn_count = Cell::new(0);
+        let config = LifecycleConfig {
+            enabled: true,
+            halo_path: PathBuf::from("test-halo"),
+        };
+        let mut child: Option<FakeChild> = None;
+
+        let result = run_with(
+            Path::new("lifecycle.json"),
+            &mut child,
+            |path| {
+                assert_eq!(path, Path::new("lifecycle.json"));
+                config_reads.set(config_reads.get() + 1);
+                Ok(config.clone())
+            },
+            || {
+                let read = listing_reads.get();
+                listing_reads.set(read + 1);
+                if read == 0 {
+                    child_exited.set(false);
+                    Ok("codex\n".to_owned())
+                } else if read == 1 {
+                    child_exited.set(true);
+                    Ok("codex\n".to_owned())
+                } else {
+                    child_exited.set(false);
+                    Ok("other\n".to_owned())
+                }
+            },
+            || sleep_calls.set(sleep_calls.get() + 1),
+            |iteration| iteration == 3,
+            |path| {
+                assert_eq!(path, Path::new("test-halo"));
+                spawn_count.set(spawn_count.get() + 1);
+                events.borrow_mut().push("spawn");
+                Ok(FakeChild {
+                    exited: false,
+                    shared_exited: Some(child_exited.clone()),
+                    fail_stop: false,
+                    events: events.clone(),
+                })
+            },
+            |_| {},
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(config_reads.get(), 3);
+        assert_eq!(listing_reads.get(), 3);
+        assert_eq!(sleep_calls.get(), 3);
+        assert_eq!(spawn_count.get(), 2);
+        assert!(child.is_none());
+        assert_eq!(
+            events.borrow().as_slice(),
+            ["spawn", "try_wait", "spawn", "try_wait", "stop"]
+        );
+    }
+
+    #[test]
+    fn loop_runner_reports_process_error_after_cleanup() {
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let reports = Rc::new(RefCell::new(Vec::new()));
+        let mut child = Some(FakeChild {
+            exited: false,
+            shared_exited: None,
+            fail_stop: false,
+            events: events.clone(),
+        });
+        let report_log = reports.clone();
+
+        let result = run_with(
+            Path::new("lifecycle.json"),
+            &mut child,
+            |_| {
+                Ok(LifecycleConfig {
+                    enabled: true,
+                    halo_path: PathBuf::from("test-halo"),
+                })
+            },
+            || {
+                Err(LifecycleError::ProcessList(io::Error::new(
+                    io::ErrorKind::Other,
+                    "private process detail",
+                )))
+            },
+            || panic!("sleep must not run after an error"),
+            |_| false,
+            |_| panic!("spawn must not run before a listing"),
+            move |error| report_log.borrow_mut().push(error.to_string()),
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "codex-lifecycle:process-list"
+        );
+        assert!(child.is_none());
+        assert_eq!(
+            reports.borrow().as_slice(),
+            ["codex-lifecycle:process-list"]
+        );
+        assert_eq!(events.borrow().as_slice(), ["stop"]);
+    }
+
+    #[test]
     fn run_error_preserves_cleanup_failure_as_a_fixed_category() {
         let events = Rc::new(RefCell::new(Vec::new()));
         let mut child = Some(FakeChild {
             exited: false,
+            shared_exited: None,
             fail_stop: true,
             events,
         });
