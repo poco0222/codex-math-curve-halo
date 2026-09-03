@@ -854,6 +854,15 @@ mod tests {
     }
 
     #[test]
+    fn managed_token_is_stable_for_one_process() {
+        let first = current_managed_token();
+        let second = current_managed_token();
+
+        assert!(!first.is_empty());
+        assert_eq!(first, second);
+    }
+
+    #[test]
     fn stop_target_requires_pid_and_token() {
         let args = ["--lifecycle-stop", "42", "token-a"].map(str::to_owned);
         assert!(lifecycle_stop_targets(args.clone(), 42, "token-a"));
