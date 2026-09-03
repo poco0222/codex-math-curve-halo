@@ -1,16 +1,22 @@
-use crate::platform;
-use serde::Deserialize;
+use crate::{hooks, platform};
+use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::fs;
-use std::io;
+use std::fs::{self, OpenOptions};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
+use tauri::{AppHandle, Runtime};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
+const CONFIG_TEMP_LIMIT: usize = 64;
+const CONFIG_FILENAME: &str = "lifecycle.json";
 pub(crate) const CODEX_PROCESS_NAMES: [&str; 4] = ["codex", "codex.exe", "chatgpt", "chatgpt.exe"];
 pub(crate) const HALO_PROCESS_NAMES: [&str; 2] = ["codex-halo", "codex-halo.exe"];
+const WATCHER_PROCESS_NAMES: [&str; 2] = ["codex-halo-watch", "codex-halo-watch.exe"];
+static CONFIG_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ProcessPresence {
@@ -18,7 +24,7 @@ struct ProcessPresence {
     halo_exists: bool,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default)]
 pub struct LifecycleConfig {
     pub enabled: bool,
@@ -93,6 +99,96 @@ pub fn parse_config(bytes: &[u8]) -> Result<LifecycleConfig, LifecycleError> {
         return Err(LifecycleError::InvalidConfig);
     }
     Ok(config)
+}
+
+pub fn write_config(path: &Path, config: &LifecycleConfig) -> Result<(), LifecycleError> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent).map_err(LifecycleError::ConfigIo)?;
+    crate::hook_protocol::set_private_permissions(parent, 0o700)
+        .map_err(LifecycleError::ConfigIo)?;
+    let file_name = path.file_name().ok_or(LifecycleError::InvalidConfig)?;
+
+    for _ in 0..CONFIG_TEMP_LIMIT {
+        let sequence = CONFIG_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let temp_path = parent.join(format!(
+            "{}.tmp.{}.{}",
+            file_name.to_string_lossy(),
+            std::process::id(),
+            sequence
+        ));
+        let mut file = match OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temp_path)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(LifecycleError::ConfigIo(error)),
+        };
+
+        let result = (|| {
+            crate::hook_protocol::set_private_permissions(&temp_path, 0o600)
+                .map_err(LifecycleError::ConfigIo)?;
+            serde_json::to_writer_pretty(&mut file, config)?;
+            file.write_all(b"\n").map_err(LifecycleError::ConfigIo)?;
+            file.flush().map_err(LifecycleError::ConfigIo)?;
+            file.sync_all().map_err(LifecycleError::ConfigIo)?;
+            platform::atomic_replace(&temp_path, path).map_err(LifecycleError::ConfigIo)
+        })();
+
+        if result.is_err() {
+            let _ = fs::remove_file(&temp_path);
+        }
+        return result;
+    }
+
+    Err(LifecycleError::ConfigIo(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "temporary path unavailable",
+    )))
+}
+
+pub fn sync_app<R: Runtime>(_app: &AppHandle<R>, enabled: bool) -> Result<(), String> {
+    let runtime_root = hooks::runtime_root().map_err(|_| "codex-lifecycle:config".to_owned())?;
+    let watcher_path =
+        hooks::runtime_watcher_path().map_err(|_| "codex-lifecycle:config".to_owned())?;
+    fs::create_dir_all(&runtime_root).map_err(|_| "codex-lifecycle:config".to_owned())?;
+    let runtime_root =
+        fs::canonicalize(runtime_root).map_err(|_| "codex-lifecycle:config".to_owned())?;
+    let watcher_name = watcher_path
+        .file_name()
+        .ok_or_else(|| "codex-lifecycle:config".to_owned())?;
+    let watcher_path = runtime_root.join(watcher_name);
+    let config_path = runtime_root.join(CONFIG_FILENAME);
+    let halo_path =
+        fs::canonicalize(std::env::current_exe().map_err(|_| "codex-lifecycle:config".to_owned())?)
+            .map_err(|_| "codex-lifecycle:config".to_owned())?;
+
+    write_config(&config_path, &LifecycleConfig { enabled, halo_path })
+        .map_err(|error| error.to_string())?;
+    platform::set_codex_lifecycle_at_login(&watcher_path, &config_path, enabled)
+        .map_err(|error| error.to_string())?;
+
+    if enabled {
+        let listing =
+            platform::process_listing().map_err(|error| process_list_error(error).to_string())?;
+        if !process_present_from_listing(&listing, &WATCHER_PROCESS_NAMES) {
+            Command::new(&watcher_path)
+                .arg("--config")
+                .arg(&config_path)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .map_err(LifecycleError::Spawn)
+                .map_err(|error| error.to_string())?;
+        }
+    }
+
+    Ok(())
 }
 
 pub fn parse_config_path(args: impl IntoIterator<Item = std::ffi::OsString>) -> Option<PathBuf> {

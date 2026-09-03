@@ -1,5 +1,5 @@
 use codex_halo_lib::state::{AppSettings, DisplayState, HaloState, SessionStore, Snapshot};
-use codex_halo_lib::{hook_protocol, hooks, platform, plugin};
+use codex_halo_lib::{hook_protocol, hooks, lifecycle, platform, plugin};
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -281,28 +281,76 @@ fn apply_settings_to_overlay(app: &AppHandle, settings: &AppSettings) {
     }
 }
 
-fn save_settings_transaction<F, G>(
+fn rollback_settings_side_effects<G, H>(
+    current: &AppSettings,
+    restore_lifecycle: bool,
+    restore_autostart: bool,
+    set_autostart: &mut G,
+    set_lifecycle: &mut H,
+) -> bool
+where
+    G: FnMut(bool) -> Result<(), String>,
+    H: FnMut(bool) -> Result<(), String>,
+{
+    let lifecycle_failed =
+        restore_lifecycle && set_lifecycle(current.follow_codex_lifecycle).is_err();
+    let autostart_failed = restore_autostart && set_autostart(current.start_at_login).is_err();
+    lifecycle_failed || autostart_failed
+}
+
+fn save_settings_transaction<F, G, H>(
     current: &AppSettings,
     next: &AppSettings,
     mut write_settings: F,
     mut set_autostart: G,
+    mut set_lifecycle: H,
 ) -> Result<(), String>
 where
     F: FnMut(&AppSettings) -> Result<(), String>,
     G: FnMut(bool) -> Result<(), String>,
+    H: FnMut(bool) -> Result<(), String>,
 {
-    if current.start_at_login == next.start_at_login {
-        return write_settings(next);
+    let autostart_changed = current.start_at_login != next.start_at_login;
+    let lifecycle_changed = current.follow_codex_lifecycle != next.follow_codex_lifecycle;
+
+    if autostart_changed {
+        if let Err(error) = set_autostart(next.start_at_login) {
+            if rollback_settings_side_effects(
+                current,
+                false,
+                true,
+                &mut set_autostart,
+                &mut set_lifecycle,
+            ) {
+                return Err("start-at-login:reconciliation".to_owned());
+            }
+            return Err(error);
+        }
     }
 
-    if let Err(error) = set_autostart(next.start_at_login) {
-        if set_autostart(current.start_at_login).is_err() {
-            return Err("start-at-login:reconciliation".to_owned());
+    if lifecycle_changed {
+        if let Err(error) = set_lifecycle(next.follow_codex_lifecycle) {
+            if rollback_settings_side_effects(
+                current,
+                false,
+                autostart_changed,
+                &mut set_autostart,
+                &mut set_lifecycle,
+            ) {
+                return Err("start-at-login:reconciliation".to_owned());
+            }
+            return Err(error);
         }
-        return Err(error);
     }
+
     if let Err(error) = write_settings(next) {
-        if set_autostart(current.start_at_login).is_err() {
+        if rollback_settings_side_effects(
+            current,
+            lifecycle_changed,
+            autostart_changed,
+            &mut set_autostart,
+            &mut set_lifecycle,
+        ) {
             return Err("start-at-login:reconciliation".to_owned());
         }
         return Err(error);
@@ -373,6 +421,7 @@ fn save_settings_unlocked(app: AppHandle, settings: AppSettings) -> Result<(), S
         &settings,
         |value| write_settings_file(&path, value),
         |enabled| platform::set_start_at_login(&app, enabled).map_err(|error| error.to_string()),
+        |enabled| lifecycle::sync_app(&app, enabled),
     )?;
     apply_settings_to_overlay(&app, &settings);
     Ok(())
@@ -556,12 +605,12 @@ fn simulate_state_inner(
     display
 }
 
-fn helper_setup_best_effort<F>(install: F) -> bool
+fn helper_setup_best_effort<F>(component: &str, install: F) -> bool
 where
     F: FnOnce() -> Result<(), hook_protocol::HookError>,
 {
     if install().is_err() {
-        eprintln!("Codex Halo: hook helper unavailable");
+        eprintln!("Codex Halo: {component} setup failed");
     }
     true
 }
@@ -912,8 +961,10 @@ fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
     app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
     if let Some(helper_dir) = hooks::runtime_root().ok() {
-        helper_setup_best_effort(|| hook_protocol::install_bundled_helper(&helper_dir).map(|_| ()));
-        helper_setup_best_effort(|| {
+        helper_setup_best_effort("hook helper", || {
+            hook_protocol::install_bundled_helper(&helper_dir).map(|_| ())
+        });
+        helper_setup_best_effort("lifecycle watcher", || {
             hook_protocol::install_bundled_watcher(&helper_dir).map(|_| ())
         });
     }
@@ -922,6 +973,9 @@ fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
         eprintln!("Codex Halo: using default settings");
         AppSettings::default()
     });
+    if let Err(error) = lifecycle::sync_app(app.handle(), settings.follow_codex_lifecycle) {
+        eprintln!("Codex Halo: codex lifecycle setup failed ({error})");
+    }
     let overlay = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("Codex Halo")
         .inner_size(112.0, 112.0)
@@ -992,8 +1046,9 @@ fn main() {
 #[cfg(test)]
 mod scan_tests {
     use super::*;
-    use std::cell::Cell;
+    use std::cell::{Cell, RefCell};
     use std::io;
+    use std::rc::Rc;
 
     fn runtime_with_input_needed(now_ms: i64) -> ReducerRuntimeState {
         let runtime = ReducerRuntimeState::default();
@@ -1245,7 +1300,7 @@ mod scan_tests {
 
     #[test]
     fn helper_copy_failure_does_not_propagate_from_setup() {
-        assert!(helper_setup_best_effort(|| {
+        assert!(helper_setup_best_effort("hook helper", || {
             Err(hook_protocol::HookError::InvalidInput)
         }));
     }
@@ -1291,6 +1346,7 @@ mod scan_tests {
                 autostart_changes.push(enabled);
                 Ok(())
             },
+            |_| Ok(()),
         );
 
         assert_eq!(result, Err("settings write failed".to_owned()));
@@ -1316,6 +1372,7 @@ mod scan_tests {
                     Err("rollback failed".to_owned())
                 }
             },
+            |_| Ok(()),
         );
 
         assert_eq!(result, Err("start-at-login:reconciliation".to_owned()));
@@ -1349,6 +1406,7 @@ mod scan_tests {
                     Ok(())
                 }
             },
+            |_| Ok(()),
         );
 
         assert_eq!(result, Err("start-at-login:registry".to_owned()));
@@ -1383,11 +1441,104 @@ mod scan_tests {
                 }
                 .to_owned())
             },
+            |_| Ok(()),
         );
 
         assert_eq!(result, Err("start-at-login:reconciliation".to_owned()));
         assert_eq!(native_autostart, current.start_at_login);
         assert!(!settings_committed);
+    }
+
+    #[test]
+    fn settings_transaction_rolls_back_lifecycle_when_write_fails() {
+        let current = AppSettings::default();
+        let mut next = current.clone();
+        next.follow_codex_lifecycle = true;
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let login_calls = calls.clone();
+        let lifecycle_calls = calls.clone();
+
+        let result = save_settings_transaction(
+            &current,
+            &next,
+            |_settings| Err("write failed".to_owned()),
+            |enabled| {
+                login_calls.borrow_mut().push(format!("login:{enabled}"));
+                Ok(())
+            },
+            |enabled| {
+                lifecycle_calls
+                    .borrow_mut()
+                    .push(format!("lifecycle:{enabled}"));
+                Ok(())
+            },
+        );
+
+        assert_eq!(result, Err("write failed".to_owned()));
+        assert_eq!(
+            calls.borrow().as_slice(),
+            ["lifecycle:true", "lifecycle:false"]
+        );
+    }
+
+    #[test]
+    fn settings_transaction_does_not_write_when_lifecycle_setup_fails() {
+        let current = AppSettings::default();
+        let mut next = current.clone();
+        next.follow_codex_lifecycle = true;
+        let mut wrote = false;
+
+        let result = save_settings_transaction(
+            &current,
+            &next,
+            |_settings| {
+                wrote = true;
+                Ok(())
+            },
+            |_enabled| Ok(()),
+            |_enabled| Err("codex-lifecycle:registry".to_owned()),
+        );
+
+        assert_eq!(result, Err("codex-lifecycle:registry".to_owned()));
+        assert!(!wrote);
+    }
+
+    #[test]
+    fn settings_transaction_restores_both_side_effects_after_write_failure() {
+        let current = AppSettings::default();
+        let mut next = current.clone();
+        next.start_at_login = true;
+        next.follow_codex_lifecycle = true;
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let login_calls = calls.clone();
+        let lifecycle_calls = calls.clone();
+
+        let result = save_settings_transaction(
+            &current,
+            &next,
+            |_settings| Err("write failed".to_owned()),
+            |enabled| {
+                login_calls.borrow_mut().push(format!("login:{enabled}"));
+                Ok(())
+            },
+            |enabled| {
+                lifecycle_calls
+                    .borrow_mut()
+                    .push(format!("lifecycle:{enabled}"));
+                Ok(())
+            },
+        );
+
+        assert_eq!(result, Err("write failed".to_owned()));
+        assert_eq!(
+            calls.borrow().as_slice(),
+            [
+                "login:true",
+                "lifecycle:true",
+                "lifecycle:false",
+                "login:false"
+            ]
+        );
     }
 }
 

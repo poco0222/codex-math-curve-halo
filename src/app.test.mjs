@@ -390,6 +390,21 @@ test('renderer startup uses exact frontend defaults after get_settings fails', a
   assert.match(mainSource, /settings_transaction[\s\S]*?\.lock\(\)/);
 });
 
+test('lifecycle sync is wired into startup and settings transactions', async () => {
+  const mainSource = await readFile(new URL('../src-tauri/src/main.rs', import.meta.url), 'utf8');
+  const lifecycleSource = await readFile(new URL('../src-tauri/src/lifecycle.rs', import.meta.url), 'utf8');
+  const transactionSource = mainSource.slice(
+    mainSource.indexOf('fn save_settings_transaction'),
+    mainSource.indexOf('fn read_snapshots'),
+  );
+
+  assert.match(lifecycleSource, /pub fn write_config\(path: &Path, config: &LifecycleConfig\)/);
+  assert.match(lifecycleSource, /pub fn sync_app/);
+  assert.equal((mainSource.match(/lifecycle::sync_app\(/g) ?? []).length, 2);
+  assert.match(mainSource, /build_windows[\s\S]*?lifecycle::sync_app/);
+  assert.match(transactionSource, /follow_codex_lifecycle/);
+});
+
 test('settings changes reach both overlay and settings windows', async () => {
   const mainSource = await readFile(new URL('../src-tauri/src/main.rs', import.meta.url), 'utf8');
   const settingsSource = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
