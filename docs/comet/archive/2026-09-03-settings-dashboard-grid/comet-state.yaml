@@ -1,0 +1,409 @@
+schema: comet.native.v4
+name: settings-layout-redesign
+language: zh-CN
+phase: archive
+status: done
+state_version: 12
+brief: brief.md
+spec_changes:
+  - capability: settings-layout
+    operation: create
+    source: specs/settings-layout/spec.md
+workspace:
+  isolation: current
+  change_branch: main
+  target_branch: main
+  finish: null
+loop:
+  stage: done
+  goal_cycle: 1
+  iteration: 1
+  attempt: 3
+  retry_epoch: 1
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: null
+acceptance:
+  - id: A1
+    source: brief.md
+    text: "A1: 在 `760×760` 桌面窗口中，设置页显示顶部总览、中部双栏分组和底部整行 State colors，不再把所有内容排成一条单列长流。"
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。"
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: "A2: 在窄于 `720px` 的视口中，所有分区回流为单列；控件、按钮和长文本不发生横向溢出或重叠。"
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。"
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: "A3: 切换 `en` 与 `zh-CN` 后，标题、标签、按钮、状态和颜色预置文本仍由现有 i18n 逻辑更新，布局不破坏。"
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。"
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: "A4: 现有设置控件 ID 和 DOM 顺序保持可用；自动保存、插件操作、诊断导出、位置重置和状态模拟行为不变。"
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。"
+      truncated: false
+  - id: A5
+    source: brief.md
+    text: "A5: 浏览器实渲染检查覆盖桌面和窄视口，结构扫描、JavaScript 检查和现有测试通过；失败或未运行项单独记录。"
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。"
+      truncated: false
+  - id: A6
+    source: specs/settings-layout/spec.md
+    text: Desktop settings window - **WHEN** 设置页在约 `760×760` 的桌面窗口中打开 - **THEN**
+      顶部显示 Codex Halo 标题、语言选择和 Overlay 开关 - **AND**
+      Display、Renderer、Plugin、Diagnostics 以两列语义分组显示 - **AND** State colors
+      横跨内容区整行显示 - **AND** 现有控件仍可见且不发生横向溢出
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。"
+      truncated: false
+  - id: A7
+    source: specs/settings-layout/spec.md
+    text: Narrow settings window - **WHEN** 设置页可用宽度小于 `720px` - **THEN** 网格回流为单列 -
+      **AND** 所有标签、输入框、按钮和诊断文本保持可读 - **AND** 页面不产生横向滚动
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。"
+      truncated: false
+  - id: A8
+    source: specs/settings-layout/spec.md
+    text: Existing control contract - **WHEN** 设置页加载、切换语言或收到 `settings-changed` -
+      **THEN** 现有控件 ID、`data-i18n`、状态模拟和颜色字段仍可被 `src/settings.js` 读取和更新 -
+      **AND** 英文与简体中文文本可以正常渲染
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。"
+      truncated: false
+  - id: A9
+    source: specs/settings-layout/spec.md
+    text: Existing actions - **WHEN** 用户修改设置、执行插件安装/卸载、导出诊断、重置位置或模拟状态 - **THEN**
+      现有保存、IPC command 和事件行为保持不变
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。"
+      truncated: false
+  - id: A10
+    source: specs/settings-layout/spec.md
+    text: Keyboard and localized rendering - **WHEN** 用户用键盘遍历控件，或页面切换到 `zh-CN` -
+      **THEN** DOM 顺序、焦点顺序和视觉分组一致 - **AND** 文本不遮挡相邻内容，焦点样式仍清晰可见
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。"
+      truncated: false
+builder_handoff:
+  candidate_id: b736b439-bfb5-44d4-9240-955187ae87e6
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:68f9f871-c06e-4581-90ec-71ed63fc6c04
+  iteration: 1
+  summary:
+    text: 完成 settings-layout-redesign：设置窗口改为约 760×760；settings.html 使用 Dashboard
+      grid，将 Display、Renderer、Codex Plugin、Diagnostics 分成桌面双栏，State
+      colors、模拟状态和运行开关跨整行；窄宽回流为单列。保留现有控件 ID、data-i18n、自动保存、插件操作、诊断、重置位置、状态模拟和
+      Rust/IPC 合同。新增布局合同测试和 Diagnostics i18n 文案。
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A2
+    - A3
+    - A4
+    - A5
+    - A6
+    - A7
+    - A8
+    - A9
+    - A10
+  checks:
+    - name:
+        text: JavaScript syntax and Node tests
+        truncated: false
+      result: passed
+      note:
+        text: "node --check src/settings.js; node --check src/i18n.js; node --test
+          src/app.test.mjs: 29 passed"
+        truncated: false
+    - name:
+        text: Renderer self-check
+        truncated: false
+      result: passed
+      note:
+        text: "node scripts/check-renderer.mjs: PASS (4 profiles)"
+        truncated: false
+    - name:
+        text: Rust format and tests
+        truncated: false
+      result: passed
+      note:
+        text: "cargo fmt --check; cargo test: 105 tests passed"
+        truncated: false
+    - name:
+        text: Diff and control contract
+        truncated: false
+      result: passed
+      note:
+        text: git diff --check; required controls and layout contract read-only review
+          passed
+        truncated: false
+    - name:
+        text: Browser geometry
+        truncated: false
+      result: passed
+      note:
+        text: "Chrome CDP: 760px bodyScrollWidth=clientWidth with two columns; 500px
+          bodyScrollWidth=clientWidth with one column; zh-CN remains within
+          width"
+        truncated: false
+    - name:
+        text: Impeccable layout detector
+        truncated: false
+      result: not-run
+      note:
+        text: HTML parser modules unavailable; regex fallback returned no findings, but
+          computed-style and contrast checks were not evaluated
+        truncated: false
+  checks_truncated: false
+  known_limits:
+    - text: 独立 reviewer subagent 两次无响应；本轮交接使用 root 的有界只读复核，非独立语义验收。
+      truncated: false
+    - text: 未运行打包后的 Tauri GUI 与 Windows runtime；浏览器验证使用静态 settings 页面。
+      truncated: false
+  known_limits_truncated: false
+  review:
+    status: passed
+    summary:
+      text: 有界只读复核确认 diff 仅涉及已确认文件；控件 ID、i18n、窗口尺寸、桌面双栏、窄宽单列和无横向溢出证据均通过。独立 reviewer
+        进程无响应，已在 known_limits 记录。
+      truncated: false
+    reviewer_execution_ref: local-read-only-review-settings-layout-2026-09-03
+  submitted_at: 2026-09-03T08:32:31.844Z
+blockers: []
+verification:
+  candidate_id: b736b439-bfb5-44d4-9240-955187ae87e6
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:ce0fe455-8641-4d15-9481-26928d5da29e
+  iteration: 1
+  attempt: 3
+  assurance: user-confirmed-degraded
+  verdict: pass
+  checks:
+    - id: settings-node-syntax
+      name:
+        text: JavaScript syntax
+        truncated: false
+      argv_display:
+        - text: --check
+          truncated: false
+        - text: src/settings.js
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 25
+    - id: settings-node-tests
+      name:
+        text: Settings and app Node tests
+        truncated: false
+      argv_display:
+        - text: --test
+          truncated: false
+        - text: src/app.test.mjs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 80
+    - id: settings-renderer-self-check
+      name:
+        text: Renderer self-check
+        truncated: false
+      argv_display:
+        - text: scripts/check-renderer.mjs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 31
+    - id: settings-rust-format
+      name:
+        text: Rust format
+        truncated: false
+      argv_display:
+        - text: fmt
+          truncated: false
+        - text: --manifest-path
+          truncated: false
+        - text: src-tauri/Cargo.toml
+          truncated: false
+        - text: --
+          truncated: false
+        - text: --check
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 203
+    - id: settings-rust-tests
+      name:
+        text: Rust tests
+        truncated: false
+      argv_display:
+        - text: test
+          truncated: false
+        - text: --manifest-path
+          truncated: false
+        - text: src-tauri/Cargo.toml
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 2588
+    - id: settings-diff-check
+      name:
+        text: Working tree whitespace
+        truncated: false
+      argv_display:
+        - text: diff
+          truncated: false
+        - text: --check
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 15
+    - id: settings-layout-detector
+      name:
+        text: Impeccable layout detector
+        truncated: false
+      argv_display:
+        - text: /Users/PopoY/.agents/skills/impeccable/scripts/detect.mjs
+          truncated: false
+        - text: --json
+          truncated: false
+        - text: --scope
+          truncated: false
+        - text: layout
+          truncated: false
+        - text: src/settings.html
+          truncated: false
+        - text: src/styles.css
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 56
+  summary:
+    text: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。
+    truncated: false
+  risks:
+    - text: No independent semantic Verifier execution was available; Runtime checks
+        alone do not cover acceptance semantics.
+      truncated: false
+  risks_truncated: false
+  completed_at: 2026-09-03T08:47:05.539Z
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: blocked
+    unresolved_ids:
+      - A2
+      - A5
+      - A10
+    summary:
+      text: 核心静态检查和自动测试通过；独立 Verifier 因未完成浏览器语义检查，最终 verdict=blocked。
+      truncated: false
+    completed_at: 2026-09-03T08:38:20.651Z
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: recovery
+    unresolved_ids: []
+    summary:
+      text: 用户选择继续验证。补充已有 Chrome CDP 证据：760px 下
+        bodyScrollWidth=clientWidth，首四个面板为两列；500px 下
+        bodyScrollWidth=clientWidth，首四个面板为单列；切换 zh-CN 后仍无横向溢出。代码不变。
+      truncated: false
+    completed_at: 2026-09-03T08:40:02.039Z
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 2
+    outcome: recovery
+    unresolved_ids: []
+    summary:
+      text: Repair verification passed for A2, A5, A10; final full verification is
+        required.
+      truncated: false
+    completed_at: 2026-09-03T08:43:29.353Z
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 3
+    outcome: blocked
+    unresolved_ids:
+      - A1
+      - A2
+      - A3
+      - A4
+      - A5
+      - A6
+      - A7
+      - A8
+      - A9
+      - A10
+    summary:
+      text: 最终全量独立 Verifier 进程未返回结果，无法完成新的全量语义复核。Runtime 自动检查已全部通过；此前独立 Verifier 已对
+        A2、A5、A10 返回 passed，且 Chrome CDP 几何证据已记录。
+      truncated: false
+    completed_at: 2026-09-03T08:46:07.415Z
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 3
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。
+      truncated: false
+    completed_at: 2026-09-03T08:47:05.539Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: true
+created_at: 2026-09-03T07:46:56.404Z

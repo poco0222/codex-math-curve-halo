@@ -8,182 +8,239 @@
   </head>
   <body class="settings-page">
     <main class="settings-shell">
-      <header class="settings-header">
-        <div class="settings-brand">
-          <p class="settings-eyebrow" data-i18n="settings.plugin">Codex Plugin</p>
-          <h1>Codex Halo</h1>
+      <aside class="settings-sidebar" aria-label="Settings sections" data-i18n-aria-label="settings.navigation">
+        <div class="settings-sidebar-brand">
+          <span class="settings-brand-mark" aria-hidden="true">CH</span>
+          <div>
+            <p class="settings-eyebrow" data-i18n="settings.plugin">Codex Plugin</p>
+            <strong>Codex Halo</strong>
+          </div>
         </div>
-        <div class="settings-header-controls">
-          <label class="language-row" for="language">
-            <span data-i18n="settings.language">Language</span>
-            <select id="language" name="language" aria-label="Language" data-i18n-aria-label="settings.language">
-              <option value="en">English</option>
-              <option value="zh-CN">简体中文</option>
-            </select>
-          </label>
-          <label class="switch-row" for="enabled">
-            <span data-i18n="settings.overlayEnabled">Overlay enabled</span>
-            <input id="enabled" name="enabled" type="checkbox" checked />
-          </label>
-        </div>
-      </header>
+        <nav class="settings-nav" data-section-nav aria-label="Settings sections" data-i18n-aria-label="settings.navigation">
+          <a class="settings-nav-link is-active" href="#display-section" data-section-target="display-section" data-i18n="settings.display">Display</a>
+          <a class="settings-nav-link" href="#animation-section" data-section-target="animation-section" data-i18n="settings.renderer">Renderer</a>
+          <a class="settings-nav-link" href="#colors-section" data-section-target="colors-section" data-i18n="settings.colors">State colors</a>
+          <a class="settings-nav-link" href="#integration-section" data-section-target="integration-section" data-i18n="settings.integration">Integration</a>
+          <a class="settings-nav-link" href="#test-section" data-section-target="test-section" data-i18n="settings.simulateState">Test</a>
+        </nav>
+      </aside>
 
-      <form id="settings-form" class="settings-dashboard">
-        <fieldset class="settings-panel">
-          <legend data-i18n="settings.display">Display</legend>
-          <label for="curve-id" data-i18n="settings.curveProfile">Curve profile</label>
-          <select id="curve-id" name="curve_id">
-            <option value="rose-seven" data-i18n="settings.curves.roseSeven">Rose Seven</option>
-            <option value="lissajous-drift" data-i18n="settings.curves.lissajousDrift">Lissajous Drift</option>
-            <option value="spiral-search" data-i18n="settings.curves.spiralSearch">Spiral Search</option>
-            <option value="fourier-flow" data-i18n="settings.curves.fourierFlow">Fourier Flow</option>
-          </select>
-
-          <label for="opacity" data-i18n="settings.opacity">Opacity</label>
-          <input id="opacity" name="opacity" type="range" min="0.1" max="1" step="0.01" value="1" />
-
-          <div class="two-column">
-            <label for="offset-x" data-i18n="settings.offsetX">Offset X</label>
-            <label for="offset-y" data-i18n="settings.offsetY">Offset Y</label>
-            <input id="offset-x" name="offset_x" type="number" value="28" />
-            <input id="offset-y" name="offset_y" type="number" value="140" />
+      <section class="settings-workbench">
+        <header class="settings-header">
+          <div class="settings-header-copy">
+            <p class="settings-eyebrow" data-i18n="settings.plugin">Codex Plugin</p>
+            <h1>Codex Halo</h1>
+            <p class="settings-header-context" data-i18n="settings.context">Settings workspace</p>
           </div>
-        </fieldset>
-
-        <fieldset class="settings-panel">
-          <legend data-i18n="settings.renderer">Renderer</legend>
-          <div class="two-column">
-            <label for="particle-count" data-i18n="settings.particleCount">Particle count</label>
-            <label for="trail-span" data-i18n="settings.trailSpan">Trail span</label>
-            <input id="particle-count" name="particle_count" type="number" min="24" max="140" value="64" />
-            <input id="trail-span" name="trail_span" type="number" min="0.12" max="0.68" step="0.01" value="0.4" />
-            <label for="duration-ms" data-i18n="settings.loopDuration">Loop duration (ms)</label>
-            <label for="pulse-duration-ms" data-i18n="settings.pulseDuration">Pulse duration (ms)</label>
-            <input id="duration-ms" name="duration_ms" type="number" min="1" value="420" />
-            <input id="pulse-duration-ms" name="pulse_duration_ms" type="number" min="1" value="1200" />
-            <label for="rotation-duration-ms" data-i18n="settings.rotationDuration">Rotation duration (ms)</label>
-            <label for="stroke-width" data-i18n="settings.strokeWidth">Stroke width</label>
-            <input id="rotation-duration-ms" name="rotation_duration_ms" type="number" min="1" value="4200" />
-            <input id="stroke-width" name="stroke_width" type="number" min="2.5" max="7.5" step="0.1" value="4" />
+          <div class="settings-header-controls">
+            <label class="language-row" for="language">
+              <span data-i18n="settings.language">Language</span>
+              <select id="language" name="language" aria-label="Language" data-i18n-aria-label="settings.language">
+                <option value="en">English</option>
+                <option value="zh-CN">简体中文</option>
+              </select>
+            </label>
+            <label class="switch-row settings-enabled-row" for="enabled">
+              <span data-i18n="settings.overlayEnabled">Overlay enabled</span>
+              <input id="enabled" name="enabled" type="checkbox" checked />
+            </label>
+            <span id="settings-save-status" class="settings-save-status" role="status" data-i18n="settings.saveStatus.ready">Ready</span>
           </div>
-          <output id="formula" class="formula" aria-label="Active formula" data-i18n-aria-label="settings.activeFormula"></output>
-        </fieldset>
+        </header>
 
-        <fieldset class="settings-panel">
-          <legend data-i18n="settings.plugin">Codex Plugin</legend>
-          <p id="plugin-status" class="status-line" role="status" data-i18n="settings.pluginReady">Plugin setup</p>
-          <div class="button-row">
-            <button id="install-plugin" type="button" data-i18n="settings.installPlugin">Install Plugin</button>
-            <button id="uninstall-plugin" type="button" data-i18n="settings.uninstallPlugin">Uninstall Plugin</button>
-          </div>
-        </fieldset>
-
-        <fieldset class="settings-panel">
-          <legend data-i18n="settings.diagnostics">Diagnostics</legend>
-          <p id="diagnostics" class="diagnostics" aria-live="polite" data-i18n="settings.diagnosticsLoading">State: Idle | Last event: never</p>
-          <div class="button-row">
-            <button id="reset-position" type="button" data-i18n="settings.resetPosition">Reset position</button>
-            <button id="export-diagnostics" type="button" data-i18n="settings.exportDiagnostics">Export diagnostics</button>
-          </div>
-        </fieldset>
-
-        <fieldset class="settings-panel settings-panel-wide">
-          <legend data-i18n="settings.colors">State colors</legend>
-          <div class="state-color-list">
-            <div class="state-color-row">
-              <button type="button" class="state-color-target" data-color-target="idle" aria-pressed="true">
-                <span id="idle-color-preview" class="state-color-preview" aria-hidden="true"></span>
-                <span data-i18n="settings.states.idle">Idle</span>
-              </button>
-              <div class="color-editor">
-                <input id="idle-color" name="idle_color" type="color" value="#A7ADB5" aria-label="Idle color" data-color-input />
-                <input id="idle-color-hex" name="idle_color_hex" type="text" value="#A7ADB5" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Idle hex color" data-color-hex="idle" />
-                <button type="button" data-color-reset="idle" data-i18n="settings.resetColor" aria-label="Reset Idle color">Reset</button>
+        <form id="settings-form" class="settings-dashboard">
+          <fieldset id="display-section" class="settings-panel settings-panel-display" data-section="display">
+            <legend data-i18n="settings.display">Display</legend>
+            <div class="field-stack">
+              <label for="curve-id" data-i18n="settings.curveProfile">Curve profile</label>
+              <select id="curve-id" name="curve_id">
+                <option value="rose-seven" data-i18n="settings.curves.roseSeven">Rose Seven</option>
+                <option value="lissajous-drift" data-i18n="settings.curves.lissajousDrift">Lissajous Drift</option>
+                <option value="spiral-search" data-i18n="settings.curves.spiralSearch">Spiral Search</option>
+                <option value="fourier-flow" data-i18n="settings.curves.fourierFlow">Fourier Flow</option>
+              </select>
+            </div>
+            <div class="range-field">
+              <div class="field-label-row">
+                <label for="opacity" data-i18n="settings.opacity">Opacity</label>
+                <output id="opacity-value" for="opacity">100%</output>
+              </div>
+              <input id="opacity" name="opacity" type="range" min="0.1" max="1" step="0.01" value="1" />
+            </div>
+            <div class="two-column">
+              <div class="field-stack">
+                <label for="offset-x" data-i18n="settings.offsetX">Offset X</label>
+                <input id="offset-x" name="offset_x" type="number" value="28" />
+              </div>
+              <div class="field-stack">
+                <label for="offset-y" data-i18n="settings.offsetY">Offset Y</label>
+                <input id="offset-y" name="offset_y" type="number" value="140" />
               </div>
             </div>
-            <div class="state-color-row">
-              <button type="button" class="state-color-target" data-color-target="thinking" aria-pressed="false">
-                <span id="thinking-color-preview" class="state-color-preview" aria-hidden="true"></span>
-                <span data-i18n="settings.states.thinking">Thinking</span>
-              </button>
-              <div class="color-editor">
-                <input id="thinking-color" name="thinking_color" type="color" value="#FF8A3D" aria-label="Thinking color" data-color-input />
-                <input id="thinking-color-hex" name="thinking_color_hex" type="text" value="#FF8A3D" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Thinking hex color" data-color-hex="thinking" />
-                <button type="button" data-color-reset="thinking" data-i18n="settings.resetColor" aria-label="Reset Thinking color">Reset</button>
-              </div>
-            </div>
-            <div class="state-color-row">
-              <button type="button" class="state-color-target" data-color-target="executing" aria-pressed="false">
-                <span id="executing-color-preview" class="state-color-preview" aria-hidden="true"></span>
-                <span data-i18n="settings.states.executing">Executing</span>
-              </button>
-              <div class="color-editor">
-                <input id="executing-color" name="executing_color" type="color" value="#339CFF" aria-label="Executing color" data-color-input />
-                <input id="executing-color-hex" name="executing_color_hex" type="text" value="#339CFF" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Executing hex color" data-color-hex="executing" />
-                <button type="button" data-color-reset="executing" data-i18n="settings.resetColor" aria-label="Reset Executing color">Reset</button>
-              </div>
-            </div>
-            <div class="state-color-row">
-              <button type="button" class="state-color-target" data-color-target="input_needed" aria-pressed="false">
-                <span id="input-needed-color-preview" class="state-color-preview" aria-hidden="true"></span>
-                <span data-i18n="settings.states.inputNeeded">Input needed</span>
-              </button>
-              <div class="color-editor">
-                <input id="input-needed-color" name="input_needed_color" type="color" value="#F05252" aria-label="Input needed color" data-color-input />
-                <input id="input-needed-color-hex" name="input_needed_color_hex" type="text" value="#F05252" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Input needed hex color" data-color-hex="input_needed" />
-                <button type="button" data-color-reset="input_needed" data-i18n="settings.resetColor" aria-label="Reset Input needed color">Reset</button>
-              </div>
-            </div>
-            <div class="state-color-row">
-              <button type="button" class="state-color-target" data-color-target="completed" aria-pressed="false">
-                <span id="completed-color-preview" class="state-color-preview" aria-hidden="true"></span>
-                <span data-i18n="settings.states.completed">Completed</span>
-              </button>
-              <div class="color-editor">
-                <input id="completed-color" name="completed_color" type="color" value="#35C878" aria-label="Completed color" data-color-input />
-                <input id="completed-color-hex" name="completed_color_hex" type="text" value="#35C878" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Completed hex color" data-color-hex="completed" />
-                <button type="button" data-color-reset="completed" data-i18n="settings.resetColor" aria-label="Reset Completed color">Reset</button>
-              </div>
-            </div>
-            <div class="state-color-row">
-              <button type="button" class="state-color-target" data-color-target="compacting" aria-pressed="false">
-                <span id="compacting-color-preview" class="state-color-preview" aria-hidden="true"></span>
-                <span data-i18n="settings.states.compacting">Compacting</span>
-              </button>
-              <div class="color-editor">
-                <input id="compacting-color" name="compacting_color" type="color" value="#A56BFF" aria-label="Compacting color" data-color-input />
-                <input id="compacting-color-hex" name="compacting_color_hex" type="text" value="#A56BFF" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Compacting hex color" data-color-hex="compacting" />
-                <button type="button" data-color-reset="compacting" data-i18n="settings.resetColor" aria-label="Reset Compacting color">Reset</button>
-              </div>
-            </div>
-          </div>
-          <div id="color-presets" class="color-presets"></div>
-        </fieldset>
+          </fieldset>
 
-        <fieldset class="settings-panel settings-panel-wide">
-          <legend data-i18n="settings.simulateState">Simulate state</legend>
-          <div class="state-grid">
-            <button type="button" data-state="idle" data-i18n="settings.states.idle">Idle</button>
-            <button type="button" data-state="thinking" data-i18n="settings.states.thinking">Thinking</button>
-            <button type="button" data-state="executing" data-i18n="settings.states.executing">Executing</button>
-            <button type="button" data-state="input_needed" data-i18n="settings.states.inputNeeded">Input needed</button>
-            <button type="button" data-state="completed" data-i18n="settings.states.completed">Completed</button>
-            <button type="button" data-state="compacting" data-i18n="settings.states.compacting">Compacting</button>
-          </div>
-        </fieldset>
+          <fieldset id="animation-section" class="settings-panel settings-panel-animation" data-section="animation">
+            <legend data-i18n="settings.renderer">Renderer</legend>
+            <div class="two-column">
+              <div class="field-stack">
+                <label for="particle-count" data-i18n="settings.particleCount">Particle count</label>
+                <input id="particle-count" name="particle_count" type="number" min="24" max="140" value="64" />
+              </div>
+              <div class="field-stack">
+                <label for="trail-span" data-i18n="settings.trailSpan">Trail span</label>
+                <input id="trail-span" name="trail_span" type="number" min="0.12" max="0.68" step="0.01" value="0.4" />
+              </div>
+              <div class="field-stack">
+                <label for="duration-ms" data-i18n="settings.loopDuration">Loop duration (ms)</label>
+                <input id="duration-ms" name="duration_ms" type="number" min="1" value="420" />
+              </div>
+              <div class="field-stack">
+                <label for="pulse-duration-ms" data-i18n="settings.pulseDuration">Pulse duration (ms)</label>
+                <input id="pulse-duration-ms" name="pulse_duration_ms" type="number" min="1" value="1200" />
+              </div>
+              <div class="field-stack">
+                <label for="rotation-duration-ms" data-i18n="settings.rotationDuration">Rotation duration (ms)</label>
+                <input id="rotation-duration-ms" name="rotation_duration_ms" type="number" min="1" value="4200" />
+              </div>
+              <div class="field-stack">
+                <label for="stroke-width" data-i18n="settings.strokeWidth">Stroke width</label>
+                <input id="stroke-width" name="stroke_width" type="number" min="2.5" max="7.5" step="0.1" value="4" />
+              </div>
+            </div>
+            <output id="formula" class="formula" aria-label="Active formula" data-i18n-aria-label="settings.activeFormula"></output>
+          </fieldset>
 
-        <div class="settings-panel settings-panel-wide settings-runtime">
-          <label class="switch-row" for="start-at-login">
-            <span data-i18n="settings.startAtLogin">Start at login</span>
-            <input id="start-at-login" name="start_at_login" type="checkbox" />
-          </label>
+          <fieldset id="colors-section" class="settings-panel settings-panel-wide" data-section="colors">
+            <legend data-i18n="settings.colors">State colors</legend>
+            <div class="section-heading-row">
+              <span class="section-helper" data-i18n="settings.colorSelectionHint">Select a state to edit its color</span>
+              <span class="state-color-count" data-i18n="settings.stateCount">6 states</span>
+            </div>
+            <div class="state-color-list">
+              <div class="state-color-row" data-color-state="idle" data-active="true">
+                <button type="button" class="state-color-target" data-color-target="idle" aria-pressed="true">
+                  <span id="idle-color-preview" class="state-color-preview" aria-hidden="true"></span>
+                  <span data-i18n="settings.states.idle">Idle</span>
+                </button>
+                <div class="color-editor">
+                  <input id="idle-color" name="idle_color" type="color" value="#A7ADB5" aria-label="Idle color" data-color-input />
+                  <input id="idle-color-hex" name="idle_color_hex" type="text" value="#A7ADB5" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Idle hex color" data-color-hex="idle" />
+                  <button type="button" data-color-reset="idle" data-i18n="settings.resetColor" aria-label="Reset Idle color">Reset</button>
+                </div>
+              </div>
+              <div class="state-color-row" data-color-state="thinking" data-active="false">
+                <button type="button" class="state-color-target" data-color-target="thinking" aria-pressed="false">
+                  <span id="thinking-color-preview" class="state-color-preview" aria-hidden="true"></span>
+                  <span data-i18n="settings.states.thinking">Thinking</span>
+                </button>
+                <div class="color-editor">
+                  <input id="thinking-color" name="thinking_color" type="color" value="#FF8A3D" aria-label="Thinking color" data-color-input />
+                  <input id="thinking-color-hex" name="thinking_color_hex" type="text" value="#FF8A3D" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Thinking hex color" data-color-hex="thinking" />
+                  <button type="button" data-color-reset="thinking" data-i18n="settings.resetColor" aria-label="Reset Thinking color">Reset</button>
+                </div>
+              </div>
+              <div class="state-color-row" data-color-state="executing" data-active="false">
+                <button type="button" class="state-color-target" data-color-target="executing" aria-pressed="false">
+                  <span id="executing-color-preview" class="state-color-preview" aria-hidden="true"></span>
+                  <span data-i18n="settings.states.executing">Executing</span>
+                </button>
+                <div class="color-editor">
+                  <input id="executing-color" name="executing_color" type="color" value="#339CFF" aria-label="Executing color" data-color-input />
+                  <input id="executing-color-hex" name="executing_color_hex" type="text" value="#339CFF" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Executing hex color" data-color-hex="executing" />
+                  <button type="button" data-color-reset="executing" data-i18n="settings.resetColor" aria-label="Reset Executing color">Reset</button>
+                </div>
+              </div>
+              <div class="state-color-row" data-color-state="input_needed" data-active="false">
+                <button type="button" class="state-color-target" data-color-target="input_needed" aria-pressed="false">
+                  <span id="input-needed-color-preview" class="state-color-preview" aria-hidden="true"></span>
+                  <span data-i18n="settings.states.inputNeeded">Input needed</span>
+                </button>
+                <div class="color-editor">
+                  <input id="input-needed-color" name="input_needed_color" type="color" value="#F05252" aria-label="Input needed color" data-color-input />
+                  <input id="input-needed-color-hex" name="input_needed_color_hex" type="text" value="#F05252" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Input needed hex color" data-color-hex="input_needed" />
+                  <button type="button" data-color-reset="input_needed" data-i18n="settings.resetColor" aria-label="Reset Input needed color">Reset</button>
+                </div>
+              </div>
+              <div class="state-color-row" data-color-state="completed" data-active="false">
+                <button type="button" class="state-color-target" data-color-target="completed" aria-pressed="false">
+                  <span id="completed-color-preview" class="state-color-preview" aria-hidden="true"></span>
+                  <span data-i18n="settings.states.completed">Completed</span>
+                </button>
+                <div class="color-editor">
+                  <input id="completed-color" name="completed_color" type="color" value="#35C878" aria-label="Completed color" data-color-input />
+                  <input id="completed-color-hex" name="completed_color_hex" type="text" value="#35C878" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Completed hex color" data-color-hex="completed" />
+                  <button type="button" data-color-reset="completed" data-i18n="settings.resetColor" aria-label="Reset Completed color">Reset</button>
+                </div>
+              </div>
+              <div class="state-color-row" data-color-state="compacting" data-active="false">
+                <button type="button" class="state-color-target" data-color-target="compacting" aria-pressed="false">
+                  <span id="compacting-color-preview" class="state-color-preview" aria-hidden="true"></span>
+                  <span data-i18n="settings.states.compacting">Compacting</span>
+                </button>
+                <div class="color-editor">
+                  <input id="compacting-color" name="compacting_color" type="color" value="#A56BFF" aria-label="Compacting color" data-color-input />
+                  <input id="compacting-color-hex" name="compacting_color_hex" type="text" value="#A56BFF" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Compacting hex color" data-color-hex="compacting" />
+                  <button type="button" data-color-reset="compacting" data-i18n="settings.resetColor" aria-label="Reset Compacting color">Reset</button>
+                </div>
+              </div>
+            </div>
+            <details id="color-presets-details" class="color-presets-disclosure">
+              <summary data-i18n="settings.presetPalettes">Preset palettes</summary>
+              <div id="color-presets" class="color-presets"></div>
+            </details>
+          </fieldset>
 
-          <label class="switch-row" for="follow-codex-lifecycle">
-            <span data-i18n="settings.followCodexLifecycle">Follow Codex lifecycle</span>
-            <input id="follow-codex-lifecycle" name="follow_codex_lifecycle" type="checkbox" />
-          </label>
-        </div>
-      </form>
+          <fieldset id="integration-section" class="settings-panel settings-panel-wide" data-section="integration">
+            <legend data-i18n="settings.integration">Integration</legend>
+            <div class="integration-grid">
+              <section class="settings-subsection" aria-labelledby="plugin-heading">
+                <div class="subsection-heading">
+                  <h2 id="plugin-heading" data-i18n="settings.plugin">Codex Plugin</h2>
+                  <span class="subsection-kicker" data-i18n="settings.pluginReady">Plugin setup</span>
+                </div>
+                <p id="plugin-status" class="status-line" role="status" data-i18n="settings.pluginReady">Plugin setup</p>
+                <div class="button-row">
+                  <button id="install-plugin" type="button" data-i18n="settings.installPlugin">Install Plugin</button>
+                  <button id="uninstall-plugin" type="button" data-i18n="settings.uninstallPlugin">Uninstall Plugin</button>
+                </div>
+              </section>
+              <section class="settings-subsection" aria-labelledby="diagnostics-heading">
+                <div class="subsection-heading">
+                  <h2 id="diagnostics-heading" data-i18n="settings.diagnostics">Diagnostics</h2>
+                  <span class="subsection-kicker" data-i18n="settings.diagnosticsLive">Live</span>
+                </div>
+                <p id="diagnostics" class="diagnostics" aria-live="polite" data-i18n="settings.diagnosticsLoading">State: Idle | Last event: never</p>
+                <div class="button-row">
+                  <button id="reset-position" type="button" data-i18n="settings.resetPosition">Reset position</button>
+                  <button id="export-diagnostics" type="button" data-i18n="settings.exportDiagnostics">Export diagnostics</button>
+                </div>
+              </section>
+            </div>
+            <div class="settings-runtime">
+              <label class="switch-row" for="start-at-login">
+                <span data-i18n="settings.startAtLogin">Start at login</span>
+                <input id="start-at-login" name="start_at_login" type="checkbox" />
+              </label>
+              <label class="switch-row" for="follow-codex-lifecycle">
+                <span data-i18n="settings.followCodexLifecycle">Follow Codex lifecycle</span>
+                <input id="follow-codex-lifecycle" name="follow_codex_lifecycle" type="checkbox" />
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset id="test-section" class="settings-panel settings-panel-wide" data-section="test">
+            <legend data-i18n="settings.simulateState">Simulate state</legend>
+            <div class="state-grid">
+              <button type="button" data-state="idle" data-i18n="settings.states.idle">Idle</button>
+              <button type="button" data-state="thinking" data-i18n="settings.states.thinking">Thinking</button>
+              <button type="button" data-state="executing" data-i18n="settings.states.executing">Executing</button>
+              <button type="button" data-state="input_needed" data-i18n="settings.states.inputNeeded">Input needed</button>
+              <button type="button" data-state="completed" data-i18n="settings.states.completed">Completed</button>
+              <button type="button" data-state="compacting" data-i18n="settings.states.compacting">Compacting</button>
+            </div>
+          </fieldset>
+        </form>
+      </section>
     </main>
     <script type="module" src="/settings.js"></script>
   </body>

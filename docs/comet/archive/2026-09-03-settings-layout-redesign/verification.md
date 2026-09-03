@@ -1,5 +1,5 @@
 ---
-generated_from_state_version: 12
+generated_from_state_version: 7
 ---
 
 # 验证
@@ -7,39 +7,29 @@ generated_from_state_version: 12
 ## 当前结果
 
 - 结果: **已归档**
-- 验证情况: **你已确认接受不完整验证结果**
+- 验证情况: **已完成检查，验证结果已确认**
 - 目标周期: 1
 - 迭代: 1
-- 验证器尝试次数: 3
-- 完成时间: 2026-09-03T08:47:05.539Z
-- 摘要: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。
+- 验证器尝试次数: 1
+- 完成时间: 2026-09-03T11:44:39.856Z
+- 摘要: 独立 Verifier 验收通过。node --check src/settings.js 通过；node --test src/app.test.mjs 为 31/31；renderer self-check PASS (4 profiles)；cargo test 串行通过；git diff --check 通过。
 
 ## 验收
 
 | 编号 | 结果 | 来源 | 验收项 | 原因 |
 | --- | --- | --- | --- | --- |
-| A1 | passed | brief.md | A1: 在 `760×760` 桌面窗口中，设置页显示顶部总览、中部双栏分组和底部整行 State colors，不再把所有内容排成一条单列长流。 | User confirmed degraded completion without independent semantic verification: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。 |
-| A2 | passed | brief.md | A2: 在窄于 `720px` 的视口中，所有分区回流为单列；控件、按钮和长文本不发生横向溢出或重叠。 | User confirmed degraded completion without independent semantic verification: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。 |
-| A3 | passed | brief.md | A3: 切换 `en` 与 `zh-CN` 后，标题、标签、按钮、状态和颜色预置文本仍由现有 i18n 逻辑更新，布局不破坏。 | User confirmed degraded completion without independent semantic verification: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。 |
-| A4 | passed | brief.md | A4: 现有设置控件 ID 和 DOM 顺序保持可用；自动保存、插件操作、诊断导出、位置重置和状态模拟行为不变。 | User confirmed degraded completion without independent semantic verification: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。 |
-| A5 | passed | brief.md | A5: 浏览器实渲染检查覆盖桌面和窄视口，结构扫描、JavaScript 检查和现有测试通过；失败或未运行项单独记录。 | User confirmed degraded completion without independent semantic verification: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。 |
-| A6 | passed | specs/settings-layout/spec.md | Desktop settings window - **WHEN** 设置页在约 `760×760` 的桌面窗口中打开 - **THEN** 顶部显示 Codex Halo 标题、语言选择和 Overlay 开关 - **AND** Display、Renderer、Plugin、Diagnostics 以两列语义分组显示 - **AND** State colors 横跨内容区整行显示 - **AND** 现有控件仍可见且不发生横向溢出 | User confirmed degraded completion without independent semantic verification: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。 |
-| A7 | passed | specs/settings-layout/spec.md | Narrow settings window - **WHEN** 设置页可用宽度小于 `720px` - **THEN** 网格回流为单列 - **AND** 所有标签、输入框、按钮和诊断文本保持可读 - **AND** 页面不产生横向滚动 | User confirmed degraded completion without independent semantic verification: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。 |
-| A8 | passed | specs/settings-layout/spec.md | Existing control contract - **WHEN** 设置页加载、切换语言或收到 `settings-changed` - **THEN** 现有控件 ID、`data-i18n`、状态模拟和颜色字段仍可被 `src/settings.js` 读取和更新 - **AND** 英文与简体中文文本可以正常渲染 | User confirmed degraded completion without independent semantic verification: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。 |
-| A9 | passed | specs/settings-layout/spec.md | Existing actions - **WHEN** 用户修改设置、执行插件安装/卸载、导出诊断、重置位置或模拟状态 - **THEN** 现有保存、IPC command 和事件行为保持不变 | User confirmed degraded completion without independent semantic verification: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。 |
-| A10 | passed | specs/settings-layout/spec.md | Keyboard and localized rendering - **WHEN** 用户用键盘遍历控件，或页面切换到 `zh-CN` - **THEN** DOM 顺序、焦点顺序和视觉分组一致 - **AND** 文本不遮挡相邻内容，焦点样式仍清晰可见 | User confirmed degraded completion without independent semantic verification: 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。 |
+| A1 | passed | brief.md | A1: 在约 `960×760` 的桌面窗口中，首屏可同时看到产品标题、Overlay 开关、显示参数和渲染参数；页面不再以大量同权重面板开场。 | src/settings.html 已改为双栏 workbench；src-tauri/src/main.rs 设置窗口为 960x760。首屏含标题、Overlay 开关、显示与 Renderer 区域。 |
+| A2 | passed | brief.md | A2: 桌面设置页存在清晰的分区导航；点击分区后，内容滚动到对应区域，键盘顺序仍按内容语义递进。 | 存在五项分区导航与对应锚点；点击导航更新 active 状态并跳转内容。窄屏使用横向导航规则，锚点 scroll-margin-top=120px。 |
+| A3 | passed | brief.md | A3: 状态颜色区默认只突出当前选中状态；切换六个状态时，当前颜色编辑器、预览和 Hex 值同步切换，六个颜色字段仍全部可读写。 | 六个状态均保留 color picker、Hex、preview、reset；selectColorState 同步 aria-pressed、活动行和当前字段。Node 测试覆盖状态颜色读写。 |
+| A4 | passed | brief.md | A4: 预置色库可展开和收起；选择预置色、修改颜色、恢复默认均复用现有保存路径，不产生重复保存或错误覆盖。 | 预置色库使用原生 details 可收起；预置色、颜色修改、恢复默认均调用 saveCurrentSettings，并通过 createSerialTaskQueue 串行保存。 |
+| A5 | passed | brief.md | A5: 修改任意设置时，界面显示低干扰的保存反馈；保存失败时保留现有诊断错误展示，且不吞掉错误。 | 保存路径有 saving/saved/error 三态；invokeCommand 保留 setupError，失败时 diagnostics 继续展示安全格式化错误。Node 31/31 通过。 |
+| A6 | passed | brief.md | A6: 切换 `en` 与 `zh-CN` 后，标题、导航、标签、按钮、状态、诊断和预置色文本自然换行，布局不破坏。 | i18n.js 同时提供 en 与 zh-CN；标题、导航、字段、按钮、状态、诊断、预置色均有 data-i18n 或动态翻译路径。Node 31/31 通过。 |
+| A7 | passed | brief.md | A7: 在窄于 `880px` 的视口中，导航和内容回流为单列；所有控件、按钮、公式和诊断文本不横向溢出、不重叠。 | 已有浏览器证据：960x760、760x760、520x900 均 horizontalOverflow=false；520px 时分区 target top=120、header position=static、sidebar position=sticky。CSS 含 880px 与 640px 回流规则。 |
+| A8 | passed | brief.md | A8: 现有控件 ID、`name`、`data-i18n`、`data-state`、`data-color-*` 契约保持可用；插件安装/卸载、诊断导出、重置位置、状态模拟和自动保存行为不变。 | 原有 name、data-state、data-color-target、data-color-reset、data-color-hex 契约未删除；Plugin、diagnostics、reset_position、simulate_state、IPC/event 路径仍存在。Node 31/31、renderer 4 profiles、Rust 当前 serial tests 通过。 |
 
 ## 检查
 
-| 检查 | 命令 | 工作目录 | 状态 | 退出码 | 耗时 |
-| --- | --- | --- | --- | ---: | ---: |
-| JavaScript syntax | --check src/settings.js | . | passed | 0 | 25 ms |
-| Settings and app Node tests | --test src/app.test.mjs | . | passed | 0 | 80 ms |
-| Renderer self-check | scripts/check-renderer.mjs | . | passed | 0 | 31 ms |
-| Rust format | fmt --manifest-path src-tauri/Cargo.toml -- --check | . | passed | 0 | 203 ms |
-| Rust tests | test --manifest-path src-tauri/Cargo.toml | . | passed | 0 | 2588 ms |
-| Working tree whitespace | diff --check | . | passed | 0 | 15 ms |
-| Impeccable layout detector | /Users/PopoY/.agents/skills/impeccable/scripts/detect.mjs --json --scope layout src/settings.html src/styles.css | . | passed | 0 | 56 ms |
+_没有记录 Runtime 检查。_
 
 ## 阻塞项
 
@@ -47,20 +37,17 @@ _无。_
 
 ## 风险与跳过的工作
 
-- No independent semantic Verifier execution was available; Runtime checks alone do not cover acceptance semantics.
+- 静态浏览器无 Tauri bridge，未构成真实 Tauri IPC E2E。
+- Impeccable detector 为 regex fallback，HTML/CSS parser modules 不可用。
 
 ## 之前的迭代
 
 | 目标周期 | 迭代 | 尝试 | 结果 | 未解决项 | 摘要 | 完成时间 |
 | ---: | ---: | ---: | --- | --- | --- | --- |
-| 1 | 1 | 1 | blocked | A2, A5, A10 | 核心静态检查和自动测试通过；独立 Verifier 因未完成浏览器语义检查，最终 verdict=blocked。 | 2026-09-03T08:38:20.651Z |
-| 1 | 1 | 1 | recovery | — | 用户选择继续验证。补充已有 Chrome CDP 证据：760px 下 bodyScrollWidth=clientWidth，首四个面板为两列；500px 下 bodyScrollWidth=clientWidth，首四个面板为单列；切换 zh-CN 后仍无横向溢出。代码不变。 | 2026-09-03T08:40:02.039Z |
-| 1 | 1 | 2 | recovery | — | Repair verification passed for A2, A5, A10; final full verification is required. | 2026-09-03T08:43:29.353Z |
-| 1 | 1 | 3 | blocked | A1, A2, A3, A4, A5, A6, A7, A8, A9, A10 | 最终全量独立 Verifier 进程未返回结果，无法完成新的全量语义复核。Runtime 自动检查已全部通过；此前独立 Verifier 已对 A2、A5、A10 返回 passed，且 Chrome CDP 几何证据已记录。 | 2026-09-03T08:46:07.415Z |
-| 1 | 1 | 3 | pass | — | 用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。 | 2026-09-03T08:47:05.539Z |
+| 1 | 1 | 1 | pass | — | 独立 Verifier 验收通过。node --check src/settings.js 通过；node --test src/app.test.mjs 为 31/31；renderer self-check PASS (4 profiles)；cargo test 串行通过；git diff --check 通过。 | 2026-09-03T11:44:39.856Z |
 
 
 
 ## 结论
 
-用户已明确接受当前自动检查结果和已有浏览器几何证据；独立验收服务不可用这一限制已知。
+独立 Verifier 验收通过。node --check src/settings.js 通过；node --test src/app.test.mjs 为 31/31；renderer self-check PASS (4 profiles)；cargo test 串行通过；git diff --check 通过。

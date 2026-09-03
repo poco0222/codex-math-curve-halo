@@ -26,13 +26,25 @@ const pluginOperationStatuses = {
 const diagnostics = document.getElementById('diagnostics');
 const formula = document.getElementById('formula');
 const colorPresets = document.getElementById('color-presets');
+const stateColorList = document.querySelector?.('.state-color-list') ?? null;
+const opacityValue = document.getElementById('opacity-value');
+const saveStatus = document.getElementById('settings-save-status');
+const saveStatusElements = saveStatus ? [saveStatus] : [];
 const colorFields = Object.entries(STATE_COLOR_KEYS).map(([state, key]) => ({ state, key }));
 let selectedColorState = 'idle';
 let currentLanguage = DEFAULT_LANGUAGE;
 let currentPluginStatus = 'settings.pluginReady';
+let currentSaveStatus = 'ready';
 let setupError = null;
 let currentDisplayState = { state: 'idle', updated_at_ms: 0 };
 const saveSettings = createSerialTaskQueue();
+
+const saveStatusKeys = {
+  ready: 'settings.saveStatus.ready',
+  saving: 'settings.saveStatus.saving',
+  saved: 'settings.saveStatus.saved',
+  error: 'settings.saveStatus.error',
+};
 
 function showSetupError(command, error) {
   setupError = { command, error };
@@ -65,6 +77,10 @@ function selectColorState(state) {
   for (const target of document.querySelectorAll('button[data-color-target]')) {
     target.setAttribute('aria-pressed', String(target.dataset.colorTarget === state));
   }
+  for (const row of document.querySelectorAll('.state-color-row[data-color-state]')) {
+    row.dataset.active = String(row.dataset.colorState === state);
+  }
+  if (stateColorList) stateColorList.dataset.activeState = state;
 }
 
 function syncColorField(state, value) {
@@ -156,12 +172,27 @@ function applySettings(settings) {
     if (settings[key] !== undefined) syncColorField(state, settings[key]);
   }
   renderLanguage(language);
+  renderOpacity();
   renderFormula(settings);
 }
 
 function renderFormula(settings = readSettings()) {
   const profile = getCurveProfile(settings.curve_id);
   formula.textContent = formatFormula(profile, settings);
+}
+
+function renderOpacity() {
+  if (!opacityValue) return;
+  const value = Number(control('opacity')?.value);
+  if (Number.isFinite(value)) opacityValue.textContent = `${Math.round(value * 100)}%`;
+}
+
+function setSaveStatus(status) {
+  currentSaveStatus = saveStatusKeys[status] ? status : 'ready';
+  for (const element of saveStatusElements) {
+    element.dataset.status = currentSaveStatus;
+    element.textContent = getText(currentLanguage, saveStatusKeys[currentSaveStatus]);
+  }
 }
 
 function renderPluginStatus(status = currentPluginStatus) {
@@ -211,6 +242,7 @@ function renderLanguage(language) {
   }
   renderPluginStatus();
   renderDiagnostics();
+  setSaveStatus(currentSaveStatus);
   renderColorPresets();
 }
 
@@ -236,11 +268,17 @@ if (typeof listen === 'function') {
 
 async function saveCurrentSettings() {
   const settings = readSettings();
-  const result = await saveSettings(() => invokeCommand('save_settings', { settings }));
-  if (result.ok) {
-    clearSetupError();
-    renderFormula();
-  }
+  return saveSettings(async () => {
+    setSaveStatus('saving');
+    const result = await invokeCommand('save_settings', { settings });
+    if (result.ok) {
+      clearSetupError();
+      setSaveStatus('saved');
+      renderFormula();
+      return;
+    }
+    setSaveStatus('error');
+  });
 }
 
 document.getElementById('export-diagnostics').addEventListener('click', () => {
@@ -262,7 +300,16 @@ for (const field of document.querySelectorAll('input, select')) {
   const event = field.type === 'number' || field.type === 'range' ? 'input' : 'change';
   field.addEventListener(event, saveCurrentSettings);
   if (field.id === 'curve-id') field.addEventListener('change', () => renderFormula());
+  if (field.id === 'opacity') field.addEventListener('input', renderOpacity);
   if (field.id === 'language') field.addEventListener('change', () => renderLanguage(field.value));
+}
+
+for (const link of document.querySelectorAll('[data-section-target]')) {
+  link.addEventListener('click', () => {
+    for (const item of document.querySelectorAll('[data-section-target]')) {
+      item.classList?.toggle('is-active', item === link);
+    }
+  });
 }
 
 for (const { state, key } of colorFields) {

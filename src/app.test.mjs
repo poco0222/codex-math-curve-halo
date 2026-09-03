@@ -182,17 +182,49 @@ test('settings page exposes a persisted language selector', async () => {
   assert.match(i18n, /settings\.followCodexLifecycle/);
 });
 
-test('settings page uses a responsive dashboard grid', async () => {
+test('settings page uses a responsive settings workbench', async () => {
   const html = await readFile(new URL('./settings.html', import.meta.url), 'utf8');
   const css = await readFile(new URL('./styles.css', import.meta.url), 'utf8');
   const mainSource = await readFile(new URL('../src-tauri/src/main.rs', import.meta.url), 'utf8');
 
+  assert.match(html, /class="settings-workbench"/);
   assert.match(html, /class="settings-dashboard"/);
   assert.match(html, /class="settings-panel settings-panel-wide"/);
   assert.match(css, /\.settings-dashboard\s*\{[\s\S]*display:\s*grid/);
   assert.match(css, /\.settings-dashboard\s*\{[\s\S]*grid-template-columns:\s*repeat\(2/);
-  assert.match(css, /@media\s*\(max-width:\s*720px\)/);
-  assert.match(mainSource, /\.inner_size\(760\.0, 760\.0\)/);
+  assert.match(css, /@media\s*\(max-width:\s*880px\)/);
+  assert.match(mainSource, /\.inner_size\(960\.0, 760\.0\)/);
+});
+
+test('settings page uses the Halo Control Room workbench layout', async () => {
+  const html = await readFile(new URL('./settings.html', import.meta.url), 'utf8');
+  const css = await readFile(new URL('./styles.css', import.meta.url), 'utf8');
+  const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
+  const mainSource = await readFile(new URL('../src-tauri/src/main.rs', import.meta.url), 'utf8');
+
+  assert.match(html, /class="settings-workbench"/);
+  assert.match(html, /data-section-nav/);
+  assert.match(html, /id="settings-save-status"/);
+  assert.match(html, /data-section="display"/);
+  assert.match(html, /data-section="animation"/);
+  assert.match(html, /data-section="colors"/);
+  assert.match(html, /<details[^>]+id="color-presets-details"/);
+  assert.match(css, /\.settings-workbench\s*\{/);
+  assert.match(css, /\.settings-sidebar\s*\{/);
+  assert.match(css, /@media\s*\(max-width:\s*880px\)/);
+  assert.match(source, /setSaveStatus\('saving'\)/);
+  assert.match(source, /setSaveStatus\('saved'\)/);
+  assert.match(source, /setSaveStatus\('error'\)/);
+  assert.match(source, /saveSettings\(async \(\) => \{[\s\S]*setSaveStatus\('saving'\)/);
+  assert.match(mainSource, /\.inner_size\(960\.0, 760\.0\)/);
+});
+
+test('narrow settings navigation leaves anchored sections visible', async () => {
+  const css = await readFile(new URL('./styles.css', import.meta.url), 'utf8');
+
+  assert.match(css, /\[data-section\]\s*\{[\s\S]*scroll-margin-top:\s*120px/);
+  assert.match(css, /@media\s*\(max-width:\s*880px\)[\s\S]*\.settings-header\s*\{[\s\S]*position:\s*static/);
+  assert.match(css, /@media\s*\(max-width:\s*640px\)[\s\S]*button,[\s\S]*input:not\(\[type="checkbox"\]\),[\s\S]*select,[\s\S]*\.settings-nav-link[\s\S]*min-height:\s*40px/);
 });
 
 test('settings page exposes plugin install controls and no legacy hook controls', async () => {
@@ -499,7 +531,7 @@ test('settings page exposes direct state color targets and independent controls'
   assert.match(source, /COLOR_PRESET_GROUPS/);
   assert.match(source, /selectedColorState/);
   assert.match(source, /saveCurrentSettings/);
-  assert.match(css, /@media\s*\(max-width:\s*480px\)[\s\S]*\.state-color-row\s*\{[\s\S]*grid-template-columns:\s*1fr/);
+  assert.match(css, /@media\s*\(max-width:\s*640px\)[\s\S]*\.state-color-row,[\s\S]*\.state-color-row\[data-active="true"\][\s\S]*grid-template-columns:\s*1fr/);
 });
 
 test('settings color controls save only the selected state and reject invalid hex', async () => {
@@ -595,6 +627,7 @@ test('settings color controls save only the selected state and reject invalid he
     ['export-diagnostics', new FakeElement()],
     ['reset-position', new FakeElement()],
     ['color-presets', new FakeElement()],
+    ['settings-save-status', new FakeElement()],
     ...['idle', 'thinking', 'executing', 'input_needed', 'completed', 'compacting'].flatMap((state) => {
       const id = state.replaceAll('_', '-');
       return [[`${id}-color-preview`, new FakeElement()]];
@@ -647,6 +680,8 @@ test('settings color controls save only the selected state and reject invalid he
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(saveCalls.at(-1).settings.thinking_color, '#A4CAB6');
     assert.equal(saveCalls.at(-1).settings.idle_color, '#A7ADB5');
+    assert.equal(elements.get('settings-save-status').textContent, 'Saved');
+    assert.equal(elements.get('settings-save-status').dataset.status, 'saved');
 
     const completedHex = elements.get('completed-color-hex');
     completedHex.value = '#abcdef';
