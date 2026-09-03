@@ -36,6 +36,10 @@ pub enum LifecycleError {
     ProcessList(io::Error),
     Child(io::Error),
     Spawn(io::Error),
+    Cleanup {
+        primary: Box<LifecycleError>,
+        cleanup: Box<LifecycleError>,
+    },
     Unsupported,
 }
 
@@ -48,6 +52,7 @@ impl fmt::Display for LifecycleError {
             Self::ProcessList(_) => "codex-lifecycle:process-list",
             Self::Child(_) => "codex-lifecycle:child",
             Self::Spawn(_) => "codex-lifecycle:spawn",
+            Self::Cleanup { .. } => "codex-lifecycle:cleanup",
             Self::Unsupported => "codex-lifecycle:unsupported",
         })
     }
@@ -61,7 +66,10 @@ impl std::error::Error for LifecycleError {
             | Self::ProcessList(error)
             | Self::Child(error)
             | Self::Spawn(error) => Some(error),
-            Self::ConfigMissing | Self::InvalidConfig | Self::Unsupported => None,
+            Self::Cleanup { .. }
+            | Self::ConfigMissing
+            | Self::InvalidConfig
+            | Self::Unsupported => None,
         }
     }
 }
@@ -112,55 +120,54 @@ pub fn should_spawn_halo(codex_active: bool, halo_exists: bool, owned_child_exis
 
 pub fn run(config_path: PathBuf) -> Result<(), LifecycleError> {
     let mut owned_child = None;
+    let result = finish_run(run_loop(&config_path, &mut owned_child), &mut owned_child);
+    if let Err(error) = &result {
+        report(error);
+    }
+    result
+}
 
+fn run_loop(config_path: &Path, owned_child: &mut Option<Child>) -> Result<(), LifecycleError> {
     loop {
         let config = match read_config(&config_path) {
             Ok(config) => config,
             Err(LifecycleError::ConfigMissing) => {
-                stop_owned_child(&mut owned_child)?;
+                stop_owned_child(owned_child)?;
                 return Ok(());
             }
             Err(error) => {
-                report(&error);
-                let _ = stop_owned_child(&mut owned_child);
                 return Err(error);
             }
         };
 
         if !config.enabled {
-            stop_owned_child(&mut owned_child)?;
+            watch_iteration(false, "", owned_child, || spawn_halo(&config.halo_path))?;
             return Ok(());
         }
 
-        reap_owned_child(&mut owned_child)?;
-        let listing = match process_listing() {
-            Ok(listing) => listing,
-            Err(error) => {
-                report(&error);
-                let _ = stop_owned_child(&mut owned_child);
-                return Err(error);
-            }
-        };
-        let codex_active = codex_processes_present_from_listing(&listing);
-        let halo_exists = listing
-            .lines()
-            .any(|line| process_name_matches(listing_process_name(line), &HALO_PROCESS_NAMES));
-
-        if !codex_active {
-            stop_owned_child(&mut owned_child)?;
-        } else if should_spawn_halo(codex_active, halo_exists, owned_child.is_some()) {
-            match Command::new(&config.halo_path)
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-            {
-                Ok(child) => owned_child = Some(child),
-                Err(error) => report(&LifecycleError::Spawn(error)),
-            }
-        }
+        let listing = process_listing()?;
+        watch_iteration(true, &listing, owned_child, || {
+            spawn_halo(&config.halo_path)
+        })?;
 
         thread::sleep(POLL_INTERVAL);
+    }
+}
+
+fn finish_run<C: ManagedChild>(
+    result: Result<(), LifecycleError>,
+    owned_child: &mut Option<C>,
+) -> Result<(), LifecycleError> {
+    let Err(primary) = result else {
+        return Ok(());
+    };
+
+    match stop_owned_child(owned_child) {
+        Ok(()) => Err(primary),
+        Err(cleanup) => Err(LifecycleError::Cleanup {
+            primary: Box::new(primary),
+            cleanup: Box::new(cleanup),
+        }),
     }
 }
 
@@ -175,39 +182,88 @@ fn read_config(path: &Path) -> Result<LifecycleConfig, LifecycleError> {
     parse_config(&bytes)
 }
 
-fn stop_owned_child(child: &mut Option<Child>) -> Result<(), LifecycleError> {
+trait ManagedChild {
+    fn has_exited(&mut self) -> io::Result<bool>;
+    fn stop(&mut self) -> io::Result<()>;
+}
+
+impl ManagedChild for Child {
+    fn has_exited(&mut self) -> io::Result<bool> {
+        Ok(self.try_wait()?.is_some())
+    }
+
+    fn stop(&mut self) -> io::Result<()> {
+        if self.has_exited()? {
+            return Ok(());
+        }
+        if let Err(error) = self.kill() {
+            if error.kind() != io::ErrorKind::NotFound {
+                return Err(error);
+            }
+        }
+        self.wait().map(|_| ())
+    }
+}
+
+fn stop_owned_child<C: ManagedChild>(child: &mut Option<C>) -> Result<(), LifecycleError> {
     let Some(child_process) = child.as_mut() else {
         return Ok(());
     };
 
-    match child_process.try_wait() {
-        Ok(Some(_)) => {}
-        Ok(None) => {
-            if let Err(error) = child_process.kill() {
-                if error.kind() != io::ErrorKind::NotFound {
-                    return Err(LifecycleError::Child(error));
-                }
-            }
-            child_process.wait().map_err(LifecycleError::Child)?;
-        }
-        Err(error) => return Err(LifecycleError::Child(error)),
-    }
+    child_process.stop().map_err(LifecycleError::Child)?;
     *child = None;
     Ok(())
 }
 
-fn reap_owned_child(child: &mut Option<Child>) -> Result<(), LifecycleError> {
+fn reap_owned_child<C: ManagedChild>(child: &mut Option<C>) -> Result<(), LifecycleError> {
     let Some(child_process) = child.as_mut() else {
         return Ok(());
     };
-    if child_process
-        .try_wait()
-        .map_err(LifecycleError::Child)?
-        .is_some()
-    {
+    if child_process.has_exited().map_err(LifecycleError::Child)? {
         *child = None;
     }
     Ok(())
+}
+
+fn watch_iteration<C, F>(
+    enabled: bool,
+    listing: &str,
+    owned_child: &mut Option<C>,
+    mut spawn: F,
+) -> Result<(), LifecycleError>
+where
+    C: ManagedChild,
+    F: FnMut() -> Result<C, LifecycleError>,
+{
+    if !enabled {
+        stop_owned_child(owned_child)?;
+        return Ok(());
+    }
+
+    reap_owned_child(owned_child)?;
+    let codex_active = codex_processes_present_from_listing(listing);
+    let halo_exists = listing
+        .lines()
+        .any(|line| process_name_matches(listing_process_name(line), &HALO_PROCESS_NAMES));
+
+    if !codex_active {
+        stop_owned_child(owned_child)?;
+    } else if should_spawn_halo(codex_active, halo_exists, owned_child.is_some()) {
+        match spawn() {
+            Ok(child) => *owned_child = Some(child),
+            Err(error) => report(&error),
+        }
+    }
+    Ok(())
+}
+
+fn spawn_halo(path: &Path) -> Result<Child, LifecycleError> {
+    Command::new(path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(LifecycleError::Spawn)
 }
 
 fn normalize_process_name(value: &str) -> Option<String> {
@@ -266,14 +322,22 @@ fn process_listing() -> Result<String, LifecycleError> {
 }
 
 fn report(error: &LifecycleError) {
-    eprintln!("Codex Halo watcher: {error}");
+    if let LifecycleError::Cleanup { primary, cleanup } = error {
+        report(primary);
+        report(cleanup);
+    } else {
+        eprintln!("Codex Halo watcher: {error}");
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
     use std::ffi::OsString;
+    use std::io;
     use std::path::PathBuf;
+    use std::rc::Rc;
 
     #[test]
     fn missing_enabled_field_defaults_to_disabled() {
@@ -326,6 +390,122 @@ mod tests {
         assert!(!codex_processes_present_from_listing(
             "codex-halo\ncodex-halo-watch\n"
         ));
+    }
+
+    #[test]
+    fn windows_csv_listing_uses_only_the_process_name_column() {
+        assert!(codex_processes_present_from_listing(
+            "\"ChatGPT.exe\",\"123\",\"Console\",\"1\",\"12,345 K\"\n"
+        ));
+        assert!(!codex_processes_present_from_listing(
+            "\"other.exe\",\"123\",\"Console\",\"1\",\"codex\"\n"
+        ));
+        assert!(!codex_processes_present_from_listing(
+            "\"codex-halo.exe\",\"123\",\"Console\",\"1\",\"12,345 K\"\n"
+        ));
+    }
+
+    struct FakeChild {
+        exited: bool,
+        fail_stop: bool,
+        events: Rc<RefCell<Vec<&'static str>>>,
+    }
+
+    impl ManagedChild for FakeChild {
+        fn has_exited(&mut self) -> io::Result<bool> {
+            self.events.borrow_mut().push("try_wait");
+            Ok(self.exited)
+        }
+
+        fn stop(&mut self) -> io::Result<()> {
+            self.events.borrow_mut().push("stop");
+            if self.fail_stop {
+                return Err(io::Error::new(io::ErrorKind::Other, "private child detail"));
+            }
+            self.exited = true;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn watcher_loop_harness_spawns_restarts_and_stops_owned_child() {
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let config = LifecycleConfig {
+            enabled: true,
+            halo_path: PathBuf::from("test-halo"),
+        };
+        let frames = [
+            ("codex\n", false),
+            ("codex\n", false),
+            ("codex\n", true),
+            ("codex\ncodex-halo\n", false),
+            ("codex-halo\ncodex-halo-watch\n", false),
+        ];
+        let mut child: Option<FakeChild> = None;
+        let mut spawn_count = 0;
+
+        for (listing, exited_before) in frames {
+            if let Some(child) = child.as_mut() {
+                child.exited = exited_before;
+            }
+            let event_log = events.clone();
+            watch_iteration(config.enabled, listing, &mut child, || {
+                spawn_count += 1;
+                event_log.borrow_mut().push("spawn");
+                Ok(FakeChild {
+                    exited: false,
+                    fail_stop: false,
+                    events: event_log.clone(),
+                })
+            })
+            .unwrap();
+        }
+
+        assert_eq!(spawn_count, 2);
+        assert!(child.is_none());
+        assert_eq!(
+            events.borrow().as_slice(),
+            ["spawn", "try_wait", "try_wait", "spawn", "try_wait", "try_wait", "stop"]
+        );
+    }
+
+    #[test]
+    fn run_error_preserves_cleanup_failure_as_a_fixed_category() {
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let mut child = Some(FakeChild {
+            exited: false,
+            fail_stop: true,
+            events,
+        });
+        let result = finish_run(
+            Err(LifecycleError::ProcessList(io::Error::new(
+                io::ErrorKind::Other,
+                "private process detail",
+            ))),
+            &mut child,
+        )
+        .unwrap_err();
+
+        assert!(matches!(result, LifecycleError::Cleanup { .. }));
+        assert_eq!(result.to_string(), "codex-lifecycle:cleanup");
+        assert!(child.is_some());
+    }
+
+    #[test]
+    fn cleanup_error_display_is_a_fixed_category() {
+        let error = LifecycleError::Cleanup {
+            primary: Box::new(LifecycleError::ProcessList(io::Error::new(
+                io::ErrorKind::Other,
+                "private process detail",
+            ))),
+            cleanup: Box::new(LifecycleError::Child(io::Error::new(
+                io::ErrorKind::Other,
+                "private child detail",
+            ))),
+        };
+
+        assert_eq!(error.to_string(), "codex-lifecycle:cleanup");
+        assert!(!error.to_string().contains("private"));
     }
 
     #[test]
