@@ -1,0 +1,366 @@
+schema: comet.native.v4
+name: state-color-config
+language: zh-CN
+phase: archive
+status: done
+state_version: 13
+brief: brief.md
+spec_changes:
+  - capability: state-color-config
+    operation: create
+    source: specs/state-color-config/spec.md
+workspace:
+  isolation: current
+  change_branch: main
+  target_branch: main
+  finish: null
+loop:
+  stage: done
+  goal_cycle: 2
+  iteration: 1
+  attempt: 3
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: null
+acceptance:
+  - id: A1
+    source: brief.md
+    text: "Scenario: 首次启动或旧配置缺少颜色字段时，六个状态使用当前已有默认颜色，且设置文件包含完整六色合同。"
+    result: passed
+    reason:
+      text: Rust AppSettings 默认值、六色规范化、完整序列化合同和旧 settings.json
+        六色回写均已实现；状态专项测试和持久化契约检查通过。
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: "Scenario: 用户在设置页为一个状态选择预置色并保存后，只有该状态的颜色改变；其他状态保持原值，重启后仍保持。"
+    result: passed
+    reason:
+      text: 设置页按目标状态保存预置色或自定义色，其他状态不变；Node 行为测试覆盖目标状态隔离与设置同步。
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: "Scenario: 设置页展示全部 70 个预置十六进制值，按来源分组，点击任一色值即可应用到当前状态并触发已有设置同步。"
+    result: passed
+    reason:
+      text: 10 组预置色共 70 个十六进制值已按截图来源录入；精确值测试、真实设置页检查和目标状态点击流程通过。
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: "Scenario: 运行中的光环切换到任一状态时使用该状态已保存的颜色，状态切换仍完成现有 `420ms` 颜色过渡。"
+    result: passed
+    reason:
+      text: renderer 根据六个状态字段选取颜色，保留 420ms 颜色过渡；renderer self-check 和回归测试通过。
+      truncated: false
+  - id: A5
+    source: brief.md
+    text: "Scenario: 非法颜色值不会写入设置文件，也不会使渲染器产生无效 CSS/RGB 值。"
+    result: passed
+    reason:
+      text: Rust 保存前校验并规范化颜色，前端拒绝非法输入，renderer 对无效值使用安全回退；相关测试通过。
+      truncated: false
+builder_handoff:
+  candidate_id: 459f8055-dbfd-4be4-be28-245e98756f22
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:3af818c7-2442-4b05-8279-7b0176aa7eea
+  iteration: 1
+  summary:
+    text: "完成六状态独立颜色配置、70 个截图预置色、原生颜色选择器与 #RRGGBB 自定义输入；新增 Rust 持久化字段和旧
+      settings.json 六色回写；renderer 使用有效状态色并保持 420ms 过渡；设置页预置色只修改目标状态。已覆盖 A1-A5。"
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A2
+    - A3
+    - A4
+    - A5
+  checks:
+    - name:
+        text: node tests
+        truncated: false
+      result: passed
+      note:
+        text: "node --test src/app.test.mjs scripts/*.test.mjs: 33 passed"
+        truncated: false
+    - name:
+        text: renderer self-check
+        truncated: false
+      result: passed
+      note:
+        text: "npm run check:renderer: PASS"
+        truncated: false
+    - name:
+        text: Rust tests
+        truncated: false
+      result: passed
+      note:
+        text: "cargo test --manifest-path src-tauri/Cargo.toml: 86 tests passed"
+        truncated: false
+    - name:
+        text: Rust format
+        truncated: false
+      result: passed
+      note:
+        text: "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check: PASS"
+        truncated: false
+    - name:
+        text: Rust bins compile
+        truncated: false
+      result: passed
+      note:
+        text: "cargo check --manifest-path src-tauri/Cargo.toml --bins: PASS"
+        truncated: false
+    - name:
+        text: JavaScript syntax
+        truncated: false
+      result: passed
+      note:
+        text: node --check passed for src/colors.js, src/settings.js, src/halo.js
+        truncated: false
+    - name:
+        text: settings page browser check
+        truncated: false
+      result: passed
+      note:
+        text: 10 groups, 70 swatches, 6 state rows; 420px viewport has no horizontal
+          overflow; preset, custom and invalid-input flows checked
+        truncated: false
+    - name:
+        text: working tree whitespace
+        truncated: false
+      result: passed
+      note:
+        text: "git diff --check: PASS; untracked JS and Native artifacts checked
+          explicitly"
+        truncated: false
+  checks_truncated: false
+  known_limits:
+    - text: "comet native check state-color-config --json was rejected by installed
+        Runtime: Unsupported Native change schema comet.native.v4 for runtime
+        protocol 3; comet native doctor passed."
+      truncated: false
+    - text: Windows native runtime and packaging checks were not run on macOS.
+      truncated: false
+    - text: The ten supplied PNGs were visually read and their 70 hex values are
+        covered by exact data tests; no pixel-level OCR/extraction script was
+        added.
+      truncated: false
+  known_limits_truncated: false
+  review:
+    status: passed
+    summary:
+      text: 第二次只读复核确认旧配置六色回写、70 个色值、六状态独立配置、420ms 过渡和 follow_codex_lifecycle
+        无回归；无阻断性或高风险 finding。
+      truncated: false
+    reviewer_execution_ref: 01a0655e-ae97-7db2-97af-6e34897e0ec5
+  submitted_at: 2026-09-03T04:05:52.480Z
+blockers: []
+verification:
+  candidate_id: 459f8055-dbfd-4be4-be28-245e98756f22
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:df63e92f-7258-4d5b-95cc-2f094aa6b2b5
+  iteration: 1
+  attempt: 3
+  assurance: skill-coordinated
+  verdict: pass
+  checks:
+    - id: color-node-tests-final
+      name:
+        text: color-focused Node tests
+        truncated: false
+      argv_display:
+        - text: --test
+          truncated: false
+        - text: --test-name-pattern=state color|settings page exposes independent|settings
+            color controls|settings changes reach both
+          truncated: false
+        - text: src/app.test.mjs
+          truncated: false
+        - text: scripts/build-sidecar.test.mjs
+          truncated: false
+        - text: scripts/build-windows-remote.test.mjs
+          truncated: false
+        - text: scripts/plugin-package.test.mjs
+          truncated: false
+        - text: scripts/vscode-launch.test.mjs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 77
+    - id: color-renderer-final
+      name:
+        text: color renderer self-check
+        truncated: false
+      argv_display:
+        - text: scripts/check-renderer.mjs
+          truncated: false
+        - text: --final-color-check
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 30
+    - id: color-rust-state-tests-final
+      name:
+        text: Rust state color tests
+        truncated: false
+      argv_display:
+        - text: test
+          truncated: false
+        - text: --manifest-path
+          truncated: false
+        - text: src-tauri/Cargo.toml
+          truncated: false
+        - text: --lib
+          truncated: false
+        - text: "state::tests::"
+          truncated: false
+        - text: --
+          truncated: false
+        - text: --test-threads=1
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 366
+    - id: color-rustfmt-state-final
+      name:
+        text: Rust state format
+        truncated: false
+      argv_display:
+        - text: --check
+          truncated: false
+        - text: src-tauri/src/state.rs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 34
+    - id: color-js-syntax-final
+      name:
+        text: color JavaScript syntax
+        truncated: false
+      argv_display:
+        - text: --check
+          truncated: false
+        - text: src/colors.js
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 23
+    - id: color-settings-syntax-final
+      name:
+        text: settings JavaScript syntax
+        truncated: false
+      argv_display:
+        - text: --check
+          truncated: false
+        - text: src/settings.js
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 25
+    - id: color-halo-syntax-final
+      name:
+        text: halo JavaScript syntax
+        truncated: false
+      argv_display:
+        - text: --check
+          truncated: false
+        - text: src/halo.js
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 24
+    - id: color-persistence-contract-final
+      name:
+        text: state color persistence contract
+        truncated: false
+      argv_display:
+        - text: --input-type=module
+          truncated: false
+        - text: -e
+          truncated: false
+        - text: import fs from 'node:fs'; const source =
+            fs.readFileSync('src-tauri/src/main.rs', 'utf8'); for (const key of
+            ['idle_color', 'thinking_color', 'executing_color',
+            'input_needed_color', 'completed_color', 'compacting_color']) { if
+            (!source.includes(key)) throw new Error('missing ' + key); } if
+            (!source.includes('settings_file_has_complete_state_colors')) throw
+            new Error('missing legacy backfill guard');
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 23
+  summary:
+    text: 颜色配置候选通过独立语义复核与颜色专项 Runtime 检查，A1-A5 全部通过。
+    truncated: false
+  risks:
+    - text: Windows 原生运行时和打包检查未在 macOS 上执行。
+      truncated: false
+    - text: comet native check 因本机 Runtime protocol 3 与 Native schema v4 不兼容未执行；comet
+        native doctor 已通过。
+      truncated: false
+    - text: 截图颜色已人工读取并由 70 值精确测试覆盖，未新增像素级 OCR 提取脚本。
+      truncated: false
+  risks_truncated: false
+  completed_at: 2026-09-03T04:56:33.083Z
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 0
+    outcome: recovery
+    unresolved_ids: []
+    summary:
+      text: Native target specification declarations changed
+      truncated: false
+    completed_at: 2026-09-03T04:02:37.097Z
+  - goal_cycle: 2
+    iteration: 1
+    attempt: 1
+    outcome: execution-error
+    unresolved_ids: []
+    summary:
+      text: "Native Verifier response was invalid: Native Verifier repeatedly
+        requested only equivalent checks"
+      truncated: false
+    completed_at: 2026-09-03T04:32:31.900Z
+  - goal_cycle: 2
+    iteration: 1
+    attempt: 3
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: 颜色配置候选通过独立语义复核与颜色专项 Runtime 检查，A1-A5 全部通过。
+      truncated: false
+    completed_at: 2026-09-03T04:56:33.083Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: true
+created_at: 2026-09-03T02:19:23.469Z

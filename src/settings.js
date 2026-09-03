@@ -1,6 +1,12 @@
 import { formatFormula, getCurveProfile } from './curves.js';
 import { createSerialTaskQueue, DEFAULT_APP_SETTINGS, formatSetupError } from './app.js';
 import {
+  COLOR_PRESET_GROUPS,
+  isHexColor,
+  normalizeHexColor,
+  STATE_COLOR_KEYS,
+} from './colors.js';
+import {
   DEFAULT_LANGUAGE,
   getStateLabel,
   getText,
@@ -19,6 +25,9 @@ const pluginOperationStatuses = {
 };
 const diagnostics = document.getElementById('diagnostics');
 const formula = document.getElementById('formula');
+const presetState = document.getElementById('preset-state');
+const colorPresets = document.getElementById('color-presets');
+const colorFields = Object.entries(STATE_COLOR_KEYS).map(([state, key]) => ({ state, key }));
 let currentLanguage = DEFAULT_LANGUAGE;
 let currentPluginStatus = 'settings.pluginReady';
 let setupError = null;
@@ -50,8 +59,56 @@ function control(key) {
   return document.getElementById(key.replaceAll('_', '-'));
 }
 
+function syncColorField(state, value) {
+  const key = STATE_COLOR_KEYS[state];
+  const picker = control(key);
+  const hex = control(`${key}_hex`);
+  const normalized = normalizeHexColor(value, DEFAULT_APP_SETTINGS[key]);
+  if (picker && document.activeElement !== picker) picker.value = normalized;
+  if (hex && document.activeElement !== hex) hex.value = normalized;
+  hex?.setCustomValidity?.('');
+}
+
+function renderColorPresets() {
+  if (!colorPresets || typeof document.createElement !== 'function') return;
+  colorPresets.textContent = '';
+  for (const group of COLOR_PRESET_GROUPS) {
+    const section = document.createElement('section');
+    section.className = 'color-preset-group';
+    const heading = document.createElement('h3');
+    heading.textContent = getText(currentLanguage, group.labelKey);
+    const grid = document.createElement('div');
+    grid.className = 'color-preset-grid';
+    for (const color of group.colors) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'color-swatch';
+      button.title = color;
+      button.setAttribute('aria-label', color);
+      const chip = document.createElement('span');
+      chip.className = 'color-swatch-chip';
+      chip.style.backgroundColor = color;
+      const label = document.createElement('span');
+      label.textContent = color;
+      button.append(chip, label);
+      button.addEventListener('click', () => {
+        const state = presetState?.value ?? 'idle';
+        const picker = control(STATE_COLOR_KEYS[state]);
+        if (!picker) return;
+        picker.value = color;
+        syncColorField(state, color);
+        void saveCurrentSettings();
+      });
+      grid.append(button);
+    }
+    section.append(heading, grid);
+    colorPresets.append(section);
+  }
+}
+
 function readSettings() {
   const number = (key) => Number(control(key).value);
+  const value = (key, fallback) => control(key)?.value ?? fallback;
   return {
     enabled: control('enabled').checked,
     opacity: number('opacity'),
@@ -64,6 +121,10 @@ function readSettings() {
     pulse_duration_ms: number('pulse_duration_ms'),
     rotation_duration_ms: number('rotation_duration_ms'),
     stroke_width: number('stroke_width'),
+    ...Object.fromEntries(colorFields.map(({ key }) => [
+      key,
+      normalizeHexColor(value(key, DEFAULT_APP_SETTINGS[key]), DEFAULT_APP_SETTINGS[key]),
+    ])),
     start_at_login: control('start_at_login').checked,
     follow_codex_lifecycle: control('follow_codex_lifecycle').checked,
     language: control('language').value,
@@ -80,6 +141,9 @@ function applySettings(settings) {
     if (!field || document.activeElement === field) continue;
     if (field.type === 'checkbox') field.checked = Boolean(value);
     else field.value = String(value);
+  }
+  for (const { state, key } of colorFields) {
+    if (settings[key] !== undefined) syncColorField(state, settings[key]);
   }
   renderLanguage(language);
   renderFormula(settings);
@@ -126,6 +190,7 @@ function renderLanguage(language) {
   }
   renderPluginStatus();
   renderDiagnostics();
+  renderColorPresets();
 }
 
 async function refreshDiagnostics() {
@@ -172,10 +237,35 @@ document.getElementById('export-diagnostics').addEventListener('click', () => {
 });
 
 for (const field of document.querySelectorAll('input, select')) {
+  if (field.dataset.colorInput || field.dataset.colorHex || field.id === 'preset-state') continue;
   const event = field.type === 'number' || field.type === 'range' ? 'input' : 'change';
   field.addEventListener(event, saveCurrentSettings);
   if (field.id === 'curve-id') field.addEventListener('change', () => renderFormula());
   if (field.id === 'language') field.addEventListener('change', () => renderLanguage(field.value));
+}
+
+for (const { state, key } of colorFields) {
+  const picker = control(key);
+  const hex = control(`${key}_hex`);
+  picker?.addEventListener('input', () => {
+    syncColorField(state, picker.value);
+    void saveCurrentSettings();
+  });
+  hex?.addEventListener('input', () => hex.setCustomValidity(''));
+  hex?.addEventListener('change', () => {
+    const value = hex.value.trim();
+    if (!isHexColor(value)) {
+      hex.value = picker?.value ?? DEFAULT_APP_SETTINGS[key];
+      hex.setCustomValidity(getText(currentLanguage, 'settings.invalidColor'));
+      hex.reportValidity?.();
+      return;
+    }
+    const normalized = value.toUpperCase();
+    if (picker) picker.value = normalized;
+    hex.value = normalized;
+    hex.setCustomValidity('');
+    void saveCurrentSettings();
+  });
 }
 
 async function runPluginAction(command, successStatus) {
@@ -214,5 +304,6 @@ for (const button of document.querySelectorAll('[data-state]')) {
   });
 }
 
+renderColorPresets();
 loadSettings();
 window.setInterval(refreshDiagnostics, 500);

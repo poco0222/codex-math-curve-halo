@@ -56,7 +56,7 @@ const canvas = {
 };
 let nextFrame;
 const renderer = createHaloRenderer(canvas, {
-  settings: { opacity: 0.5, particle_count: 2 },
+  settings: { opacity: 0.5, particle_count: 2, idle_color: '#123456' },
   now: () => 0,
   requestAnimationFrame: (callback) => { nextFrame = callback; return 1; },
   cancelAnimationFrame: () => {},
@@ -69,7 +69,70 @@ nextFrame(0);
 assert.equal(canvas.style.opacity, '0.5');
 const coreAlpha = Number(rendererCalls.at(-1).match(/,([0-9.]+)\)$/)[1]);
 assert(Math.abs(coreAlpha - 0.2464) < 1e-10);
+assert.match(rendererCalls.at(-1), /^rgba\(18,52,86,/);
 renderer.stop();
+
+const transitionCalls = [];
+const transitionContext = {
+  setTransform: () => {},
+  clearRect: () => {},
+  beginPath: () => {},
+  moveTo: () => {},
+  lineTo: () => {},
+  stroke: () => {},
+  arc: () => {},
+  fill: () => {},
+};
+Object.defineProperty(transitionContext, 'strokeStyle', {
+  set: (value) => transitionCalls.push(value),
+});
+const transitionCanvas = {
+  width: 0,
+  height: 0,
+  style: {},
+  getContext: () => transitionContext,
+  getBoundingClientRect: () => ({ width: 112, height: 112 }),
+};
+let transitionFrame;
+let transitionNow = 0;
+const transitionRenderer = createHaloRenderer(transitionCanvas, {
+  settings: { particle_count: 2 },
+  now: () => transitionNow,
+  requestAnimationFrame: (callback) => { transitionFrame = callback; return 1; },
+  cancelAnimationFrame: () => {},
+});
+transitionRenderer.start();
+transitionFrame(0);
+transitionCalls.length = 0;
+transitionRenderer.setState('thinking');
+transitionNow = 100;
+transitionRenderer.setSettings({ opacity: 0.5 });
+transitionFrame(100);
+transitionNow = 420;
+transitionFrame(420);
+assert.match(transitionCalls.at(-1), /^rgba\(255,138,61,0\.5984/);
+transitionRenderer.stop();
+
+const invalidColorCalls = [];
+const invalidColorContext = { ...context };
+Object.defineProperty(invalidColorContext, 'strokeStyle', {
+  set: (value) => invalidColorCalls.push(value),
+});
+const invalidColorCanvas = {
+  ...canvas,
+  getContext: () => invalidColorContext,
+};
+let invalidColorFrame;
+const invalidColorRenderer = createHaloRenderer(invalidColorCanvas, {
+  settings: { particle_count: 2, idle_color: 'not-a-color' },
+  now: () => 0,
+  requestAnimationFrame: (callback) => { invalidColorFrame = callback; return 1; },
+  cancelAnimationFrame: () => {},
+});
+invalidColorRenderer.start();
+invalidColorFrame(0);
+assert.match(invalidColorCalls.at(-1), /^rgba\(167,173,181,/);
+invalidColorRenderer.stop();
 
 const warnings = [];
 const commandInvoker = createCommandInvoker(async () => {

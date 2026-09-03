@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "build:sidecar": "node scripts/build-sidecar.mjs",
+    "build:windows": "node scripts/build-windows-remote.mjs",
     "check:renderer": "node scripts/check-renderer.mjs",
     "test:build-sidecar": "node --test scripts/build-sidecar.test.mjs",
     "tauri": "cargo tauri"

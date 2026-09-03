@@ -1,4 +1,5 @@
 import { getCurveProfile, sampleCurve } from './curves.js';
+import { DEFAULT_STATE_COLORS, normalizeHexColor, STATE_COLOR_KEYS } from './colors.js';
 
 const MORPH_DURATION_MS = 420;
 const LOGICAL_SIZE = 100;
@@ -15,12 +16,12 @@ const DEFAULT_SETTINGS = {
 };
 
 const STATE_STYLES = {
-  idle: { color: '#A7ADB5', alpha: 0.28, radius: 14, pulse: 0.04, speed: 0.32, rotation: 0.55 },
-  thinking: { color: '#FF8A3D', alpha: 0.68, radius: 16, pulse: 0.16, speed: 0.64, rotation: 0.82 },
-  executing: { color: '#339CFF', alpha: 0.82, radius: 17, pulse: 0.1, speed: 1.45, rotation: 1.55 },
-  input_needed: { color: '#F05252', alpha: 0.76, radius: 17, pulse: 0.2, speed: 0.72, rotation: 0.9 },
-  completed: { color: '#35C878', alpha: 0.58, radius: 15, pulse: 0.12, speed: 0.42, rotation: 0.7 },
-  compacting: { color: '#A56BFF', alpha: 0.72, radius: 16, pulse: 0.24, speed: 0.88, rotation: 1.05 },
+  idle: { color: DEFAULT_STATE_COLORS.idle, alpha: 0.28, radius: 14, pulse: 0.04, speed: 0.32, rotation: 0.55 },
+  thinking: { color: DEFAULT_STATE_COLORS.thinking, alpha: 0.68, radius: 16, pulse: 0.16, speed: 0.64, rotation: 0.82 },
+  executing: { color: DEFAULT_STATE_COLORS.executing, alpha: 0.82, radius: 17, pulse: 0.1, speed: 1.45, rotation: 1.55 },
+  input_needed: { color: DEFAULT_STATE_COLORS.input_needed, alpha: 0.76, radius: 17, pulse: 0.2, speed: 0.72, rotation: 0.9 },
+  completed: { color: DEFAULT_STATE_COLORS.completed, alpha: 0.58, radius: 15, pulse: 0.12, speed: 0.42, rotation: 0.7 },
+  compacting: { color: DEFAULT_STATE_COLORS.compacting, alpha: 0.72, radius: 16, pulse: 0.24, speed: 0.88, rotation: 1.05 },
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -29,7 +30,7 @@ const opacityValue = (value) => clamp(Number.isFinite(Number(value)) ? Number(va
 const normalize = (value) => ((value % 1) + 1) % 1;
 
 function hexToRgb(color) {
-  const value = color.replace('#', '');
+  const value = normalizeHexColor(color, '#000000').slice(1);
   return [0, 2, 4].map((offset) => Number.parseInt(value.slice(offset, offset + 2), 16));
 }
 
@@ -52,6 +53,14 @@ function rotatePoint(point, angle) {
   return { x: 50 + x * cosine - y * sine, y: 50 + x * sine + y * cosine };
 }
 
+function styleFor(state, settings) {
+  const base = STATE_STYLES[state];
+  return {
+    ...base,
+    color: normalizeHexColor(settings?.[STATE_COLOR_KEYS[state]], base.color),
+  };
+}
+
 export function createHaloRenderer(canvas, options = {}) {
   if (!canvas || typeof canvas.getContext !== 'function') {
     throw new TypeError('createHaloRenderer requires a canvas');
@@ -64,7 +73,7 @@ export function createHaloRenderer(canvas, options = {}) {
   let state = STATE_STYLES[options.state] ? options.state : 'idle';
   let curve = getCurveProfile(options.curve ?? options.curve_id ?? 'rose-seven');
   let settings = { ...DEFAULT_SETTINGS, ...curve.defaults, ...(options.settings ?? {}) };
-  let currentStyle = STATE_STYLES[state];
+  let currentStyle = styleFor(state, settings);
   let transition = null;
   let frameId = null;
   let running = false;
@@ -184,7 +193,7 @@ export function createHaloRenderer(canvas, options = {}) {
     setState(nextState) {
       if (!STATE_STYLES[nextState] || nextState === state) return;
       const time = clock();
-      transition = { from: styleAt(time), to: STATE_STYLES[nextState], startedAt: time };
+      transition = { from: styleAt(time), to: styleFor(nextState, settings), startedAt: time };
       state = nextState;
     },
     setCurve(id) {
@@ -192,6 +201,11 @@ export function createHaloRenderer(canvas, options = {}) {
     },
     setSettings(nextSettings = {}) {
       settings = { ...settings, ...nextSettings };
+      if (transition) {
+        transition.to = styleFor(state, settings);
+      } else {
+        currentStyle = styleFor(state, settings);
+      }
       applyOpacity();
     },
     start() {

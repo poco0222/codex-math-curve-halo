@@ -25,6 +25,13 @@ pub const STATE_PRIORITY: [HaloState; 6] = [
 const COMPLETED_EXPIRY_MS: i64 = 3_000;
 const ACTIVE_EXPIRY_MS: i64 = 60_000;
 
+const DEFAULT_IDLE_COLOR: &str = "#A7ADB5";
+const DEFAULT_THINKING_COLOR: &str = "#FF8A3D";
+const DEFAULT_EXECUTING_COLOR: &str = "#339CFF";
+const DEFAULT_INPUT_NEEDED_COLOR: &str = "#F05252";
+const DEFAULT_COMPLETED_COLOR: &str = "#35C878";
+const DEFAULT_COMPACTING_COLOR: &str = "#A56BFF";
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Snapshot {
@@ -173,6 +180,12 @@ pub struct AppSettings {
     pub pulse_duration_ms: f32,
     pub rotation_duration_ms: f32,
     pub stroke_width: f32,
+    pub idle_color: String,
+    pub thinking_color: String,
+    pub executing_color: String,
+    pub input_needed_color: String,
+    pub completed_color: String,
+    pub compacting_color: String,
     pub start_at_login: bool,
     pub follow_codex_lifecycle: bool,
     pub language: String,
@@ -204,8 +217,25 @@ impl AppSettings {
         self.particle_count = self.particle_count.clamp(24, 140);
         self.trail_span = self.trail_span.clamp(0.12, 0.68);
         self.stroke_width = self.stroke_width.clamp(2.5, 7.5);
+        self.idle_color = normalize_color(self.idle_color)?;
+        self.thinking_color = normalize_color(self.thinking_color)?;
+        self.executing_color = normalize_color(self.executing_color)?;
+        self.input_needed_color = normalize_color(self.input_needed_color)?;
+        self.completed_color = normalize_color(self.completed_color)?;
+        self.compacting_color = normalize_color(self.compacting_color)?;
         Ok(self)
     }
+}
+
+fn normalize_color(value: String) -> Result<String, String> {
+    let bytes = value.as_bytes();
+    if bytes.len() != 7
+        || bytes[0] != b'#'
+        || !bytes[1..].iter().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err("settings contain invalid color values".to_owned());
+    }
+    Ok(value.to_ascii_uppercase())
 }
 
 impl Default for AppSettings {
@@ -222,6 +252,12 @@ impl Default for AppSettings {
             pulse_duration_ms: 1_200.0,
             rotation_duration_ms: 4_200.0,
             stroke_width: 4.0,
+            idle_color: DEFAULT_IDLE_COLOR.to_owned(),
+            thinking_color: DEFAULT_THINKING_COLOR.to_owned(),
+            executing_color: DEFAULT_EXECUTING_COLOR.to_owned(),
+            input_needed_color: DEFAULT_INPUT_NEEDED_COLOR.to_owned(),
+            completed_color: DEFAULT_COMPLETED_COLOR.to_owned(),
+            compacting_color: DEFAULT_COMPACTING_COLOR.to_owned(),
             start_at_login: false,
             follow_codex_lifecycle: false,
             language: "en".to_owned(),
@@ -502,10 +538,44 @@ mod tests {
             "pulse_duration_ms",
             "rotation_duration_ms",
             "stroke_width",
+            "idle_color",
+            "thinking_color",
+            "executing_color",
+            "input_needed_color",
+            "completed_color",
+            "compacting_color",
             "start_at_login",
             "language",
         ] {
             assert!(value.get(key).is_some(), "missing {key}");
         }
+    }
+
+    #[test]
+    fn missing_state_colors_use_the_existing_renderer_defaults() {
+        let settings: AppSettings = serde_json::from_str("{}").unwrap();
+
+        assert_eq!(settings.idle_color, "#A7ADB5");
+        assert_eq!(settings.thinking_color, "#FF8A3D");
+        assert_eq!(settings.executing_color, "#339CFF");
+        assert_eq!(settings.input_needed_color, "#F05252");
+        assert_eq!(settings.completed_color, "#35C878");
+        assert_eq!(settings.compacting_color, "#A56BFF");
+    }
+
+    #[test]
+    fn normalizes_lowercase_state_colors_to_uppercase() {
+        let mut settings = AppSettings::default();
+        settings.idle_color = "#abcdef".to_owned();
+
+        assert_eq!(settings.normalize().unwrap().idle_color, "#ABCDEF");
+    }
+
+    #[test]
+    fn rejects_invalid_state_colors() {
+        let mut settings = AppSettings::default();
+        settings.completed_color = "not-a-color".to_owned();
+
+        assert!(settings.normalize().is_err());
     }
 }

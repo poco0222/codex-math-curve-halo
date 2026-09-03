@@ -76,6 +76,65 @@
           <output id="formula" class="formula" aria-label="Active formula" data-i18n-aria-label="settings.activeFormula"></output>
         </fieldset>
 
+        <fieldset>
+          <legend data-i18n="settings.colors">State colors</legend>
+          <label for="preset-state" data-i18n="settings.colorTarget">Apply preset to</label>
+          <select id="preset-state" aria-label="Apply preset to" data-i18n-aria-label="settings.colorTarget">
+            <option value="idle" data-i18n="settings.states.idle">Idle</option>
+            <option value="thinking" data-i18n="settings.states.thinking">Thinking</option>
+            <option value="executing" data-i18n="settings.states.executing">Executing</option>
+            <option value="input_needed" data-i18n="settings.states.inputNeeded">Input needed</option>
+            <option value="completed" data-i18n="settings.states.completed">Completed</option>
+            <option value="compacting" data-i18n="settings.states.compacting">Compacting</option>
+          </select>
+
+          <div class="state-color-list">
+            <div class="state-color-row">
+              <label for="idle-color" data-i18n="settings.states.idle">Idle</label>
+              <div class="color-editor">
+                <input id="idle-color" name="idle_color" type="color" value="#A7ADB5" data-color-input />
+                <input id="idle-color-hex" name="idle_color_hex" type="text" value="#A7ADB5" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Idle hex color" data-i18n-aria-label="settings.colorHex" data-color-hex="idle" />
+              </div>
+            </div>
+            <div class="state-color-row">
+              <label for="thinking-color" data-i18n="settings.states.thinking">Thinking</label>
+              <div class="color-editor">
+                <input id="thinking-color" name="thinking_color" type="color" value="#FF8A3D" data-color-input />
+                <input id="thinking-color-hex" name="thinking_color_hex" type="text" value="#FF8A3D" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Thinking hex color" data-i18n-aria-label="settings.colorHex" data-color-hex="thinking" />
+              </div>
+            </div>
+            <div class="state-color-row">
+              <label for="executing-color" data-i18n="settings.states.executing">Executing</label>
+              <div class="color-editor">
+                <input id="executing-color" name="executing_color" type="color" value="#339CFF" data-color-input />
+                <input id="executing-color-hex" name="executing_color_hex" type="text" value="#339CFF" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Executing hex color" data-i18n-aria-label="settings.colorHex" data-color-hex="executing" />
+              </div>
+            </div>
+            <div class="state-color-row">
+              <label for="input-needed-color" data-i18n="settings.states.inputNeeded">Input needed</label>
+              <div class="color-editor">
+                <input id="input-needed-color" name="input_needed_color" type="color" value="#F05252" data-color-input />
+                <input id="input-needed-color-hex" name="input_needed_color_hex" type="text" value="#F05252" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Input needed hex color" data-i18n-aria-label="settings.colorHex" data-color-hex="input_needed" />
+              </div>
+            </div>
+            <div class="state-color-row">
+              <label for="completed-color" data-i18n="settings.states.completed">Completed</label>
+              <div class="color-editor">
+                <input id="completed-color" name="completed_color" type="color" value="#35C878" data-color-input />
+                <input id="completed-color-hex" name="completed_color_hex" type="text" value="#35C878" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Completed hex color" data-i18n-aria-label="settings.colorHex" data-color-hex="completed" />
+              </div>
+            </div>
+            <div class="state-color-row">
+              <label for="compacting-color" data-i18n="settings.states.compacting">Compacting</label>
+              <div class="color-editor">
+                <input id="compacting-color" name="compacting_color" type="color" value="#A56BFF" data-color-input />
+                <input id="compacting-color-hex" name="compacting_color_hex" type="text" value="#A56BFF" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Compacting hex color" data-i18n-aria-label="settings.colorHex" data-color-hex="compacting" />
+              </div>
+            </div>
+          </div>
+          <div id="color-presets" class="color-presets"></div>
+        </fieldset>
+
         <button id="reset-position" type="button" data-i18n="settings.resetPosition">Reset position</button>
 
         <fieldset>

@@ -1,4 +1,5 @@
 import { createHaloRenderer } from './halo.js';
+import { DEFAULT_STATE_COLORS } from './colors.js';
 import { formatSetupError } from './i18n.js';
 
 export { formatSetupError };
@@ -18,6 +19,12 @@ export const DEFAULT_APP_SETTINGS = Object.freeze({
   pulse_duration_ms: 1200,
   rotation_duration_ms: 4200,
   stroke_width: 4,
+  idle_color: DEFAULT_STATE_COLORS.idle,
+  thinking_color: DEFAULT_STATE_COLORS.thinking,
+  executing_color: DEFAULT_STATE_COLORS.executing,
+  input_needed_color: DEFAULT_STATE_COLORS.input_needed,
+  completed_color: DEFAULT_STATE_COLORS.completed,
+  compacting_color: DEFAULT_STATE_COLORS.compacting,
   start_at_login: false,
   follow_codex_lifecycle: false,
   language: 'en',

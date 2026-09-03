@@ -16,6 +16,14 @@ use tauri_plugin_autostart::MacosLauncher;
 const SETTINGS_FILENAME: &str = "settings.json";
 const SETTINGS_INVALID_LIMIT: u32 = 64;
 const SIMULATION_SESSION_KEY: &str = "__codex_halo_simulation__";
+const STATE_COLOR_SETTING_KEYS: [&str; 6] = [
+    "idle_color",
+    "thinking_color",
+    "executing_color",
+    "input_needed_color",
+    "completed_color",
+    "compacting_color",
+];
 static SETTINGS_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Default)]
@@ -224,6 +232,18 @@ fn recover_settings_file(path: &Path) -> Result<AppSettings, String> {
     Ok(settings)
 }
 
+fn settings_file_has_complete_state_colors(contents: &[u8]) -> bool {
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(contents) else {
+        return false;
+    };
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    STATE_COLOR_SETTING_KEYS
+        .iter()
+        .all(|key| object.contains_key(*key))
+}
+
 fn load_settings_file(path: &Path) -> Result<AppSettings, String> {
     let contents = match fs::read(path) {
         Ok(contents) => contents,
@@ -243,7 +263,7 @@ fn load_settings_file(path: &Path) -> Result<AppSettings, String> {
         Ok(settings) => settings,
         Err(_) => return recover_settings_file(path),
     };
-    if parsed != normalized {
+    if parsed != normalized || !settings_file_has_complete_state_colors(&contents) {
         write_settings_file(path, &normalized)?;
     }
     Ok(normalized)
@@ -1350,6 +1370,48 @@ mod scan_tests {
                 .extension()
                 .is_some_and(|extension| extension == "invalid")));
         assert!(!fs::read_to_string(&path).unwrap().contains("prompt"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn legacy_settings_are_backfilled_with_state_colors() {
+        let root = std::env::temp_dir().join(format!(
+            "codex-halo-legacy-settings-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let path = root.join("settings.json");
+        fs::create_dir_all(&root).unwrap();
+
+        let mut legacy = serde_json::to_value(AppSettings::default()).unwrap();
+        let object = legacy.as_object_mut().unwrap();
+        for key in [
+            "idle_color",
+            "thinking_color",
+            "executing_color",
+            "input_needed_color",
+            "completed_color",
+            "compacting_color",
+        ] {
+            object.remove(key);
+        }
+        fs::write(&path, serde_json::to_vec_pretty(&legacy).unwrap()).unwrap();
+
+        let settings = load_settings_file(&path).unwrap();
+        let persisted: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+
+        assert_eq!(settings, AppSettings::default());
+        for key in [
+            "idle_color",
+            "thinking_color",
+            "executing_color",
+            "input_needed_color",
+            "completed_color",
+            "compacting_color",
+        ] {
+            assert!(persisted.get(key).is_some(), "missing {key}");
+        }
         fs::remove_dir_all(root).unwrap();
     }
 

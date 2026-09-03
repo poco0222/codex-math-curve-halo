@@ -113,14 +113,50 @@ test('localization defaults and falls back to English', () => {
   assert.equal(getCurveLabel('zh-CN', 'rose-seven'), '七瓣玫瑰');
 });
 
+test('state color presets preserve all supplied hexadecimal values', async () => {
+  const {
+    COLOR_PRESETS,
+    DEFAULT_STATE_COLORS,
+    isHexColor,
+  } = await import('./colors.js');
+  const expectedDefaults = {
+    idle: '#A7ADB5',
+    thinking: '#FF8A3D',
+    executing: '#339CFF',
+    input_needed: '#F05252',
+    completed: '#35C878',
+    compacting: '#A56BFF',
+  };
+  const expectedPresets = [
+    '#A4CAB6', '#69A794', '#5DBE8A', '#41B349', '#2C9678', '#428675', '#248067',
+    '#BACCD9', '#8FB2C9', '#8ABCD1', '#10AEC2', '#158BB8', '#4E7CA1', '#2775B6',
+    '#F03752', '#EE2746', '#C21F30', '#EE3F4D', '#BF3553', '#A7535A', '#82111F',
+    '#FED71A', '#F9D770', '#ECCB16', '#FCC307', '#FEBA07', '#F9A633', '#DAA45A',
+    '#F0C9CF', '#F0A1A8', '#E77C8E', '#EC8AA4', '#EC7696', '#EA517F', '#DE3F7C',
+    '#E9CCD3', '#C08EAF', '#C06F98', '#806D9E', '#815C94', '#813C85', '#4D1018',
+    '#F18F60', '#EE781F', '#E97040', '#EA5532', '#DC541B', '#EA5514', '#B55336',
+    '#E7A23F', '#DE7622', '#673424', '#5C1E19', '#652B1C', '#592620', '#482522',
+    '#3E3B31', '#31322C', '#39363F', '#353538', '#2D2D30', '#2E282E', '#000013',
+    '#E4DFD7', '#CFCCC9', '#D4C4B7', '#BDAEAD', '#B6A476', '#9FA39A', '#847C74',
+  ];
+
+  assert.deepEqual(DEFAULT_STATE_COLORS, expectedDefaults);
+  assert.deepEqual(COLOR_PRESETS, expectedPresets);
+  assert.equal(new Set(COLOR_PRESETS).size, 70);
+  assert(COLOR_PRESETS.every((color) => isHexColor(color)));
+  assert.equal(isHexColor('#abcdef'), true);
+  assert.equal(isHexColor('#12345'), false);
+  assert.equal(isHexColor('123456'), false);
+});
+
 test('localized setup errors keep only safe categories', () => {
-  assert.equal(
-    formatLocalizedSetupError('save_settings', 'codex-lifecycle:permission', 'zh-CN'),
-    'Codex 生命周期设置失败（权限）',
-  );
   assert.equal(
     formatLocalizedSetupError('save_settings', 'start-at-login:permission', 'zh-CN'),
     '启动时设置失败（权限）',
+  );
+  assert.equal(
+    formatLocalizedSetupError('save_settings', 'codex-lifecycle:permission', 'zh-CN'),
+    'Codex 生命周期设置失败（权限）',
   );
   assert.equal(
     formatLocalizedSetupError('save_settings', 'raw path and payload', 'zh-CN'),
@@ -378,6 +414,12 @@ test('renderer startup uses exact frontend defaults after get_settings fails', a
     pulse_duration_ms: 1200,
     rotation_duration_ms: 4200,
     stroke_width: 4,
+    idle_color: '#A7ADB5',
+    thinking_color: '#FF8A3D',
+    executing_color: '#339CFF',
+    input_needed_color: '#F05252',
+    completed_color: '#35C878',
+    compacting_color: '#A56BFF',
     start_at_login: false,
     follow_codex_lifecycle: false,
     language: 'en',
@@ -420,6 +462,176 @@ test('macOS lifecycle setup has one watcher start owner', async () => {
   assert.match(nonMacStartSource[0], /process_listing/);
   assert.match(nonMacStartSource[0], /WATCHER_PROCESS_NAMES/);
   assert.match(nonMacStartSource[0], /Command::new/);
+});
+
+test('settings page exposes independent state color controls and preset target', async () => {
+  const html = await readFile(new URL('./settings.html', import.meta.url), 'utf8');
+  const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
+
+  for (const state of ['idle', 'thinking', 'executing', 'input_needed', 'completed', 'compacting']) {
+    const id = state.replaceAll('_', '-');
+    assert.match(html, new RegExp(`id="${id}-color"`));
+    assert.match(html, new RegExp(`name="${state}_color"`));
+    assert.match(html, new RegExp(`id="${id}-color-hex"`));
+  }
+  assert.match(html, /id="preset-state"/);
+  assert.match(html, /id="color-presets"/);
+  assert.match(source, /COLOR_PRESET_GROUPS/);
+  assert.match(source, /saveCurrentSettings/);
+});
+
+test('settings color controls save only the selected state and reject invalid hex', async () => {
+  class FakeElement {
+    constructor({ id = '', type = 'text', value = '', checked = false, dataset = {} } = {}) {
+      this.id = id;
+      this.type = type;
+      this.value = value;
+      this.checked = checked;
+      this.disabled = false;
+      this.dataset = dataset;
+      this.children = [];
+      this.textContent = '';
+      this.attributes = {};
+      this.listeners = new Map();
+      this.style = {};
+      this.customError = '';
+    }
+
+    addEventListener(type, listener) {
+      const listeners = this.listeners.get(type) ?? [];
+      listeners.push(listener);
+      this.listeners.set(type, listeners);
+    }
+
+    dispatch(type) {
+      for (const listener of this.listeners.get(type) ?? []) listener({ target: this });
+    }
+
+    setAttribute(name, value) {
+      this.attributes[name] = value;
+    }
+
+    setCustomValidity(value) {
+      this.customError = value;
+    }
+
+    reportValidity() {}
+
+    append(...children) {
+      this.children.push(...children);
+    }
+
+    querySelectorAll(selector) {
+      const matches = [];
+      const visit = (node) => {
+        if (selector === '.color-swatch' && node.className === 'color-swatch') matches.push(node);
+        for (const child of node.children) visit(child);
+      };
+      for (const child of this.children) visit(child);
+      return matches;
+    }
+  }
+
+  const fields = [
+    new FakeElement({ id: 'enabled', type: 'checkbox', checked: true }),
+    new FakeElement({ id: 'opacity', type: 'range', value: '1' }),
+    new FakeElement({ id: 'offset-x', type: 'number', value: '28' }),
+    new FakeElement({ id: 'offset-y', type: 'number', value: '140' }),
+    new FakeElement({ id: 'curve-id', type: 'select', value: 'rose-seven' }),
+    new FakeElement({ id: 'particle-count', type: 'number', value: '64' }),
+    new FakeElement({ id: 'trail-span', type: 'number', value: '0.4' }),
+    new FakeElement({ id: 'duration-ms', type: 'number', value: '420' }),
+    new FakeElement({ id: 'pulse-duration-ms', type: 'number', value: '1200' }),
+    new FakeElement({ id: 'rotation-duration-ms', type: 'number', value: '4200' }),
+    new FakeElement({ id: 'stroke-width', type: 'number', value: '4' }),
+    new FakeElement({ id: 'idle-color', type: 'color', value: '#A7ADB5', dataset: { colorInput: '' } }),
+    new FakeElement({ id: 'idle-color-hex', value: '#A7ADB5', dataset: { colorHex: 'idle' } }),
+    new FakeElement({ id: 'thinking-color', type: 'color', value: '#FF8A3D', dataset: { colorInput: '' } }),
+    new FakeElement({ id: 'thinking-color-hex', value: '#FF8A3D', dataset: { colorHex: 'thinking' } }),
+    new FakeElement({ id: 'executing-color', type: 'color', value: '#339CFF', dataset: { colorInput: '' } }),
+    new FakeElement({ id: 'executing-color-hex', value: '#339CFF', dataset: { colorHex: 'executing' } }),
+    new FakeElement({ id: 'input-needed-color', type: 'color', value: '#F05252', dataset: { colorInput: '' } }),
+    new FakeElement({ id: 'input-needed-color-hex', value: '#F05252', dataset: { colorHex: 'input_needed' } }),
+    new FakeElement({ id: 'completed-color', type: 'color', value: '#35C878', dataset: { colorInput: '' } }),
+    new FakeElement({ id: 'completed-color-hex', value: '#35C878', dataset: { colorHex: 'completed' } }),
+    new FakeElement({ id: 'compacting-color', type: 'color', value: '#A56BFF', dataset: { colorInput: '' } }),
+    new FakeElement({ id: 'compacting-color-hex', value: '#A56BFF', dataset: { colorHex: 'compacting' } }),
+    new FakeElement({ id: 'start-at-login', type: 'checkbox', checked: false }),
+    new FakeElement({ id: 'follow-codex-lifecycle', type: 'checkbox', checked: false }),
+    new FakeElement({ id: 'language', type: 'select', value: 'en' }),
+    new FakeElement({ id: 'preset-state', type: 'select', value: 'idle' }),
+  ];
+  const elements = new Map([
+    ['plugin-status', new FakeElement()],
+    ['install-plugin', new FakeElement()],
+    ['uninstall-plugin', new FakeElement()],
+    ['diagnostics', new FakeElement()],
+    ['formula', new FakeElement()],
+    ['export-diagnostics', new FakeElement()],
+    ['reset-position', new FakeElement()],
+    ['color-presets', new FakeElement()],
+    ...fields.map((field) => [field.id, field]),
+  ]);
+  const saveCalls = [];
+  const invoke = async (command, args) => {
+    if (command === 'get_settings') return { ...DEFAULT_APP_SETTINGS };
+    if (command === 'get_display_state') return { state: 'idle', updated_at_ms: 0 };
+    if (command === 'save_settings') {
+      saveCalls.push(args);
+      return null;
+    }
+    return null;
+  };
+  const fakeDocument = {
+    activeElement: null,
+    documentElement: { lang: 'en' },
+    title: 'Codex Halo Settings',
+    createElement: (type) => new FakeElement({ type }),
+    getElementById: (id) => elements.get(id) ?? null,
+    querySelectorAll: (selector) => {
+      if (selector === 'input, select') return fields;
+      if (selector === '[data-i18n]' || selector === '[data-i18n-aria-label]' || selector === '[data-state]') return [];
+      return [];
+    },
+  };
+  const fakeWindow = {
+    __TAURI__: {
+      core: { invoke },
+      event: { listen: () => Promise.resolve() },
+    },
+    setInterval: () => 1,
+  };
+  globalThis.document = fakeDocument;
+  globalThis.window = fakeWindow;
+
+  try {
+    await import(`./settings.js?color-test=${Date.now()}`);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const colorPresets = elements.get('color-presets');
+    const presetState = elements.get('preset-state');
+    presetState.value = 'thinking';
+    colorPresets.querySelectorAll('.color-swatch')[0].dispatch('click');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(saveCalls.at(-1).settings.thinking_color, '#A4CAB6');
+    assert.equal(saveCalls.at(-1).settings.idle_color, '#A7ADB5');
+
+    const completedHex = elements.get('completed-color-hex');
+    completedHex.value = '#abcdef';
+    completedHex.dispatch('change');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(saveCalls.at(-1).settings.completed_color, '#ABCDEF');
+    const saveCount = saveCalls.length;
+
+    completedHex.value = 'bad';
+    completedHex.dispatch('change');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(saveCalls.length, saveCount);
+    assert.equal(elements.get('completed-color').value, '#ABCDEF');
+  } finally {
+    delete globalThis.document;
+    delete globalThis.window;
+  }
 });
 
 test('settings changes reach both overlay and settings windows', async () => {
