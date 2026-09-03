@@ -65,6 +65,7 @@ function readSettings() {
     rotation_duration_ms: number('rotation_duration_ms'),
     stroke_width: number('stroke_width'),
     start_at_login: control('start_at_login').checked,
+    follow_codex_lifecycle: control('follow_codex_lifecycle').checked,
     language: control('language').value,
   };
 }

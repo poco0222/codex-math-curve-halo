@@ -174,6 +174,7 @@ pub struct AppSettings {
     pub rotation_duration_ms: f32,
     pub stroke_width: f32,
     pub start_at_login: bool,
+    pub follow_codex_lifecycle: bool,
     pub language: String,
 }
 
@@ -222,6 +223,7 @@ impl Default for AppSettings {
             rotation_duration_ms: 4_200.0,
             stroke_width: 4.0,
             start_at_login: false,
+            follow_codex_lifecycle: false,
             language: "en".to_owned(),
         }
     }
@@ -468,6 +470,13 @@ mod tests {
         let settings: AppSettings = serde_json::from_str("{}").unwrap();
 
         assert_eq!(settings.language, "en");
+    }
+
+    #[test]
+    fn missing_lifecycle_flag_uses_disabled_default() {
+        let settings: AppSettings = serde_json::from_str("{}").unwrap();
+
+        assert!(!settings.follow_codex_lifecycle);
     }
 
     #[test]

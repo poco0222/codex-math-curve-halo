@@ -123,13 +123,18 @@ test('localized setup errors keep only safe categories', () => {
 test('settings page exposes a persisted language selector', async () => {
   const html = await readFile(new URL('./settings.html', import.meta.url), 'utf8');
   const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
+  const i18n = await readFile(new URL('./i18n.js', import.meta.url), 'utf8');
 
   assert.match(html, /id="language"/);
   assert.match(html, /value="en"/);
   assert.match(html, /value="zh-CN"/);
   assert.match(html, /data-i18n="settings\.display"/);
+  assert.match(html, /id="follow-codex-lifecycle"/);
+  assert.match(html, /data-i18n="settings\.followCodexLifecycle"/);
   assert.match(source, /language: control\('language'\)\.value/);
+  assert.match(source, /follow_codex_lifecycle: control\('follow_codex_lifecycle'\)\.checked/);
   assert.match(source, /document\.documentElement\.lang/);
+  assert.match(i18n, /settings\.followCodexLifecycle/);
 });
 
 test('settings page exposes plugin install controls and no legacy hook controls', async () => {
@@ -211,6 +216,7 @@ test('settings language flow saves once and redraws raw setup errors', async () 
     new FakeElement({ id: 'rotation-duration-ms', type: 'number', value: '4200' }),
     new FakeElement({ id: 'stroke-width', type: 'number', value: '4' }),
     new FakeElement({ id: 'start-at-login', type: 'checkbox', checked: false }),
+    new FakeElement({ id: 'follow-codex-lifecycle', type: 'checkbox', checked: false }),
     new FakeElement({ id: 'language', type: 'select', value: 'en', dataset: { i18nAriaLabel: 'settings.language' } }),
   ];
   const pluginStatus = new FakeElement({ dataset: { i18n: 'settings.pluginReady' } });
@@ -365,6 +371,7 @@ test('renderer startup uses exact frontend defaults after get_settings fails', a
     rotation_duration_ms: 4200,
     stroke_width: 4,
     start_at_login: false,
+    follow_codex_lifecycle: false,
     language: 'en',
   });
   assert.equal(DEFAULT_APP_SETTINGS.language, 'en');
