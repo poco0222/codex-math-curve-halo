@@ -26,6 +26,15 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": {
+      "../.agents/plugins/marketplace.json": "codex-halo-marketplace/.agents/plugins/marketplace.json",
+      "../plugins/codex-halo/.codex-plugin/plugin.json": "codex-halo-marketplace/plugins/codex-halo/.codex-plugin/plugin.json",
+      "../plugins/codex-halo/README.md": "codex-halo-marketplace/plugins/codex-halo/README.md",
+      "../plugins/codex-halo/assets/icon.png": "codex-halo-marketplace/plugins/codex-halo/assets/icon.png",
+      "../plugins/codex-halo/hooks/hooks.json": "codex-halo-marketplace/plugins/codex-halo/hooks/hooks.json",
+      "../plugins/codex-halo/hooks/run-helper.sh": "codex-halo-marketplace/plugins/codex-halo/hooks/run-helper.sh",
+      "../plugins/codex-halo/hooks/run-helper.ps1": "codex-halo-marketplace/plugins/codex-halo/hooks/run-helper.ps1"
+    },
     "externalBin": ["binaries/codex-halo-hook"]
   }
 }

@@ -35,7 +35,7 @@
       "name": "Codex Halo: Install Plugin",
       "type": "node-terminal",
       "request": "launch",
-      "command": "codex plugin marketplace add \"${workspaceFolder}\" && codex plugin add codex-halo@personal",
+      "command": "codex plugin marketplace add \"${workspaceFolder}\" && codex plugin add codex-halo@codex-halo",
       "cwd": "${workspaceFolder}",
       "presentation": {
         "reveal": "always",

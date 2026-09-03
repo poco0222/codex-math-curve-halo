@@ -1,6 +1,5 @@
 use codex_halo_lib::state::{AppSettings, DisplayState, HaloState, SessionStore, Snapshot};
-use codex_halo_lib::{hook_protocol, hooks, platform};
-use std::collections::HashMap;
+use codex_halo_lib::{hook_protocol, hooks, platform, plugin};
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -24,7 +23,6 @@ struct ReducerRuntimeState {
     store: Mutex<SessionStore>,
     simulation: Mutex<Option<Snapshot>>,
     scan_in_progress: AtomicBool,
-    scan_epoch: AtomicU64,
     settings_transaction: Mutex<()>,
     tray_menu: Mutex<Option<TrayMenuItems>>,
 }
@@ -33,8 +31,8 @@ struct ReducerRuntimeState {
 struct TrayMenuItems {
     open_settings: MenuItem<tauri::Wry>,
     toggle_overlay: MenuItem<tauri::Wry>,
-    install_hooks: MenuItem<tauri::Wry>,
-    remove_hooks: MenuItem<tauri::Wry>,
+    install_plugin: MenuItem<tauri::Wry>,
+    uninstall_plugin: MenuItem<tauri::Wry>,
     simulate_idle: MenuItem<tauri::Wry>,
     simulate_thinking: MenuItem<tauri::Wry>,
     simulate_executing: MenuItem<tauri::Wry>,
@@ -56,23 +54,10 @@ impl ReducerRuntimeState {
         self.scan_in_progress.store(false, Ordering::Release);
     }
 
-    fn scan_epoch(&self) -> u64 {
-        self.scan_epoch.load(Ordering::Acquire)
-    }
-
     fn display_after_scan(
         &self,
         scan: Option<io::Result<Vec<Snapshot>>>,
         now_ms: i64,
-    ) -> DisplayState {
-        self.display_after_scan_at_epoch(scan, now_ms, self.scan_epoch())
-    }
-
-    fn display_after_scan_at_epoch(
-        &self,
-        scan: Option<io::Result<Vec<Snapshot>>>,
-        now_ms: i64,
-        scan_epoch: u64,
     ) -> DisplayState {
         let mut store = self
             .store
@@ -83,21 +68,19 @@ impl ReducerRuntimeState {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
 
-        if scan_epoch == self.scan_epoch() {
-            if let Some(Ok(snapshots)) = scan {
-                if simulation.as_ref().is_some_and(|simulated| {
-                    snapshots
-                        .iter()
-                        .any(|snapshot| snapshot.updated_at_ms > simulated.updated_at_ms)
-                }) {
-                    *simulation = None;
-                }
-                let mut next = SessionStore::default();
-                for snapshot in snapshots {
-                    next.upsert(snapshot);
-                }
-                *store = next;
+        if let Some(Ok(snapshots)) = scan {
+            if simulation.as_ref().is_some_and(|simulated| {
+                snapshots
+                    .iter()
+                    .any(|snapshot| snapshot.updated_at_ms > simulated.updated_at_ms)
+            }) {
+                *simulation = None;
             }
+            let mut next = SessionStore::default();
+            for snapshot in snapshots {
+                next.upsert(snapshot);
+            }
+            *store = next;
         }
 
         store.clear_expired(now_ms);
@@ -117,15 +100,6 @@ impl ReducerRuntimeState {
         store.clear_expired(now_ms);
         store.display_state_with_override(simulation.as_ref(), now_ms)
     }
-
-    fn clear_real_sessions(&self) {
-        self.scan_epoch.fetch_add(1, Ordering::AcqRel);
-        let mut store = self
-            .store
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        *store = SessionStore::default();
-    }
 }
 
 #[tauri::command]
@@ -136,20 +110,17 @@ async fn get_display_state(
     if !runtime.try_start_scan() {
         return Ok(runtime.display_after_scan(None, now_ms()));
     }
-    let scan_epoch = runtime.scan_epoch();
     let scan_now_ms = now_ms();
 
-    let state_dirs = scan_state_dirs(&app);
-    let scan = if state_dirs.is_empty() {
-        None
-    } else {
-        tauri::async_runtime::spawn_blocking(move || {
-            read_snapshots_from_dirs(&state_dirs, scan_now_ms)
+    let scan = match scan_state_dir(&app) {
+        Some(state_dir) => tauri::async_runtime::spawn_blocking(move || {
+            read_runtime_snapshots(&state_dir, scan_now_ms)
         })
         .await
-        .ok()
+        .ok(),
+        None => None,
     };
-    let display = runtime.display_after_scan_at_epoch(scan, now_ms(), scan_epoch);
+    let display = runtime.display_after_scan(scan, now_ms());
     runtime.finish_scan();
     Ok(display)
 }
@@ -163,27 +134,8 @@ fn now_ms() -> i64 {
         .unwrap_or(i64::MAX)
 }
 
-fn scan_state_dirs(app: &AppHandle) -> Vec<PathBuf> {
-    scan_state_dirs_from_paths(
-        hooks::runtime_state_dir().ok(),
-        app.path()
-            .app_data_dir()
-            .ok()
-            .map(|path| path.join("state")),
-    )
-}
-
-fn scan_state_dirs_from_paths(
-    runtime_state_dir: Option<PathBuf>,
-    legacy_state_dir: Option<PathBuf>,
-) -> Vec<PathBuf> {
-    let mut paths = Vec::with_capacity(2);
-    for path in [runtime_state_dir, legacy_state_dir].into_iter().flatten() {
-        if !paths.iter().any(|existing| existing == &path) {
-            paths.push(path);
-        }
-    }
-    paths
+fn scan_state_dir(_app: &AppHandle) -> Option<PathBuf> {
+    hooks::runtime_state_dir().ok()
 }
 
 fn app_config_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -363,31 +315,16 @@ fn read_snapshots(path: &Path) -> io::Result<Vec<Snapshot>> {
     read_snapshot_entries(entries, |path| fs::read_to_string(path))
 }
 
-fn read_snapshots_from_dirs(paths: &[PathBuf], cutoff_ms: i64) -> io::Result<Vec<Snapshot>> {
-    let mut latest = HashMap::new();
-
-    for path in paths {
-        let snapshots = match read_snapshots(path) {
-            Ok(snapshots) => snapshots,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
-            Err(error) => return Err(error),
-        };
-        for snapshot in snapshots {
-            if snapshot.updated_at_ms > cutoff_ms {
-                continue;
-            }
-            let replace = latest
-                .get(&snapshot.session_key)
-                .map_or(true, |current: &Snapshot| {
-                    snapshot.updated_at_ms > current.updated_at_ms
-                });
-            if replace {
-                latest.insert(snapshot.session_key.clone(), snapshot);
-            }
-        }
-    }
-
-    Ok(latest.into_values().collect())
+fn read_runtime_snapshots(path: &Path, cutoff_ms: i64) -> io::Result<Vec<Snapshot>> {
+    let snapshots = match read_snapshots(path) {
+        Ok(snapshots) => snapshots,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error),
+    };
+    Ok(snapshots
+        .into_iter()
+        .filter(|snapshot| snapshot.updated_at_ms <= cutoff_ms)
+        .collect())
 }
 
 fn read_snapshot_entries<I, F>(entries: I, mut read_file: F) -> io::Result<Vec<Snapshot>>
@@ -472,65 +409,38 @@ fn simulate_state(
 }
 
 #[tauri::command]
-fn install_hooks(app: AppHandle) -> Result<hooks::InstallReport, String> {
-    let (config_path, helper_path, state_dir) = hook_paths(&app)?;
-    hooks::install_hooks(&config_path, &helper_path, &state_dir)
-        .map_err(|_| "Codex Halo hooks could not be installed".to_owned())
-}
-
-fn remove_hooks_inner(
-    app: &AppHandle,
-    runtime: &ReducerRuntimeState,
-) -> Result<hooks::RemoveReport, String> {
-    let (config_path, helper_path, state_dir) = hook_paths(app)?;
-    let report = hooks::remove_hooks(&config_path)
-        .map_err(|_| "Codex Halo hooks could not be removed".to_owned())?;
-    remove_hook_artifacts(&helper_path, &state_dir)
-        .map_err(|_| "Codex Halo hook artifacts could not be removed".to_owned())?;
-    runtime.clear_real_sessions();
-    Ok(report)
+async fn install_plugin(app: AppHandle) -> Result<(), String> {
+    let marketplace_root = plugin_marketplace_root(&app)?;
+    tauri::async_runtime::spawn_blocking(move || plugin::install(&marketplace_root))
+        .await
+        .map_err(|_| "Codex Halo Plugin operation failed".to_owned())?
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-fn remove_hooks(
-    app: AppHandle,
-    runtime: State<'_, ReducerRuntimeState>,
-) -> Result<hooks::RemoveReport, String> {
-    remove_hooks_inner(&app, &runtime)
+async fn uninstall_plugin(app: AppHandle) -> Result<(), String> {
+    let marketplace_root = plugin_marketplace_root(&app)?;
+    tauri::async_runtime::spawn_blocking(move || plugin::uninstall(&marketplace_root))
+        .await
+        .map_err(|_| "Codex Halo Plugin operation failed".to_owned())?
+        .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
-fn get_hook_status(app: AppHandle) -> Result<hooks::HookStatus, String> {
-    let (config_path, helper_path, _) = hook_paths(&app)?;
-    Ok(hooks::get_hook_status(&config_path, &helper_path))
-}
-
-fn hook_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf, PathBuf), String> {
-    let codex_home =
-        hooks::codex_home().map_err(|_| "Codex Halo hooks path is unavailable".to_owned())?;
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|_| "Codex Halo hook data path is unavailable".to_owned())?;
-    Ok((
-        codex_home.join("hooks.json"),
-        app_data_dir.join(hooks::helper_filename()),
-        app_data_dir.join("state"),
-    ))
-}
-
-fn remove_hook_artifacts(helper_path: &Path, state_dir: &Path) -> io::Result<()> {
-    match fs::remove_file(helper_path) {
-        Ok(()) => {}
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error),
+fn plugin_marketplace_root(app: &AppHandle) -> Result<PathBuf, String> {
+    let mut candidates = Vec::with_capacity(2);
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        candidates.push(resource_dir.join(plugin::RESOURCE_ROOT));
     }
-    match fs::remove_dir_all(state_dir) {
-        Ok(()) => {}
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error),
-    }
-    Ok(())
+    candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."));
+
+    find_marketplace_root(candidates)
+        .ok_or_else(|| "Codex Halo Plugin package is unavailable".to_owned())
+}
+
+fn find_marketplace_root(candidates: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
+    candidates
+        .into_iter()
+        .find(|root| root.join(".agents/plugins/marketplace.json").is_file())
 }
 
 #[tauri::command]
@@ -584,6 +494,44 @@ fn show_settings_or_report(app: &AppHandle) {
     }
 }
 
+fn install_plugin_inner(app: &AppHandle) -> Result<(), String> {
+    let marketplace_root = plugin_marketplace_root(app)?;
+    plugin::install(&marketplace_root).map_err(|error| error.to_string())
+}
+
+fn uninstall_plugin_inner(app: &AppHandle) -> Result<(), String> {
+    let marketplace_root = plugin_marketplace_root(app)?;
+    plugin::uninstall(&marketplace_root).map_err(|error| error.to_string())
+}
+
+fn spawn_tray_plugin_action(app: &AppHandle, install: bool) {
+    let app = app.clone();
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        let result = if install {
+            install_plugin_inner(&app)
+        } else {
+            uninstall_plugin_inner(&app)
+        };
+        if result.is_err() {
+            eprintln!(
+                "Codex Halo: unable to {} Plugin",
+                if install { "install" } else { "uninstall" }
+            );
+        }
+        show_settings_or_report(&app);
+        let status = if result.is_ok() {
+            if install {
+                "installed"
+            } else {
+                "uninstalled"
+            }
+        } else {
+            "failed"
+        };
+        let _ = app.emit_to("settings", "plugin-operation", status);
+    });
+}
+
 fn toggle_overlay_inner(
     app: AppHandle,
     runtime: &ReducerRuntimeState,
@@ -618,20 +566,6 @@ where
     true
 }
 
-fn helper_install_paths(
-    runtime_root: Option<PathBuf>,
-    legacy_app_data_dir: PathBuf,
-) -> Vec<PathBuf> {
-    let mut paths = Vec::with_capacity(2);
-    if let Some(runtime_root) = runtime_root {
-        paths.push(runtime_root);
-    }
-    if !paths.iter().any(|path| path == &legacy_app_data_dir) {
-        paths.push(legacy_app_data_dir);
-    }
-    paths
-}
-
 #[cfg(test)]
 mod tray_tests {
     use super::*;
@@ -646,8 +580,8 @@ mod tray_tests {
             [
                 "Open Settings",
                 "Disable overlay",
-                "Install/repair legacy hooks",
-                "Remove legacy hooks",
+                "Install Plugin",
+                "Uninstall Plugin",
                 "Simulate Idle",
                 "Simulate Thinking",
                 "Simulate Executing",
@@ -671,8 +605,8 @@ mod tray_tests {
             [
                 "打开设置",
                 "禁用叠加层",
-                "安装/修复兼容 hooks",
-                "移除兼容 hooks",
+                "安装 Plugin",
+                "卸载 Plugin",
                 "模拟空闲",
                 "模拟思考",
                 "模拟执行",
@@ -723,14 +657,14 @@ fn tray_labels(settings: &AppSettings) -> [&'static str; 12] {
         },
         toggle_overlay,
         if chinese {
-            "安装/修复兼容 hooks"
+            "安装 Plugin"
         } else {
-            "Install/repair legacy hooks"
+            "Install Plugin"
         },
         if chinese {
-            "移除兼容 hooks"
+            "卸载 Plugin"
         } else {
-            "Remove legacy hooks"
+            "Uninstall Plugin"
         },
         if chinese {
             "模拟空闲"
@@ -783,8 +717,8 @@ fn update_tray_menu(items: &TrayMenuItems, settings: &AppSettings) {
     let handles = [
         &items.open_settings,
         &items.toggle_overlay,
-        &items.install_hooks,
-        &items.remove_hooks,
+        &items.install_plugin,
+        &items.uninstall_plugin,
         &items.simulate_idle,
         &items.simulate_thinking,
         &items.simulate_executing,
@@ -820,17 +754,17 @@ fn build_tray(
             true,
             None::<&str>,
         )?,
-        install_hooks: MenuItem::with_id(
+        install_plugin: MenuItem::with_id(
             app,
-            "install-hooks",
-            "Install/repair legacy hooks",
+            "install-plugin",
+            "Install Plugin",
             true,
             None::<&str>,
         )?,
-        remove_hooks: MenuItem::with_id(
+        uninstall_plugin: MenuItem::with_id(
             app,
-            "remove-hooks",
-            "Remove legacy hooks",
+            "uninstall-plugin",
+            "Uninstall Plugin",
             true,
             None::<&str>,
         )?,
@@ -896,8 +830,8 @@ fn build_tray(
             &items.open_settings,
             &items.toggle_overlay,
             &separator_one,
-            &items.install_hooks,
-            &items.remove_hooks,
+            &items.install_plugin,
+            &items.uninstall_plugin,
             &separator_two,
             &items.simulate_idle,
             &items.simulate_thinking,
@@ -925,18 +859,11 @@ fn build_tray(
                 eprintln!("Codex Halo: unable to change overlay setting");
             }
         }
-        "install-hooks" => {
-            if install_hooks(app.clone()).is_err() {
-                eprintln!("Codex Halo: unable to install hooks");
-            }
-            show_settings_or_report(app);
+        "install-plugin" => {
+            spawn_tray_plugin_action(app, true);
         }
-        "remove-hooks" => {
-            let runtime = app.state::<ReducerRuntimeState>();
-            if remove_hooks_inner(app, &runtime).is_err() {
-                eprintln!("Codex Halo: unable to remove hooks");
-            }
-            show_settings_or_report(app);
+        "uninstall-plugin" => {
+            spawn_tray_plugin_action(app, false);
         }
         "reset-position" => {
             let runtime = app.state::<ReducerRuntimeState>();
@@ -984,8 +911,7 @@ fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
     #[cfg(target_os = "macos")]
     app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-    let app_data_dir = app.path().app_data_dir()?;
-    for helper_dir in helper_install_paths(hooks::runtime_root().ok(), app_data_dir) {
+    if let Some(helper_dir) = hooks::runtime_root().ok() {
         helper_setup_best_effort(|| hook_protocol::install_bundled_helper(&helper_dir).map(|_| ()));
     }
 
@@ -1047,9 +973,8 @@ fn main() {
             get_settings,
             save_settings,
             simulate_state,
-            install_hooks,
-            remove_hooks,
-            get_hook_status,
+            install_plugin,
+            uninstall_plugin,
             open_settings,
             reset_position,
             set_overlay_visible
@@ -1080,34 +1005,6 @@ mod scan_tests {
         runtime
     }
 
-    #[test]
-    fn scan_paths_include_runtime_and_legacy_state_dirs() {
-        assert_eq!(
-            scan_state_dirs_from_paths(
-                Some(PathBuf::from("/tmp/codex-home/codex-halo/state")),
-                Some(PathBuf::from("/tmp/app-data/state")),
-            ),
-            [
-                PathBuf::from("/tmp/codex-home/codex-halo/state"),
-                PathBuf::from("/tmp/app-data/state"),
-            ]
-        );
-    }
-
-    #[test]
-    fn startup_helper_paths_include_runtime_and_legacy_directories() {
-        assert_eq!(
-            helper_install_paths(
-                Some(PathBuf::from("/tmp/codex-home/codex-halo")),
-                PathBuf::from("/tmp/app-data"),
-            ),
-            [
-                PathBuf::from("/tmp/codex-home/codex-halo"),
-                PathBuf::from("/tmp/app-data"),
-            ]
-        );
-    }
-
     fn write_scan_snapshot(directory: &Path, id: u8, snapshot: Snapshot) {
         fs::create_dir_all(directory).unwrap();
         let filename = format!("{id:064x}.json");
@@ -1119,100 +1016,31 @@ mod scan_tests {
     }
 
     #[test]
-    fn scan_reads_runtime_and_legacy_state_dirs_and_ignores_missing_dirs() {
+    fn scan_reads_runtime_state_dir_and_ignores_missing_dirs() {
         let root = std::env::temp_dir().join(format!(
             "codex-halo-dual-scan-{}-{}",
             std::process::id(),
             now_ms()
         ));
         let runtime = root.join("runtime/state");
-        let legacy = root.join("legacy/state");
         let missing = root.join("missing/state");
         write_scan_snapshot(
             &runtime,
             1,
             Snapshot::new("runtime-session", HaloState::Executing, 10),
         );
-        write_scan_snapshot(
-            &legacy,
-            2,
-            Snapshot::new("legacy-session", HaloState::Thinking, 20),
-        );
+        let snapshots = read_runtime_snapshots(&runtime, 25).unwrap();
 
-        let snapshots = read_snapshots_from_dirs(&[runtime, legacy, missing], 25).unwrap();
-
-        assert_eq!(snapshots.len(), 2);
+        assert_eq!(snapshots.len(), 1);
         assert!(snapshots.iter().any(|snapshot| {
             snapshot.session_key == "runtime-session" && snapshot.updated_at_ms == 10
         }));
-        assert!(snapshots.iter().any(|snapshot| {
-            snapshot.session_key == "legacy-session" && snapshot.updated_at_ms == 20
-        }));
+        assert!(read_runtime_snapshots(&missing, 25).unwrap().is_empty());
         fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn scan_duplicate_session_uses_newest_snapshot() {
-        let root = std::env::temp_dir().join(format!(
-            "codex-halo-duplicate-scan-{}-{}",
-            std::process::id(),
-            now_ms()
-        ));
-        let runtime = root.join("runtime/state");
-        let legacy = root.join("legacy/state");
-        write_scan_snapshot(
-            &runtime,
-            1,
-            Snapshot::new("shared-session", HaloState::InputNeeded, 10),
-        );
-        write_scan_snapshot(
-            &legacy,
-            1,
-            Snapshot::new("shared-session", HaloState::Thinking, 20),
-        );
-
-        let snapshots = read_snapshots_from_dirs(&[runtime, legacy], 25).unwrap();
-        let runtime_state = ReducerRuntimeState::default();
-        let display = runtime_state.display_after_scan(Some(Ok(snapshots)), 25);
-
-        assert_eq!(display.state, HaloState::Thinking);
-        assert_eq!(display.session_count, 1);
-        assert_eq!(display.updated_at_ms, 20);
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn scan_future_duplicate_does_not_hide_valid_snapshot() {
-        let root = std::env::temp_dir().join(format!(
-            "codex-halo-future-duplicate-scan-{}-{}",
-            std::process::id(),
-            now_ms()
-        ));
-        let runtime = root.join("runtime/state");
-        let legacy = root.join("legacy/state");
-        write_scan_snapshot(
-            &runtime,
-            1,
-            Snapshot::new("shared-session", HaloState::InputNeeded, 10),
-        );
-        write_scan_snapshot(
-            &legacy,
-            1,
-            Snapshot::new("shared-session", HaloState::Thinking, 100),
-        );
-
-        let snapshots = read_snapshots_from_dirs(&[runtime, legacy], 25).unwrap();
-        let runtime_state = ReducerRuntimeState::default();
-        let display = runtime_state.display_after_scan(Some(Ok(snapshots)), 25);
-
-        assert_eq!(display.state, HaloState::InputNeeded);
-        assert_eq!(display.session_count, 1);
-        assert_eq!(display.updated_at_ms, 10);
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn helper_install_paths_support_real_installs() {
+    fn startup_installs_helper_at_the_runtime_directory() {
         let root = std::env::temp_dir().join(format!(
             "codex-halo-helper-destinations-{}-{}",
             std::process::id(),
@@ -1220,17 +1048,13 @@ mod scan_tests {
         ));
         let source = root.join("bundled-helper");
         let runtime = root.join("codex-home/codex-halo");
-        let legacy = root.join("app-data");
         fs::create_dir_all(&root).unwrap();
         fs::write(&source, b"helper-round-2").unwrap();
 
-        for directory in helper_install_paths(Some(runtime.clone()), legacy.clone()) {
-            let installed = hook_protocol::install_helper(&source, &directory).unwrap();
-            assert_eq!(fs::read(installed).unwrap(), b"helper-round-2");
-        }
+        let installed = hook_protocol::install_helper(&source, &runtime).unwrap();
+        assert_eq!(fs::read(installed).unwrap(), b"helper-round-2");
 
         assert!(runtime.join(hooks::helper_filename()).is_file());
-        assert!(legacy.join(hooks::helper_filename()).is_file());
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -1379,52 +1203,6 @@ mod scan_tests {
     }
 
     #[test]
-    fn newer_real_scan_supersedes_simulation() {
-        let now = 1_000_000;
-        let runtime = ReducerRuntimeState::default();
-        runtime.simulate_state(HaloState::Completed, now);
-
-        let display = runtime.display_after_scan_at_epoch(
-            Some(Ok(vec![Snapshot::new(
-                "real",
-                HaloState::Thinking,
-                now + 1,
-            )])),
-            now + 1,
-            runtime.scan_epoch(),
-        );
-
-        assert_eq!(display.state, HaloState::Thinking);
-        assert_eq!(display.session_count, 1);
-    }
-
-    #[test]
-    fn clearing_real_sessions_blocks_an_in_flight_scan_but_keeps_simulation() {
-        let now = 1_000_000;
-        let runtime = ReducerRuntimeState::default();
-        runtime.display_after_scan(
-            Some(Ok(vec![Snapshot::new("real", HaloState::Executing, now)])),
-            now,
-        );
-        runtime.simulate_state(HaloState::InputNeeded, now + 1);
-        let stale_epoch = runtime.scan_epoch();
-        runtime.clear_real_sessions();
-
-        let display = runtime.display_after_scan_at_epoch(
-            Some(Ok(vec![Snapshot::new(
-                "stale",
-                HaloState::Executing,
-                now + 2,
-            )])),
-            now + 2,
-            stale_epoch,
-        );
-
-        assert_eq!(display.state, HaloState::InputNeeded);
-        assert_eq!(display.session_count, 0);
-    }
-
-    #[test]
     fn simulation_expiry_matches_completed_and_input_needed_rules() {
         let now = 1_000_000;
         let runtime = ReducerRuntimeState::default();
@@ -1467,27 +1245,6 @@ mod scan_tests {
         assert!(helper_setup_best_effort(|| {
             Err(hook_protocol::HookError::InvalidInput)
         }));
-    }
-
-    #[test]
-    fn removes_hook_artifacts_without_failing_for_missing_paths() {
-        let root = std::env::temp_dir().join(format!(
-            "codex-halo-artifacts-{}-{}",
-            std::process::id(),
-            now_ms()
-        ));
-        let helper = root.join("helper");
-        let state_dir = root.join("state");
-        fs::create_dir_all(&state_dir).unwrap();
-        fs::write(&helper, b"helper").unwrap();
-
-        remove_hook_artifacts(&helper, &state_dir).unwrap();
-
-        assert!(!helper.exists());
-        assert!(!state_dir.exists());
-        remove_hook_artifacts(&helper, &state_dir).unwrap();
-        assert!(root.exists());
-        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -1628,5 +1385,26 @@ mod scan_tests {
         assert_eq!(result, Err("start-at-login:reconciliation".to_owned()));
         assert_eq!(native_autostart, current.start_at_login);
         assert!(!settings_committed);
+    }
+}
+
+#[cfg(test)]
+mod plugin_tests {
+    use super::*;
+
+    #[test]
+    fn bundled_marketplace_resolution_uses_the_first_valid_root() {
+        let root = std::env::temp_dir().join(format!(
+            "codex-halo-marketplace-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let invalid = root.join("invalid");
+        let valid = root.join("valid");
+        fs::create_dir_all(valid.join(".agents/plugins")).unwrap();
+        fs::write(valid.join(".agents/plugins/marketplace.json"), b"{}").unwrap();
+
+        assert_eq!(find_marketplace_root([invalid, valid.clone()]), Some(valid));
+        fs::remove_dir_all(root).unwrap();
     }
 }

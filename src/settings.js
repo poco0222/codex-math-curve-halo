@@ -2,7 +2,6 @@ import { formatFormula, getCurveProfile } from './curves.js';
 import { createSerialTaskQueue, DEFAULT_APP_SETTINGS, formatSetupError } from './app.js';
 import {
   DEFAULT_LANGUAGE,
-  getHookLabel,
   getStateLabel,
   getText,
   localeForLanguage,
@@ -10,11 +9,18 @@ import {
 } from './i18n.js';
 
 const invoke = window.__TAURI__?.core?.invoke ?? window.__TAURI__?.invoke;
-const hookStatus = document.getElementById('hook-status');
+const pluginStatus = document.getElementById('plugin-status');
+const installPluginButton = document.getElementById('install-plugin');
+const uninstallPluginButton = document.getElementById('uninstall-plugin');
+const pluginOperationStatuses = {
+  installed: 'settings.pluginInstalled',
+  uninstalled: 'settings.pluginUninstalled',
+  failed: 'settings.pluginOperationFailed',
+};
 const diagnostics = document.getElementById('diagnostics');
 const formula = document.getElementById('formula');
 let currentLanguage = DEFAULT_LANGUAGE;
-let currentHookStatus = 'loading';
+let currentPluginStatus = 'settings.pluginReady';
 let setupError = null;
 let currentDisplayState = { state: 'idle', updated_at_ms: 0 };
 const saveSettings = createSerialTaskQueue();
@@ -83,16 +89,9 @@ function renderFormula(settings = readSettings()) {
   formula.textContent = formatFormula(profile, settings);
 }
 
-function renderHookStatus(status) {
-  currentHookStatus = status;
-  const section = hookStatus.querySelector('[data-i18n="settings.legacyHooks"]');
-  const label = hookStatus.querySelector('[data-hook-status-label]');
-  if (section && label) {
-    section.textContent = getText(currentLanguage, 'settings.legacyHooks');
-    label.textContent = getHookLabel(currentLanguage, status);
-    return;
-  }
-  hookStatus.textContent = `${getText(currentLanguage, 'settings.legacyHooks')}: ${getHookLabel(currentLanguage, status)}`;
+function renderPluginStatus(status = currentPluginStatus) {
+  currentPluginStatus = status;
+  pluginStatus.textContent = getText(currentLanguage, status);
 }
 
 function renderDiagnostics(displayState = {}) {
@@ -124,13 +123,8 @@ function renderLanguage(language) {
   for (const element of document.querySelectorAll('[data-i18n-aria-label]')) {
     element.setAttribute('aria-label', getText(currentLanguage, element.dataset.i18nAriaLabel));
   }
-  renderHookStatus(currentHookStatus);
+  renderPluginStatus();
   renderDiagnostics();
-}
-
-async function refreshHookStatus() {
-  const result = await invokeCommand('get_hook_status');
-  if (result.ok) renderHookStatus(result.value);
 }
 
 async function refreshDiagnostics() {
@@ -139,18 +133,18 @@ async function refreshDiagnostics() {
 }
 
 async function loadSettings() {
-  const [settings, status] = await Promise.all([
-    invokeCommand('get_settings'),
-    invokeCommand('get_hook_status'),
-  ]);
+  const settings = await invokeCommand('get_settings');
   applySettings(settings.ok ? settings.value : DEFAULT_APP_SETTINGS);
-  if (status.ok) renderHookStatus(status.value);
   await refreshDiagnostics();
 }
 
 const listen = window.__TAURI__?.event?.listen;
 if (typeof listen === 'function') {
   listen('settings-changed', ({ payload }) => applySettings(payload)).catch(() => {});
+  listen('plugin-operation', ({ payload }) => {
+    const status = pluginOperationStatuses[payload];
+    if (status) renderPluginStatus(status);
+  }).catch(() => {});
 }
 
 async function saveCurrentSettings() {
@@ -183,21 +177,23 @@ for (const field of document.querySelectorAll('input, select')) {
   if (field.id === 'language') field.addEventListener('change', () => renderLanguage(field.value));
 }
 
-document.getElementById('install-hooks').addEventListener('click', async () => {
-  const result = await invokeCommand('install_hooks');
+async function runPluginAction(command, successStatus) {
+  installPluginButton.disabled = true;
+  uninstallPluginButton.disabled = true;
+  renderPluginStatus('settings.pluginWorking');
+  const result = await invokeCommand(command);
   if (result.ok) {
     clearSetupError();
-    await refreshHookStatus();
+    renderPluginStatus(successStatus);
+  } else {
+    renderPluginStatus('settings.pluginOperationFailed');
   }
-});
+  installPluginButton.disabled = false;
+  uninstallPluginButton.disabled = false;
+}
 
-document.getElementById('remove-hooks').addEventListener('click', async () => {
-  const result = await invokeCommand('remove_hooks');
-  if (result.ok) {
-    clearSetupError();
-    await refreshHookStatus();
-  }
-});
+installPluginButton.addEventListener('click', () => runPluginAction('install_plugin', 'settings.pluginInstalled'));
+uninstallPluginButton.addEventListener('click', () => runPluginAction('uninstall_plugin', 'settings.pluginUninstalled'));
 
 document.getElementById('reset-position').addEventListener('click', async () => {
   const result = await saveSettings(() => invokeCommand('reset_position'));

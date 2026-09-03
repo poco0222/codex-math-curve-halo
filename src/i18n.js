@@ -19,10 +19,14 @@ const dictionaries = {
     'settings.rotationDuration': 'Rotation duration (ms)',
     'settings.strokeWidth': 'Stroke width',
     'settings.activeFormula': 'Active formula',
-    'settings.pluginManaged': 'Plugin hooks are managed by Codex',
-    'settings.legacyHooks': 'Legacy hooks',
-    'settings.installLegacyHooks': 'Install legacy hooks',
-    'settings.removeLegacyHooks': 'Remove legacy hooks',
+    'settings.plugin': 'Codex Plugin',
+    'settings.pluginReady': 'Plugin setup',
+    'settings.installPlugin': 'Install Plugin',
+    'settings.uninstallPlugin': 'Uninstall Plugin',
+    'settings.pluginWorking': 'Working...',
+    'settings.pluginInstalled': 'Plugin installed',
+    'settings.pluginUninstalled': 'Plugin uninstalled',
+    'settings.pluginOperationFailed': 'Plugin operation failed',
     'settings.resetPosition': 'Reset position',
     'settings.simulateState': 'Simulate state',
     'settings.startAtLogin': 'Start at login',
@@ -42,12 +46,6 @@ const dictionaries = {
     'settings.states.inputNeeded': 'Input needed',
     'settings.states.completed': 'Completed',
     'settings.states.compacting': 'Compacting',
-    'settings.hooks.loading': 'loading',
-    'settings.hooks.installed': 'Installed',
-    'settings.hooks.missing': 'Missing',
-    'settings.hooks.invalid': 'Needs repair',
-    'settings.hooks.partiallyInstalled': 'Partially installed',
-    'settings.hooks.unavailable': 'Unavailable',
     'errors.startAtLogin': 'start-at-login setup failed',
     'errors.permission': 'permission',
     'errors.launchAgent': 'launch-agent',
@@ -72,10 +70,14 @@ const dictionaries = {
     'settings.rotationDuration': '旋转时长（毫秒）',
     'settings.strokeWidth': '线条宽度',
     'settings.activeFormula': '当前公式',
-    'settings.pluginManaged': 'Plugin hooks 由 Codex 管理',
-    'settings.legacyHooks': '兼容 hooks',
-    'settings.installLegacyHooks': '安装兼容 hooks',
-    'settings.removeLegacyHooks': '移除兼容 hooks',
+    'settings.plugin': 'Codex Plugin',
+    'settings.pluginReady': 'Plugin 设置',
+    'settings.installPlugin': '安装 Plugin',
+    'settings.uninstallPlugin': '卸载 Plugin',
+    'settings.pluginWorking': '处理中…',
+    'settings.pluginInstalled': 'Plugin 已安装',
+    'settings.pluginUninstalled': 'Plugin 已卸载',
+    'settings.pluginOperationFailed': 'Plugin 操作失败',
     'settings.resetPosition': '重置位置',
     'settings.simulateState': '模拟状态',
     'settings.startAtLogin': '登录时启动',
@@ -95,12 +97,6 @@ const dictionaries = {
     'settings.states.inputNeeded': '需要输入',
     'settings.states.completed': '已完成',
     'settings.states.compacting': '压缩中',
-    'settings.hooks.loading': '加载中',
-    'settings.hooks.installed': '已安装',
-    'settings.hooks.missing': '缺失',
-    'settings.hooks.invalid': '需要修复',
-    'settings.hooks.partiallyInstalled': '部分安装',
-    'settings.hooks.unavailable': '不可用',
     'errors.startAtLogin': '启动时设置失败',
     'errors.permission': '权限',
     'errors.launchAgent': 'LaunchAgent',
@@ -117,15 +113,6 @@ const stateKeys = {
   input_needed: 'settings.states.inputNeeded',
   completed: 'settings.states.completed',
   compacting: 'settings.states.compacting',
-};
-
-const hookKeys = {
-  loading: 'settings.hooks.loading',
-  installed: 'settings.hooks.installed',
-  missing: 'settings.hooks.missing',
-  invalid: 'settings.hooks.invalid',
-  partially_installed: 'settings.hooks.partiallyInstalled',
-  unavailable: 'settings.hooks.unavailable',
 };
 
 const curveKeys = {
@@ -156,10 +143,6 @@ export function getText(language, key) {
 
 export function getStateLabel(language, state) {
   return getText(language, stateKeys[state] ?? stateKeys.idle);
-}
-
-export function getHookLabel(language, status) {
-  return getText(language, hookKeys[status] ?? hookKeys.unavailable);
 }
 
 export function getCurveLabel(language, curveId) {

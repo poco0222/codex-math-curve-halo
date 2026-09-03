@@ -10,6 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn main() {
     run(
         std::env::args_os().skip(1),
+        hooks::runtime_state_dir().ok(),
         std::io::stdin().lock(),
         std::io::stdout().lock(),
         std::io::stderr().lock(),
@@ -18,11 +19,12 @@ fn main() {
 
 fn run(
     args: impl IntoIterator<Item = OsString>,
+    state_dir: Option<PathBuf>,
     mut stdin: impl Read,
     mut stdout: impl Write,
     mut stderr: impl Write,
 ) {
-    let Some(state_dir) = parse_state_dir(args) else {
+    let Some(state_dir) = parse_state_dir(args, state_dir) else {
         let _ = writeln!(stderr, "Codex Halo hook: invalid arguments");
         let _ = writeln!(stdout, "{{}}");
         return;
@@ -59,35 +61,15 @@ fn run(
     let _ = writeln!(stdout, "{{}}");
 }
 
-fn parse_state_dir(args: impl IntoIterator<Item = OsString>) -> Option<PathBuf> {
-    parse_state_dir_with_default(args, || hooks::runtime_state_dir().ok())
-}
-
-fn parse_state_dir_with_default(
+fn parse_state_dir(
     args: impl IntoIterator<Item = OsString>,
-    default_state_dir: impl FnOnce() -> Option<PathBuf>,
+    default_state_dir: Option<PathBuf>,
 ) -> Option<PathBuf> {
     let mut args = args.into_iter();
-    let mut state_dir = None;
-    let mut marker_seen = false;
-
-    while let Some(arg) = args.next() {
-        if arg == "--codex-halo" && !marker_seen {
-            marker_seen = true;
-            continue;
-        }
-        if arg == "--state-dir" && state_dir.is_none() {
-            let value = args.next()?;
-            if value.is_empty() || value.to_str().is_some_and(|value| value.starts_with('-')) {
-                return None;
-            }
-            state_dir = Some(PathBuf::from(value));
-            continue;
-        }
-        return None;
+    match (args.next(), args.next()) {
+        (Some(marker), None) if marker == "--codex-halo" => default_state_dir,
+        _ => None,
     }
-
-    state_dir.or_else(|| marker_seen.then(default_state_dir).flatten())
 }
 
 fn now_ms() -> i64 {
@@ -129,11 +111,8 @@ mod tests {
         let mut stderr = Vec::new();
 
         run(
-            [
-                "--codex-halo".into(),
-                "--state-dir".into(),
-                state_dir.clone().into_os_string(),
-            ],
+            ["--codex-halo".into()],
+            Some(state_dir.clone()),
             input.as_slice(),
             &mut stdout,
             &mut stderr,
@@ -165,7 +144,8 @@ mod tests {
             let mut stderr = Vec::new();
 
             run(
-                ["--state-dir".into(), state_dir.clone().into_os_string()],
+                ["--codex-halo".into()],
+                Some(state_dir.clone()),
                 input,
                 &mut stdout,
                 &mut stderr,
@@ -184,7 +164,8 @@ mod tests {
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
         run(
-            ["--state-dir".into(), state_dir.clone().into_os_string()],
+            ["--codex-halo".into()],
+            Some(state_dir.clone()),
             br#"{"session_id":"thr_test","hook_event_name":"Stop"}"#.as_slice(),
             &mut stdout,
             &mut stderr,
@@ -193,7 +174,8 @@ mod tests {
 
         stdout.clear();
         run(
-            ["--state-dir".into(), state_dir.clone().into_os_string()],
+            ["--codex-halo".into()],
+            Some(state_dir.clone()),
             br#"{"session_id":"thr_test","hook_event_name":"SessionEnd"}"#.as_slice(),
             &mut stdout,
             &mut stderr,
@@ -208,59 +190,16 @@ mod tests {
     #[test]
     fn rejects_ambiguous_or_unknown_command_line_arguments() {
         let cases = [
-            vec!["--state-dir".into(), "--codex-halo".into()],
-            vec!["--state-dir".into(), "".into()],
-            vec![
-                "--state-dir".into(),
-                "/tmp/state".into(),
-                "--state-dir".into(),
-                "/tmp/other".into(),
-            ],
-            vec![
-                "--state-dir".into(),
-                "/tmp/state".into(),
-                "--unknown".into(),
-            ],
-            vec!["--codex-halo".into()],
-            vec![
-                "--codex-halo".into(),
-                "--codex-halo".into(),
-                "--state-dir".into(),
-                "/tmp/state".into(),
-            ],
+            vec!["--state-dir".into()],
+            vec!["--codex-halo".into(), "--state-dir".into()],
+            vec!["--codex-halo".into(), "--unknown".into()],
+            vec!["--codex-halo".into(), "--codex-halo".into()],
             Vec::new(),
         ];
 
         for args in cases {
-            assert!(parse_state_dir_with_default(args, || None).is_none());
+            assert!(parse_state_dir(args, None).is_none());
         }
-    }
-
-    #[test]
-    fn marker_only_args_use_injected_runtime_state_dir() {
-        let expected = std::path::PathBuf::from("/tmp/codex-home/codex-halo/state");
-
-        assert_eq!(
-            parse_state_dir_with_default(vec!["--codex-halo".into()], || Some(expected.clone())),
-            Some(expected)
-        );
-    }
-
-    #[test]
-    fn explicit_state_dir_bypasses_injected_runtime_default() {
-        let expected = std::path::PathBuf::from("/tmp/explicit-state");
-
-        assert_eq!(
-            parse_state_dir_with_default(
-                vec![
-                    "--codex-halo".into(),
-                    "--state-dir".into(),
-                    expected.clone().into_os_string(),
-                ],
-                || None,
-            ),
-            Some(expected)
-        );
     }
 
     #[test]
@@ -271,6 +210,7 @@ mod tests {
 
         run(
             ["--state-dir".into(), "--codex-halo".into()],
+            None,
             br#"{"session_id":"private-id","prompt":"secret"}"#.as_slice(),
             &mut stdout,
             &mut stderr,

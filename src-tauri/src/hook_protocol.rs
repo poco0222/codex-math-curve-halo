@@ -128,10 +128,10 @@ pub fn remove_snapshot(state_dir: &Path, input: &HookInput) -> Result<(), HookEr
     remove_result.and(cleanup_session_temps(state_dir, input))
 }
 
-pub fn install_helper(source: &Path, app_data_dir: &Path) -> Result<PathBuf, HookError> {
-    prepare_private_dir(app_data_dir)?;
-    let destination = app_data_dir.join(HELPER_FILENAME);
-    let (temp_path, mut target) = private_temp_file(app_data_dir, HELPER_FILENAME)?;
+pub fn install_helper(source: &Path, runtime_root: &Path) -> Result<PathBuf, HookError> {
+    prepare_private_dir(runtime_root)?;
+    let destination = runtime_root.join(HELPER_FILENAME);
+    let (temp_path, mut target) = private_temp_file(runtime_root, HELPER_FILENAME)?;
     let result = (|| {
         let mut source = fs::File::open(source)?;
         io::copy(&mut source, &mut target)?;
@@ -147,9 +147,9 @@ pub fn install_helper(source: &Path, app_data_dir: &Path) -> Result<PathBuf, Hoo
     result
 }
 
-pub fn install_bundled_helper(app_data_dir: &Path) -> Result<PathBuf, HookError> {
+pub fn install_bundled_helper(runtime_root: &Path) -> Result<PathBuf, HookError> {
     let source = std::env::current_exe()?.with_file_name(HELPER_FILENAME);
-    install_helper(&source, app_data_dir)
+    install_helper(&source, runtime_root)
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -481,17 +481,17 @@ mod tests {
         let root = temp_path("helper");
         fs::create_dir_all(&root).unwrap();
         let source = root.join("bundled-helper");
-        let app_data_dir = root.join("app-data");
+        let runtime_root = root.join("runtime");
         fs::write(&source, b"helper-v1").unwrap();
 
-        let installed = install_helper(&source, &app_data_dir).unwrap();
+        let installed = install_helper(&source, &runtime_root).unwrap();
 
         #[cfg(windows)]
-        assert_eq!(installed, app_data_dir.join("codex-halo-hook.exe"));
+        assert_eq!(installed, runtime_root.join("codex-halo-hook.exe"));
         #[cfg(not(windows))]
-        assert_eq!(installed, app_data_dir.join("codex-halo-hook"));
+        assert_eq!(installed, runtime_root.join("codex-halo-hook"));
         assert_eq!(fs::read(&installed).unwrap(), b"helper-v1");
-        assert!(!app_data_dir.join(format!("{HELPER_FILENAME}.tmp")).exists());
+        assert!(!runtime_root.join(format!("{HELPER_FILENAME}.tmp")).exists());
 
         #[cfg(unix)]
         {
@@ -513,18 +513,18 @@ mod tests {
         let root = temp_path("helper-symlink");
         fs::create_dir_all(&root).unwrap();
         let source = root.join("bundled-helper");
-        let app_data_dir = root.join("app-data");
+        let runtime_root = root.join("runtime");
         let outside = root.join("outside");
         fs::write(&source, b"helper-v2").unwrap();
         fs::write(&outside, b"must-remain").unwrap();
-        fs::create_dir_all(&app_data_dir).unwrap();
+        fs::create_dir_all(&runtime_root).unwrap();
         symlink(
             &outside,
-            app_data_dir.join(format!("{HELPER_FILENAME}.tmp")),
+            runtime_root.join(format!("{HELPER_FILENAME}.tmp")),
         )
         .unwrap();
 
-        let installed = install_helper(&source, &app_data_dir).unwrap();
+        let installed = install_helper(&source, &runtime_root).unwrap();
 
         assert_eq!(fs::read(&outside).unwrap(), b"must-remain");
         assert_eq!(fs::read(&installed).unwrap(), b"helper-v2");

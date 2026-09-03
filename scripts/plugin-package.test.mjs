@@ -31,6 +31,16 @@ test('Codex Halo plugin declares the expected identity and default hook package'
   assert.match(windowsLauncher, /codex-halo-hook\.exe/);
 });
 
+test('Codex Halo marketplace has a unique install identity', async () => {
+  const marketplace = JSON.parse(
+    await readFile(new URL('../.agents/plugins/marketplace.json', import.meta.url), 'utf8'),
+  );
+
+  assert.equal(marketplace.name, 'codex-halo');
+  assert.equal(marketplace.plugins[0].name, 'codex-halo');
+  assert.equal(marketplace.plugins[0].source.path, './plugins/codex-halo');
+});
+
 test('default plugin hooks cover the eight synchronous Halo lifecycle events', async () => {
   const config = await readJson('hooks/hooks.json');
   const expected = {

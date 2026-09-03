@@ -27,19 +27,17 @@ For a macOS package build, generate the target-suffixed helper and bundle with:
 cargo tauri build --target aarch64-apple-darwin
 ```
 
-## Codex Plugin hooks
+## Codex Plugin
 
-The preferred setup is the `codex-halo` Plugin. Install and start the native
-app once, add the Plugin through a local or team marketplace, enable it,
-review/trust its hooks once in `/hooks`, and start a new Codex session. The
-native app installs the helper under `CODEX_HOME/codex-halo`; the Plugin owns
-the lifecycle hook definition while the Tauri app keeps the overlay, tray,
-settings, and reducer.
+Install and start the native app once. In the app Settings window or tray menu,
+click **Install Plugin**. The app registers its bundled local marketplace and
+installs/enables `codex-halo` through the Codex CLI. Review and trust its hooks
+once in `/hooks`, then start a new Codex session.
 
-The legacy **Install legacy hooks** control remains available for existing installs and
-migration. After enabling the Plugin, use **Remove legacy hooks** once when an older
-manual install is still present; it preserves unrelated entries in
-`~/.codex/hooks.json`.
+**Uninstall Plugin** removes only `codex-halo` and its marketplace registration.
+It does not remove the native app, its helper, or unrelated hooks. During Plugin
+installation, an existing Codex Halo legacy entry in `~/.codex/hooks.json` is
+removed once, with a backup; unrelated entries stay unchanged.
 
 The Plugin helper uses the shared `CODEX_HOME/codex-halo/state` directory. Codex
 may require the user to review and trust new or changed hooks. Installing a

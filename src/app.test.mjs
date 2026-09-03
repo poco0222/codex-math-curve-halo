@@ -132,17 +132,33 @@ test('settings page exposes a persisted language selector', async () => {
   assert.match(source, /document\.documentElement\.lang/);
 });
 
-test('settings page labels manual hook controls as legacy compatibility controls', async () => {
+test('settings page exposes plugin install controls and no legacy hook controls', async () => {
   const html = await readFile(new URL('./settings.html', import.meta.url), 'utf8');
   const i18n = await readFile(new URL('./i18n.js', import.meta.url), 'utf8');
+  const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
 
-  assert.match(html, /data-i18n="settings\.pluginManaged"/);
-  assert.match(html, /data-i18n="settings\.legacyHooks"/);
-  assert.match(html, /data-i18n="settings\.installLegacyHooks"/);
-  assert.match(html, /data-i18n="settings\.removeLegacyHooks"/);
-  assert.match(i18n, /'settings\.pluginManaged': 'Plugin hooks are managed by Codex'/);
-  assert.match(i18n, /'settings\.installLegacyHooks': 'Install legacy hooks'/);
-  assert.match(i18n, /'settings\.removeLegacyHooks': 'Remove legacy hooks'/);
+  assert.match(html, /id="install-plugin"/);
+  assert.match(html, /id="uninstall-plugin"/);
+  assert.doesNotMatch(html, /install-hooks|remove-hooks|legacyHooks/);
+  assert.match(i18n, /'settings\.installPlugin'/);
+  assert.match(i18n, /'settings\.uninstallPlugin'/);
+  assert.doesNotMatch(i18n, /settings\.installLegacyHooks|settings\.removeLegacyHooks/);
+  assert.doesNotMatch(source, /get_hook_status|install_hooks|remove_hooks/);
+});
+
+test('native app exposes plugin install actions and bundles its marketplace', async () => {
+  const mainSource = await readFile(new URL('../src-tauri/src/main.rs', import.meta.url), 'utf8');
+  const config = await readFile(new URL('../src-tauri/tauri.conf.json', import.meta.url), 'utf8');
+
+  assert.match(mainSource, /fn install_plugin/);
+  assert.match(mainSource, /fn uninstall_plugin/);
+  assert.match(mainSource, /plugin-operation/);
+  assert.match(mainSource, /install_plugin/);
+  assert.match(mainSource, /uninstall_plugin/);
+  assert.doesNotMatch(mainSource, /fn install_hooks|fn remove_hooks|fn get_hook_status/);
+  assert.doesNotMatch(mainSource, /helper_install_paths|legacy_state_dir/);
+  assert.match(config, /codex-halo-marketplace/);
+  assert.match(config, /plugins\/codex-halo/);
 });
 
 test('settings language flow saves once and redraws raw setup errors', async () => {
@@ -152,6 +168,7 @@ test('settings language flow saves once and redraws raw setup errors', async () 
       this.type = type;
       this.value = value;
       this.checked = checked;
+      this.disabled = false;
       this.dataset = dataset;
       this.children = children;
       this.textContent = '';
@@ -175,7 +192,6 @@ test('settings language flow saves once and redraws raw setup errors', async () 
 
     querySelector(selector) {
       return this.children.find((child) => {
-        if (selector === '[data-hook-status-label]') return child.dataset.hookStatusLabel !== undefined;
         const match = selector.match(/^\[data-i18n="(.+)"\]$/);
         return match && child.dataset.i18n === match[1];
       }) ?? null;
@@ -197,34 +213,34 @@ test('settings language flow saves once and redraws raw setup errors', async () 
     new FakeElement({ id: 'start-at-login', type: 'checkbox', checked: false }),
     new FakeElement({ id: 'language', type: 'select', value: 'en', dataset: { i18nAriaLabel: 'settings.language' } }),
   ];
-  const hookLabel = new FakeElement({ dataset: { hookStatusLabel: '' } });
-  const hookStatus = new FakeElement({ children: [
-    new FakeElement({ dataset: { i18n: 'settings.legacyHooks' } }),
-    hookLabel,
-  ] });
+  const pluginStatus = new FakeElement({ dataset: { i18n: 'settings.pluginReady' } });
   const diagnostics = new FakeElement({ dataset: { i18n: 'settings.diagnosticsLoading' } });
   const formula = new FakeElement({ dataset: { i18nAriaLabel: 'settings.activeFormula' } });
   const elements = new Map([
-    ['hook-status', hookStatus],
+    ['plugin-status', pluginStatus],
+    ['install-plugin', new FakeElement()],
+    ['uninstall-plugin', new FakeElement()],
     ['diagnostics', diagnostics],
     ['formula', formula],
     ['export-diagnostics', new FakeElement()],
-    ['install-hooks', new FakeElement()],
-    ['remove-hooks', new FakeElement()],
     ['reset-position', new FakeElement()],
     ...fields.map((field) => [field.id, field]),
   ]);
   const translated = [
-    ...hookStatus.children,
+    pluginStatus,
     diagnostics,
   ];
   const listeners = new Map();
   const saveCalls = [];
+  const pluginCalls = [];
   const warnings = [];
   const invoke = async (command, args) => {
     if (command === 'get_settings') return { ...DEFAULT_APP_SETTINGS };
-    if (command === 'get_hook_status') return 'missing';
     if (command === 'get_display_state') return { state: 'idle', updated_at_ms: 0 };
+    if (command === 'install_plugin' || command === 'uninstall_plugin') {
+      pluginCalls.push(command);
+      return null;
+    }
     if (command === 'save_settings') {
       saveCalls.push(args);
       throw 'start-at-login:permission';
@@ -279,6 +295,20 @@ test('settings language flow saves once and redraws raw setup errors', async () 
     assert.equal(saveCalls.length, 1);
     assert.match(diagnostics.textContent, /设置错误: 启动时设置失败（权限）/);
     assert.deepEqual(warnings, [['Codex Halo: start-at-login setup failed (permission)']]);
+
+    await listeners.get('plugin-operation')({ payload: 'installed' });
+    assert.equal(pluginStatus.textContent, 'Plugin 已安装');
+
+    elements.get('install-plugin').dispatch('click');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(pluginStatus.textContent, 'Plugin 已安装');
+
+    elements.get('uninstall-plugin').dispatch('click');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(pluginStatus.textContent, 'Plugin 已卸载');
+    assert.deepEqual(pluginCalls, ['install_plugin', 'uninstall_plugin']);
+    assert.equal(elements.get('install-plugin').disabled, false);
+    assert.equal(elements.get('uninstall-plugin').disabled, false);
   } finally {
     console.warn = originalWarn;
     delete globalThis.document;
@@ -379,11 +409,11 @@ test('settings exposes a content-free local diagnostic download', async () => {
 });
 
 test('owned hook lifecycle commands are synchronous and compact source is handled', async () => {
-  const hooks = await readFile(new URL('../src-tauri/src/hooks.rs', import.meta.url), 'utf8');
+  const hooks = await readFile(new URL('../plugins/codex-halo/hooks/hooks.json', import.meta.url), 'utf8');
   const protocol = await readFile(new URL('../src-tauri/src/hook_protocol.rs', import.meta.url), 'utf8');
 
-  assert.doesNotMatch(hooks, /asynchronous: true/);
-  assert.match(hooks, /asynchronous: false/);
+  assert.doesNotMatch(hooks, /"async"\s*:\s*true/);
+  assert.match(hooks, /SessionStart/);
   assert.match(protocol, /source: Option<String>/);
   assert.match(protocol, /source\.as_deref\(\) == Some\("compact"\)/);
 });

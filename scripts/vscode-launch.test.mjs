@@ -19,6 +19,6 @@ test('VS Code exposes run and package launch configurations', async () => {
   assert.equal(configurations[1].command, 'cargo tauri build');
   assert.equal(configurations[2].type, 'node-terminal');
   assert.match(configurations[2].command, /codex plugin marketplace add/);
-  assert.match(configurations[2].command, /codex plugin add codex-halo@personal/);
+  assert.match(configurations[2].command, /codex plugin add codex-halo@codex-halo/);
   assert.ok(configurations.every(({ cwd }) => cwd === '${workspaceFolder}'));
 });

@@ -24,11 +24,14 @@
         </select>
       </label>
 
-      <p id="hook-status" class="status-line" role="status">
-        <span data-i18n="settings.legacyHooks">Legacy hooks</span>:
-        <span data-hook-status-label data-i18n="settings.hooks.loading">loading</span>
-      </p>
-      <p class="status-line" data-i18n="settings.pluginManaged">Plugin hooks are managed by Codex</p>
+      <fieldset>
+        <legend data-i18n="settings.plugin">Codex Plugin</legend>
+        <p id="plugin-status" class="status-line" role="status" data-i18n="settings.pluginReady">Plugin setup</p>
+        <div class="button-row">
+          <button id="install-plugin" type="button" data-i18n="settings.installPlugin">Install Plugin</button>
+          <button id="uninstall-plugin" type="button" data-i18n="settings.uninstallPlugin">Uninstall Plugin</button>
+        </div>
+      </fieldset>
       <p id="diagnostics" class="diagnostics" aria-live="polite" data-i18n="settings.diagnosticsLoading">State: Idle | Last event: never</p>
       <button id="export-diagnostics" type="button" data-i18n="settings.exportDiagnostics">Export diagnostics</button>
 
@@ -71,14 +74,6 @@
             <input id="stroke-width" name="stroke_width" type="number" min="2.5" max="7.5" step="0.1" value="4" />
           </div>
           <output id="formula" class="formula" aria-label="Active formula" data-i18n-aria-label="settings.activeFormula"></output>
-        </fieldset>
-
-        <fieldset>
-          <legend data-i18n="settings.legacyHooks">Legacy hooks</legend>
-          <div class="button-row">
-            <button id="install-hooks" type="button" data-i18n="settings.installLegacyHooks">Install legacy hooks</button>
-            <button id="remove-hooks" type="button" data-i18n="settings.removeLegacyHooks">Remove legacy hooks</button>
-          </div>
         </fieldset>
 
         <button id="reset-position" type="button" data-i18n="settings.resetPosition">Reset position</button>
