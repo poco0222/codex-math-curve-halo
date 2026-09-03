@@ -30,6 +30,7 @@ struct ProcessPresence {
 pub struct LifecycleConfig {
     pub enabled: bool,
     pub halo_path: PathBuf,
+    pub managed_pid: Option<u32>,
 }
 
 impl Default for LifecycleConfig {
@@ -37,6 +38,7 @@ impl Default for LifecycleConfig {
         Self {
             enabled: false,
             halo_path: PathBuf::new(),
+            managed_pid: None,
         }
     }
 }
@@ -168,8 +170,15 @@ pub fn sync_app<R: Runtime>(_app: &AppHandle<R>, enabled: bool) -> Result<(), St
         fs::canonicalize(std::env::current_exe().map_err(|_| "codex-lifecycle:config".to_owned())?)
             .map_err(|_| "codex-lifecycle:config".to_owned())?;
 
-    write_config(&config_path, &LifecycleConfig { enabled, halo_path })
-        .map_err(|error| error.to_string())?;
+    write_config(
+        &config_path,
+        &LifecycleConfig {
+            enabled,
+            halo_path,
+            managed_pid: enabled.then_some(std::process::id()),
+        },
+    )
+    .map_err(|error| error.to_string())?;
     platform::set_codex_lifecycle_at_login(&watcher_path, &config_path, enabled)
         .map_err(|error| error.to_string())?;
 
@@ -213,6 +222,24 @@ pub fn parse_config_path(args: impl IntoIterator<Item = std::ffi::OsString>) -> 
     Some(PathBuf::from(path))
 }
 
+pub fn parse_lifecycle_stop_pid(args: impl IntoIterator<Item = String>) -> Option<u32> {
+    let args = args.into_iter().collect::<Vec<_>>();
+    let pid = match args.as_slice() {
+        [marker, pid] if marker == "--lifecycle-stop" => pid,
+        [_, marker, pid] if marker == "--lifecycle-stop" => pid,
+        _ => return None,
+    };
+    pid.parse().ok().filter(|pid| *pid != 0)
+}
+
+pub fn has_lifecycle_stop_marker(args: impl IntoIterator<Item = String>) -> bool {
+    args.into_iter().any(|arg| arg == "--lifecycle-stop")
+}
+
+pub fn lifecycle_stop_targets(args: impl IntoIterator<Item = String>, current_pid: u32) -> bool {
+    parse_lifecycle_stop_pid(args) == Some(current_pid)
+}
+
 pub fn process_name_matches(value: &str, names: &[&str]) -> bool {
     let value = normalize_process_name(value);
     value.is_some_and(|value| {
@@ -239,27 +266,33 @@ pub fn should_spawn_halo(codex_active: bool, halo_exists: bool, owned_child_exis
 
 pub fn run(config_path: PathBuf) -> Result<(), LifecycleError> {
     let mut owned_child = None;
-    run_with(
+    let mut adopted_pid = None;
+    let mut adopted_halo_path = None;
+    run_with_adopted(
         &config_path,
         &mut owned_child,
+        &mut adopted_pid,
+        &mut adopted_halo_path,
         read_config,
         process_listing,
         || thread::sleep(POLL_INTERVAL),
         |_| false,
         spawn_halo,
+        stop_adopted_halo_process,
         report,
     )
 }
 
+#[cfg(test)]
 fn run_with<C, RC, PL, SL, ST, SP, RP>(
     config_path: &Path,
     owned_child: &mut Option<C>,
-    mut read_config: RC,
-    mut process_listing: PL,
-    mut sleep: SL,
-    mut should_stop: ST,
-    mut spawn: SP,
-    mut report_error: RP,
+    read_config: RC,
+    process_listing: PL,
+    sleep: SL,
+    should_stop: ST,
+    spawn: SP,
+    report_error: RP,
 ) -> Result<(), LifecycleError>
 where
     C: ManagedChild,
@@ -270,16 +303,65 @@ where
     SP: FnMut(&Path) -> Result<C, LifecycleError>,
     RP: FnMut(&LifecycleError),
 {
+    let mut adopted_pid = None;
+    let mut adopted_halo_path = None;
+    run_with_adopted(
+        config_path,
+        owned_child,
+        &mut adopted_pid,
+        &mut adopted_halo_path,
+        read_config,
+        process_listing,
+        sleep,
+        should_stop,
+        spawn,
+        stop_adopted_halo_process,
+        report_error,
+    )
+}
+
+fn run_with_adopted<C, RC, PL, SL, ST, SP, SA, RP>(
+    config_path: &Path,
+    owned_child: &mut Option<C>,
+    adopted_pid: &mut Option<u32>,
+    adopted_halo_path: &mut Option<PathBuf>,
+    mut read_config: RC,
+    mut process_listing: PL,
+    mut sleep: SL,
+    mut should_stop: ST,
+    mut spawn: SP,
+    mut stop_adopted: SA,
+    mut report_error: RP,
+) -> Result<(), LifecycleError>
+where
+    C: ManagedChild,
+    RC: FnMut(&Path) -> Result<LifecycleConfig, LifecycleError>,
+    PL: FnMut() -> Result<ProcessPresence, LifecycleError>,
+    SL: FnMut(),
+    ST: FnMut(usize) -> bool,
+    SP: FnMut(&Path) -> Result<C, LifecycleError>,
+    SA: FnMut(&Path, u32) -> Result<(), LifecycleError>,
+    RP: FnMut(&LifecycleError),
+{
     let result = run_loop(
         config_path,
         owned_child,
+        adopted_pid,
+        adopted_halo_path,
         &mut read_config,
         &mut process_listing,
         &mut sleep,
         &mut should_stop,
         &mut spawn,
+        &mut stop_adopted,
     );
-    let result = finish_run(result, owned_child);
+    let result = finish_run_adopted(
+        result,
+        owned_child,
+        adopted_pid,
+        adopted_halo_path,
+        &mut stop_adopted,
+    );
     if let Err(error) = &result {
         report_error(error);
     }
@@ -289,11 +371,14 @@ where
 fn run_loop<C, RC, PL, SL, ST, SP>(
     config_path: &Path,
     owned_child: &mut Option<C>,
+    adopted_pid: &mut Option<u32>,
+    adopted_halo_path: &mut Option<PathBuf>,
     read_config: &mut RC,
     process_listing: &mut PL,
     sleep: &mut SL,
     should_stop: &mut ST,
     spawn: &mut SP,
+    stop_adopted: &mut impl FnMut(&Path, u32) -> Result<(), LifecycleError>,
 ) -> Result<(), LifecycleError>
 where
     C: ManagedChild,
@@ -309,7 +394,7 @@ where
         let config = match read_config(config_path) {
             Ok(config) => config,
             Err(LifecycleError::ConfigMissing) => {
-                stop_owned_child(owned_child)?;
+                stop_managed_halo(owned_child, adopted_pid, adopted_halo_path, stop_adopted)?;
                 return Ok(());
             }
             Err(error) => {
@@ -320,18 +405,31 @@ where
         if !config.enabled {
             watch_iteration(
                 false,
+                &config,
                 ProcessPresence {
                     codex_active: false,
                     halo_exists: false,
                 },
                 owned_child,
+                adopted_pid,
+                adopted_halo_path,
                 || spawn(&config.halo_path),
+                &mut *stop_adopted,
             )?;
             return Ok(());
         }
 
         let processes = process_listing()?;
-        watch_iteration(true, processes, owned_child, || spawn(&config.halo_path))?;
+        watch_iteration(
+            true,
+            &config,
+            processes,
+            owned_child,
+            adopted_pid,
+            adopted_halo_path,
+            || spawn(&config.halo_path),
+            &mut *stop_adopted,
+        )?;
 
         iteration += 1;
         sleep();
@@ -341,6 +439,7 @@ where
     }
 }
 
+#[cfg(test)]
 fn finish_run<C: ManagedChild>(
     result: Result<(), LifecycleError>,
     owned_child: &mut Option<C>,
@@ -350,6 +449,30 @@ fn finish_run<C: ManagedChild>(
     };
 
     match stop_owned_child(owned_child) {
+        Ok(()) => Err(primary),
+        Err(cleanup) => Err(LifecycleError::Cleanup {
+            primary: Box::new(primary),
+            cleanup: Box::new(cleanup),
+        }),
+    }
+}
+
+fn finish_run_adopted<C, S>(
+    result: Result<(), LifecycleError>,
+    owned_child: &mut Option<C>,
+    adopted_pid: &mut Option<u32>,
+    adopted_halo_path: &mut Option<PathBuf>,
+    stop_adopted: &mut S,
+) -> Result<(), LifecycleError>
+where
+    C: ManagedChild,
+    S: FnMut(&Path, u32) -> Result<(), LifecycleError>,
+{
+    let Err(primary) = result else {
+        return Ok(());
+    };
+
+    match stop_managed_halo(owned_child, adopted_pid, adopted_halo_path, stop_adopted) {
         Ok(()) => Err(primary),
         Err(cleanup) => Err(LifecycleError::Cleanup {
             primary: Box::new(primary),
@@ -402,6 +525,43 @@ fn stop_owned_child<C: ManagedChild>(child: &mut Option<C>) -> Result<(), Lifecy
     Ok(())
 }
 
+fn stop_adopted_halo<S>(
+    adopted_pid: &mut Option<u32>,
+    adopted_halo_path: &mut Option<PathBuf>,
+    stop: &mut S,
+) -> Result<(), LifecycleError>
+where
+    S: FnMut(&Path, u32) -> Result<(), LifecycleError>,
+{
+    let Some(pid) = *adopted_pid else {
+        *adopted_halo_path = None;
+        return Ok(());
+    };
+    let Some(path) = adopted_halo_path.clone() else {
+        *adopted_pid = None;
+        return Ok(());
+    };
+
+    stop(&path, pid)?;
+    *adopted_pid = None;
+    *adopted_halo_path = None;
+    Ok(())
+}
+
+fn stop_managed_halo<C, S>(
+    owned_child: &mut Option<C>,
+    adopted_pid: &mut Option<u32>,
+    adopted_halo_path: &mut Option<PathBuf>,
+    stop_adopted: &mut S,
+) -> Result<(), LifecycleError>
+where
+    C: ManagedChild,
+    S: FnMut(&Path, u32) -> Result<(), LifecycleError>,
+{
+    stop_owned_child(owned_child)?;
+    stop_adopted_halo(adopted_pid, adopted_halo_path, stop_adopted)
+}
+
 fn reap_owned_child<C: ManagedChild>(child: &mut Option<C>) -> Result<(), LifecycleError> {
     let Some(child_process) = child.as_mut() else {
         return Ok(());
@@ -414,17 +574,25 @@ fn reap_owned_child<C: ManagedChild>(child: &mut Option<C>) -> Result<(), Lifecy
 
 fn watch_iteration<C, F>(
     enabled: bool,
+    config: &LifecycleConfig,
     processes: ProcessPresence,
     owned_child: &mut Option<C>,
+    adopted_pid: &mut Option<u32>,
+    adopted_halo_path: &mut Option<PathBuf>,
     mut spawn: F,
+    mut stop_adopted: impl FnMut(&Path, u32) -> Result<(), LifecycleError>,
 ) -> Result<(), LifecycleError>
 where
     C: ManagedChild,
     F: FnMut() -> Result<C, LifecycleError>,
 {
     if !enabled {
-        stop_owned_child(owned_child)?;
-        return Ok(());
+        return stop_managed_halo(
+            owned_child,
+            adopted_pid,
+            adopted_halo_path,
+            &mut stop_adopted,
+        );
     }
 
     reap_owned_child(owned_child)?;
@@ -432,8 +600,28 @@ where
     let halo_exists = processes.halo_exists;
 
     if !codex_active {
-        stop_owned_child(owned_child)?;
-    } else if should_spawn_halo(codex_active, halo_exists, owned_child.is_some()) {
+        return stop_managed_halo(
+            owned_child,
+            adopted_pid,
+            adopted_halo_path,
+            &mut stop_adopted,
+        );
+    }
+
+    if owned_child.is_some() {
+        return Ok(());
+    }
+
+    if halo_exists {
+        if adopted_pid.is_none() {
+            if let Some(pid) = config.managed_pid {
+                *adopted_pid = Some(pid);
+                *adopted_halo_path = Some(config.halo_path.clone());
+            }
+        }
+    } else {
+        *adopted_pid = None;
+        *adopted_halo_path = None;
         match spawn() {
             Ok(child) => *owned_child = Some(child),
             Err(error) => report(&error),
@@ -449,6 +637,25 @@ fn spawn_halo(path: &Path) -> Result<Child, LifecycleError> {
         .stderr(Stdio::null())
         .spawn()
         .map_err(LifecycleError::Spawn)
+}
+
+fn stop_adopted_halo_process(halo_path: &Path, pid: u32) -> Result<(), LifecycleError> {
+    let status = Command::new(halo_path)
+        .arg("--lifecycle-stop")
+        .arg(pid.to_string())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_err(LifecycleError::Spawn)?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(LifecycleError::Child(io::Error::new(
+            io::ErrorKind::Other,
+            "targeted Halo stop failed",
+        )))
+    }
 }
 
 fn normalize_process_name(value: &str) -> Option<String> {
@@ -524,6 +731,53 @@ mod tests {
     fn missing_enabled_field_defaults_to_disabled() {
         let config = parse_config(br#"{"halo_path":"/tmp/codex-halo"}"#).unwrap();
         assert!(!config.enabled);
+    }
+
+    #[test]
+    fn missing_managed_pid_defaults_to_none_and_is_persisted() {
+        let config = parse_config(br#"{"halo_path":"/tmp/codex-halo"}"#).unwrap();
+        let serialized = serde_json::to_value(config).unwrap();
+
+        assert_eq!(
+            serialized.get("managed_pid"),
+            Some(&serde_json::Value::Null)
+        );
+        assert_eq!(
+            parse_config(br#"{"halo_path":"/tmp/codex-halo","managed_pid":42}"#)
+                .unwrap()
+                .managed_pid,
+            Some(42)
+        );
+    }
+
+    #[test]
+    fn lifecycle_stop_arguments_are_strict_and_targeted() {
+        assert_eq!(
+            parse_lifecycle_stop_pid(["--lifecycle-stop", "42"].map(str::to_owned)),
+            Some(42)
+        );
+        assert_eq!(
+            parse_lifecycle_stop_pid(
+                ["/tmp/codex-halo", "--lifecycle-stop", "42"].map(str::to_owned)
+            ),
+            Some(42)
+        );
+        assert_eq!(
+            parse_lifecycle_stop_pid(["--lifecycle-stop", "42", "unexpected"].map(str::to_owned)),
+            None
+        );
+        assert_eq!(
+            parse_lifecycle_stop_pid(["--lifecycle-stop", "0"].map(str::to_owned)),
+            None
+        );
+        assert!(lifecycle_stop_targets(
+            ["--lifecycle-stop", "42"].map(str::to_owned),
+            42
+        ));
+        assert!(!lifecycle_stop_targets(
+            ["--lifecycle-stop", "42"].map(str::to_owned),
+            43
+        ));
     }
 
     #[test]
@@ -667,6 +921,7 @@ mod tests {
         let config = LifecycleConfig {
             enabled: true,
             halo_path: PathBuf::from("test-halo"),
+            managed_pid: None,
         };
         let frames = [
             ("codex\n", false),
@@ -676,6 +931,8 @@ mod tests {
             ("codex-halo\ncodex-halo-watch\n", false),
         ];
         let mut child: Option<FakeChild> = None;
+        let mut adopted_pid = None;
+        let mut adopted_halo_path = None;
         let mut spawn_count = 0;
 
         for (listing, exited_before) in frames {
@@ -687,16 +944,25 @@ mod tests {
                 codex_active: codex_processes_present_from_listing(listing),
                 halo_exists: process_present_from_listing(listing, &HALO_PROCESS_NAMES),
             };
-            watch_iteration(config.enabled, processes, &mut child, || {
-                spawn_count += 1;
-                event_log.borrow_mut().push("spawn");
-                Ok(FakeChild {
-                    exited: false,
-                    shared_exited: None,
-                    fail_stop: false,
-                    events: event_log.clone(),
-                })
-            })
+            watch_iteration(
+                config.enabled,
+                &config,
+                processes,
+                &mut child,
+                &mut adopted_pid,
+                &mut adopted_halo_path,
+                || {
+                    spawn_count += 1;
+                    event_log.borrow_mut().push("spawn");
+                    Ok(FakeChild {
+                        exited: false,
+                        shared_exited: None,
+                        fail_stop: false,
+                        events: event_log.clone(),
+                    })
+                },
+                |_, _| Ok(()),
+            )
             .unwrap();
         }
 
@@ -706,6 +972,119 @@ mod tests {
             events.borrow().as_slice(),
             ["spawn", "try_wait", "try_wait", "spawn", "try_wait", "try_wait", "stop"]
         );
+    }
+
+    #[test]
+    fn watcher_adopts_managed_halo_and_targets_it_when_codex_exits() {
+        let config = LifecycleConfig {
+            enabled: true,
+            halo_path: PathBuf::from("/tmp/codex-halo"),
+            managed_pid: Some(42),
+        };
+        let mut owned_child: Option<FakeChild> = None;
+        let mut adopted_pid = None;
+        let mut adopted_halo_path = None;
+        let stop_calls = Rc::new(RefCell::new(Vec::new()));
+
+        watch_iteration(
+            true,
+            &config,
+            ProcessPresence {
+                codex_active: true,
+                halo_exists: true,
+            },
+            &mut owned_child,
+            &mut adopted_pid,
+            &mut adopted_halo_path,
+            || -> Result<FakeChild, LifecycleError> { panic!("must adopt existing Halo") },
+            |path, pid| {
+                stop_calls.borrow_mut().push((path.to_owned(), pid));
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert_eq!(adopted_pid, Some(42));
+        assert_eq!(adopted_halo_path, Some(PathBuf::from("/tmp/codex-halo")));
+
+        watch_iteration(
+            true,
+            &config,
+            ProcessPresence {
+                codex_active: false,
+                halo_exists: true,
+            },
+            &mut owned_child,
+            &mut adopted_pid,
+            &mut adopted_halo_path,
+            || -> Result<FakeChild, LifecycleError> { panic!("must stop adopted Halo") },
+            |path, pid| {
+                stop_calls.borrow_mut().push((path.to_owned(), pid));
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert_eq!(adopted_pid, None);
+        assert_eq!(adopted_halo_path, None);
+        assert_eq!(
+            stop_calls.borrow().as_slice(),
+            &[(PathBuf::from("/tmp/codex-halo"), 42)]
+        );
+    }
+
+    #[test]
+    fn loop_runner_stops_adopted_halo_at_the_codex_active_edge() {
+        let config = LifecycleConfig {
+            enabled: true,
+            halo_path: PathBuf::from("/tmp/codex-halo"),
+            managed_pid: Some(42),
+        };
+        let mut owned_child: Option<FakeChild> = None;
+        let mut adopted_pid = None;
+        let mut adopted_halo_path = None;
+        let listing_reads = Cell::new(0);
+        let stop_calls = Rc::new(RefCell::new(Vec::new()));
+        let stop_log = stop_calls.clone();
+
+        let result = run_with_adopted(
+            Path::new("lifecycle.json"),
+            &mut owned_child,
+            &mut adopted_pid,
+            &mut adopted_halo_path,
+            |_| Ok(config.clone()),
+            || {
+                let read = listing_reads.get();
+                listing_reads.set(read + 1);
+                Ok(if read == 0 {
+                    ProcessPresence {
+                        codex_active: true,
+                        halo_exists: true,
+                    }
+                } else {
+                    ProcessPresence {
+                        codex_active: false,
+                        halo_exists: true,
+                    }
+                })
+            },
+            || {},
+            |iteration| iteration == 2,
+            |_| panic!("must adopt existing Halo"),
+            move |path, pid| {
+                stop_log.borrow_mut().push((path.to_owned(), pid));
+                Ok(())
+            },
+            |_| {},
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(
+            stop_calls.borrow().as_slice(),
+            &[(PathBuf::from("/tmp/codex-halo"), 42)]
+        );
+        assert_eq!(adopted_pid, None);
+        assert_eq!(adopted_halo_path, None);
     }
 
     #[test]
@@ -719,6 +1098,7 @@ mod tests {
         let config = LifecycleConfig {
             enabled: true,
             halo_path: PathBuf::from("test-halo"),
+            managed_pid: None,
         };
         let mut child: Option<FakeChild> = None;
 
@@ -800,6 +1180,7 @@ mod tests {
                 Ok(LifecycleConfig {
                     enabled: true,
                     halo_path: PathBuf::from("test-halo"),
+                    managed_pid: None,
                 })
             },
             || {

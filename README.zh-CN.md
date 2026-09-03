@@ -25,10 +25,10 @@ JSON 格式保存在 Tauri 应用配置目录中。
 启用 **随 Codex 启停** 后，由原生 App 管理内置的 `codex-halo-watch` watcher，
 并支持 Codex CLI 和桌面 App 进程：
 
-- CLI：只要至少还有一个 Codex CLI 进程，Halo 就保持；最后一个 CLI 进程退出后，
-  自动启动的 Halo 退出。
-- 桌面 App：按 App 进程的生命周期处理，不按单个内部 session 处理；桌面 App
-  进程退出后，自动 Halo 退出。
+- 所有支持的 Codex CLI 和桌面 App 进程共用一个 combined active set。只要还有任意
+  一个支持的 Codex 进程，Halo 就保持；包括 CLI 与桌面 App 混合运行时，也要等所有
+  支持的 Codex 进程都退出后，自动管理的 Halo 才退出。
+- 桌面 App 内部 session 不改变这条进程级规则；只有桌面 App 进程影响 active set。
 - watcher 只会关闭它自己启动的 Halo。手动启动的 Halo 不会被关闭。
 
 `start_at_login` 保持独立含义：它只控制原生 App 是否在登录时启动，不控制随

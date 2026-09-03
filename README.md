@@ -26,10 +26,12 @@ directory.
 Enable **Follow Codex lifecycle** to let the native app manage the bundled
 `codex-halo-watch` watcher for Codex CLI and desktop app processes:
 
-- For the CLI, Halo remains active while at least one Codex CLI process exists;
-  after the last CLI process exits, the automatically started Halo exits.
-- For the desktop app, Halo follows the app process lifetime, not individual
-  internal sessions; it exits when the desktop app process exits.
+- The watcher uses one combined active set for all supported Codex CLI and
+  desktop app processes. Halo stays active while any supported Codex process
+  exists and the automatically managed Halo exits only after all supported
+  Codex processes exit, including mixed CLI and desktop runs.
+- Desktop app sessions do not change this process-level rule; only the desktop
+  app process affects the active set.
 - The watcher closes only Halo instances it started. A manually started Halo
   remains running.
 

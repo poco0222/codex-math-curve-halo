@@ -543,6 +543,16 @@ fn show_settings_or_report(app: &AppHandle) {
     }
 }
 
+fn handle_single_instance(app: &AppHandle, args: Vec<String>) {
+    if lifecycle::has_lifecycle_stop_marker(args.iter().cloned()) {
+        if lifecycle::lifecycle_stop_targets(args, std::process::id()) {
+            app.exit(0);
+        }
+        return;
+    }
+    show_settings_or_report(app);
+}
+
 fn install_plugin_inner(app: &AppHandle) -> Result<(), String> {
     let marketplace_root = plugin_marketplace_root(app)?;
     plugin::install(&marketplace_root).map_err(|error| error.to_string())
@@ -1013,11 +1023,19 @@ fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
     Ok(())
 }
 
+fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    if lifecycle::has_lifecycle_stop_marker(std::env::args().skip(1)) {
+        app.handle().exit(0);
+        return Ok(());
+    }
+    build_windows(app)
+}
+
 fn main() {
     let builder = tauri::Builder::default()
         .manage(ReducerRuntimeState::default())
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            show_settings_or_report(app);
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            handle_single_instance(app, args);
         }));
     #[cfg(target_os = "macos")]
     let builder = builder.plugin(tauri_plugin_autostart::init(
@@ -1036,7 +1054,7 @@ fn main() {
             reset_position,
             set_overlay_visible
         ])
-        .setup(build_windows);
+        .setup(setup_app);
 
     builder
         .run(tauri::generate_context!())

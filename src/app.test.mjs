@@ -486,17 +486,53 @@ test('README has English and Simplified Chinese variants', async () => {
   assert.match(english, /English|language/i);
 });
 
-test('README documents Codex lifecycle ownership without assigning it to Plugin hooks', async () => {
+test('lifecycle handoff and single-instance stop use a managed PID', async () => {
+  const lifecycle = await readFile(new URL('../src-tauri/src/lifecycle.rs', import.meta.url), 'utf8');
+  const main = await readFile(new URL('../src-tauri/src/main.rs', import.meta.url), 'utf8');
+
+  assert.match(lifecycle, /managed_pid/);
+  assert.match(lifecycle, /managed_pid:\s*enabled\.then_some\(std::process::id\(\)\)/);
+  assert.match(lifecycle, /adopted_pid/);
+  assert.match(lifecycle, /--lifecycle-stop/);
+  assert.match(lifecycle, /Command::new\([^)]*halo_path/);
+  assert.match(main, /lifecycle_stop_targets/);
+  assert.match(main, /app\.exit\(0\)/);
+  assert.match(main, /show_settings_or_report\(app\)/);
+  assert.match(main, /setup_app[\s\S]*has_lifecycle_stop_marker/);
+});
+
+test('README documents combined Codex lifecycle ownership without assigning it to Plugin hooks', async () => {
   const documents = await Promise.all([
     readFile(new URL('../README.md', import.meta.url), 'utf8'),
     readFile(new URL('../README.zh-CN.md', import.meta.url), 'utf8'),
     readFile(new URL('../plugins/codex-halo/README.md', import.meta.url), 'utf8'),
   ]);
   const [english, chinese, plugin] = documents;
-  const pluginHookControlsApp = /(?:Plugin hooks?|hooks?)[^.!?。！？\n]*(?:start|stop|launch|quit|启动|关闭|退出)[^.!?。！？\n]*(?:App|app|应用)/i;
+  const pluginOwnsAppLifecycle = [
+    /(?:Plugin hooks?|hooks?)[^.!?;:\n]*(?:start|stop|launch|quit|manage|control)[^.!?;:\n]*(?:App|application|Halo)/i,
+    /(?:App|application|Halo)[^.!?;:\n]*(?:start|stop|launch|quit)[^.!?;:\n]*(?:Plugin|hooks?)/i,
+    /(?:插件|hooks?)[^。！？；\n]*(?:启动|关闭|退出|控制)[^。！？；\n]*(?:应用|App|Halo)/i,
+    /(?:应用|App|Halo)[^。！？；\n]*(?:启动|关闭|退出|控制)[^。！？；\n]*(?:插件|hooks?)/i,
+  ];
 
   assert.match(english, /Follow Codex lifecycle/);
+  assert.match(english, /native app manage[\s\S]*codex-halo-watch/i);
+  assert.match(english, /all supported\s+Codex\s+processes exit/i);
   assert.match(chinese, /随 Codex 启停/);
+  assert.match(chinese, /原生 App 管理[\s\S]*codex-halo-watch/);
+  assert.match(chinese, /所有\s+支持的 Codex\s+进程都退出/);
   assert.match(plugin, /codex-halo-watch/);
-  for (const document of documents) assert.doesNotMatch(document, pluginHookControlsApp);
+  assert.match(plugin, /native Tauri app manages[\s\S]*codex-halo-watch/i);
+  assert.match(plugin, /only defines lifecycle hooks and writes state snapshots/i);
+  for (const document of documents) {
+    for (const pattern of pluginOwnsAppLifecycle) assert.doesNotMatch(document, pattern);
+  }
+  for (const badWording of [
+    'Plugin hooks start the App.',
+    'The App is stopped by Plugin hooks.',
+    'Plugin hooks launch and quit the Halo App.',
+    '插件负责启动和关闭应用。',
+  ]) {
+    assert(pluginOwnsAppLifecycle.some((pattern) => pattern.test(badWording)), badWording);
+  }
 });

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 增加 `follow_codex_lifecycle` 设置，用独立 watcher 在 Codex CLI 或桌面 App 出现时启动 Codex Halo，并在匹配 Codex 进程全部退出后关闭 watcher 自己启动的 Halo。
+**Goal:** 增加 `follow_codex_lifecycle` 设置，用独立 watcher 在 Codex CLI 或桌面 App 出现时启动 Codex Halo，并在所有支持的 Codex 进程退出后关闭自动管理的 Halo。
 
-**Architecture:** 新增 `codex-halo-watch` native sidecar。它在 macOS LaunchAgent 或 Windows `HKCU` Run 项中登录启动，读取私有 `lifecycle.json`，轮询平台进程列表，并只管理自己 spawn 的 Halo 子进程。主 App 复用现有设置事务、sidecar 安装和私有权限逻辑；现有 `start_at_login` 与 Codex 生命周期联动完全分开。
+**Architecture:** 新增 `codex-halo-watch` native sidecar。它在 macOS LaunchAgent 或 Windows `HKCU` Run 项中登录启动，读取私有 `lifecycle.json`，轮询平台进程列表，并维护独立的 owned child 与 adopted PID 状态。CLI 与桌面 App 使用一个 combined active set；现有 `start_at_login` 与 Codex 生命周期联动完全分开。
 
 **Tech Stack:** Rust 2021、Tauri 2、`serde`/`serde_json`、现有 `windows-sys` Registry API、Vanilla JavaScript、Node built-in test runner。
 
@@ -14,8 +14,11 @@
 
 - `follow_codex_lifecycle` 默认值必须为 `false`，旧 `settings.json` 缺少该字段时正常加载。
 - CLI 匹配 `codex` / `codex.exe`；桌面匹配 `ChatGPT` / `ChatGPT.exe` / `Codex` / `Codex.exe`。
-- CLI 只有最后一个匹配进程退出后才关闭自动 Halo；桌面 App 进程退出才关闭。
+- CLI 与桌面 App 共享一个 combined active set；所有支持的匹配进程退出后才关闭自动 Halo。
+- `lifecycle.json` 的 `managed_pid` 记录当前 Halo App PID；旧 config 缺字段按 `None` 兼容，disabled config 清除该字段。
 - watcher 只关闭自己 spawn 的 Halo；手动启动的 Halo 不被强制关闭。
+- watcher 只有在 Codex active、没有 owned child、且发现 Halo 时才接管 `managed_pid`；收尾时通过直接 `--lifecycle-stop <pid>` 定向关闭 adopted Halo。
+- single-instance callback 仅在目标 PID 等于当前 App PID 时退出；普通重复启动打开设置；无现有实例的 stop 首实例在 setup 直接退出且不显示 UI。
 - 不读取或记录 Codex 命令行参数、prompt、transcript、路径内容；不使用 shell 拼接执行控制命令。
 - macOS 和 Windows 实现真实启用；其他平台返回 `codex-lifecycle:unsupported`。
 - 不新增 crate；优先使用现有 `std`、`serde`、`windows-sys` 和当前构建链。
@@ -135,9 +138,11 @@ git commit -m "功能: 增加 Codex 生命周期设置"
 - Modify: `src-tauri/src/lib.rs`
 
 **Interfaces:**
-- `LifecycleConfig { enabled: bool, halo_path: PathBuf }`
+- `LifecycleConfig { enabled: bool, halo_path: PathBuf, managed_pid: Option<u32> }`
 - `parse_config(bytes: &[u8]) -> Result<LifecycleConfig, LifecycleError>`
 - `parse_config_path(args: impl IntoIterator<Item = OsString>) -> Option<PathBuf>`
+- `parse_lifecycle_stop_pid(args: impl IntoIterator<Item = String>) -> Option<u32>`
+- `lifecycle_stop_targets(args, current_pid) -> bool`
 - `codex_processes_present_from_listing(listing: &str) -> bool`
 - `process_name_matches(value: &str, names: &[&str]) -> bool`
 - `should_spawn_halo(codex_active: bool, halo_exists: bool, owned_child_exists: bool) -> bool`
@@ -212,7 +217,10 @@ fn main() {
 }
 ```
 
-watcher 每 500ms 读取一次配置和进程状态。配置缺失/disabled 时先 kill 自己 spawn 的 child，再退出。Codex active 且没有现有 Halo、没有 owned child 时才 spawn Halo；`stdin`、`stdout`、`stderr` 使用 `Stdio::null()`。
+watcher 每 500ms 读取一次配置和进程状态。配置缺失/disabled 时先 kill 自己 spawn 的 child，
+或通过 `managed_pid` 对 adopted Halo 发定向 `--lifecycle-stop <pid>`，再退出。Codex active
+且没有 owned child 时：无 Halo 则 spawn；已有 Halo 且 config 有 `managed_pid` 则 adoption。
+`stdin`、`stdout`、`stderr` 使用 `Stdio::null()`。
 
 在循环中使用 `Child::try_wait` 回收异常退出的 child；下一轮在 Codex 仍 active 时允许重新启动。只记录固定错误类别，不输出路径和命令行。
 
@@ -454,7 +462,8 @@ git commit -m "功能: 增加跨平台 Codex 进程检测"
 - Modify: `src/app.test.mjs`
 
 **Interfaces:**
-- `lifecycle::write_config(path, &LifecycleConfig) -> Result<(), LifecycleError>`。
+- `lifecycle::write_config(path, &LifecycleConfig) -> Result<(), LifecycleError>`，配置兼容
+  `managed_pid: Option<u32>`。
 - `lifecycle::sync_app(app, enabled) -> Result<(), String>`。
 - `save_settings_transaction` 同时回滚 `start_at_login` 和 `follow_codex_lifecycle` 两组副作用。
 
@@ -611,7 +620,8 @@ Expected: FAIL only on new documentation assertions。
 
 - [ ] **Step 2: Update documentation.**
 
-英文文档说明：`Follow Codex lifecycle` 启用 watcher、支持 CLI 和桌面 App、CLI 等最后一个进程、桌面按应用进程退出、手动 Halo 不被关闭。
+英文文档说明：`Follow Codex lifecycle` 启用 watcher；CLI 和桌面 App 使用 combined active
+set，所有支持的 Codex 进程退出后才收尾；手动 Halo 不被关闭。
 
 中文文档说明：`随 Codex 启停` 的同样语义，并保留现有 `start_at_login` 的独立含义。
 

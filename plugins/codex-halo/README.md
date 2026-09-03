@@ -21,5 +21,6 @@ The hooks write only hashed session state, state names, and timestamps under
 and paths are not stored.
 
 The native Tauri app manages the overlay, tray, settings, state display, and the
-bundled `codex-halo-watch` watcher. This Plugin only defines lifecycle hooks and
-writes state snapshots; it does not control the App process.
+bundled `codex-halo-watch` watcher, including its startup and targeted stop
+signals. This Plugin only defines lifecycle hooks and writes state snapshots; it
+does not control the App process.
