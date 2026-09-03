@@ -372,9 +372,17 @@ fn process_list_error(error: io::Error) -> LifecycleError {
 }
 
 fn process_listing() -> Result<ProcessPresence, LifecycleError> {
+    process_listing_with(platform::process_listing)
+}
+
+fn process_listing_with<F>(mut listing: F) -> Result<ProcessPresence, LifecycleError>
+where
+    F: FnMut() -> io::Result<String>,
+{
+    let listing = listing().map_err(process_list_error)?;
     Ok(ProcessPresence {
-        codex_active: platform::codex_processes_present().map_err(process_list_error)?,
-        halo_exists: platform::halo_process_present().map_err(process_list_error)?,
+        codex_active: process_present_from_listing(&listing, &CODEX_PROCESS_NAMES),
+        halo_exists: process_present_from_listing(&listing, &HALO_PROCESS_NAMES),
     })
 }
 
@@ -391,10 +399,18 @@ fn report(error: &LifecycleError) {
 mod tests {
     use super::*;
     use std::cell::{Cell, RefCell};
+    #[cfg(target_os = "macos")]
+    use std::env;
     use std::ffi::OsString;
+    #[cfg(target_os = "macos")]
+    use std::fs;
     use std::io;
+    #[cfg(target_os = "macos")]
+    use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
     use std::rc::Rc;
+    #[cfg(target_os = "macos")]
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn missing_enabled_field_defaults_to_disabled() {
@@ -447,6 +463,55 @@ mod tests {
         assert!(!codex_processes_present_from_listing(
             "codex-halo\ncodex-halo-watch\n"
         ));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn process_listing_reads_one_snapshot_for_both_process_checks() {
+        let _lock = crate::platform::PROCESS_COMMAND_ENV_LOCK.lock().unwrap();
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = env::temp_dir().join(format!("codex-halo-ps-{suffix}"));
+        fs::create_dir_all(&directory).unwrap();
+        let counter = directory.join("count");
+        let ps = directory.join("ps");
+        fs::write(
+            &ps,
+            format!(
+                "#!/bin/sh\ncount=0\nif [ -f '{}' ]; then count=$(cat '{}'); fi\nprintf '%s' $((count + 1)) > '{}'\nprintf 'codex\\ncodex-halo\\n'\n",
+                counter.display(),
+                counter.display(),
+                counter.display(),
+            ),
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&ps).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&ps, permissions).unwrap();
+
+        let previous_path = env::var_os("PATH");
+        let path = previous_path.as_ref().map_or_else(
+            || directory.display().to_string(),
+            |value| format!("{}:{}", directory.display(), value.to_string_lossy()),
+        );
+        env::set_var("PATH", path);
+        let processes = process_listing().unwrap();
+        match previous_path {
+            Some(value) => env::set_var("PATH", value),
+            None => env::remove_var("PATH"),
+        }
+
+        assert_eq!(
+            processes,
+            ProcessPresence {
+                codex_active: true,
+                halo_exists: true
+            }
+        );
+        assert_eq!(fs::read_to_string(counter).unwrap(), "1");
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

@@ -11,6 +11,9 @@ use tauri::{AppHandle, PhysicalPosition, Position, Runtime, WebviewWindow};
 #[cfg(target_os = "macos")]
 use tauri_plugin_autostart::ManagerExt;
 
+#[cfg(test)]
+pub(crate) static PROCESS_COMMAND_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 pub fn configure_overlay(window: &WebviewWindow) -> tauri::Result<()> {
     window.set_ignore_cursor_events(true)
 }
@@ -95,39 +98,17 @@ impl fmt::Display for AutostartError {
 }
 
 pub fn codex_processes_present() -> io::Result<bool> {
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
-    {
-        return Ok(process_present_from_listing(
-            &process_listing()?,
-            &crate::lifecycle::CODEX_PROCESS_NAMES,
-        ));
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "process listing unsupported",
-        ))
-    }
+    Ok(process_present_from_listing(
+        &process_listing()?,
+        &crate::lifecycle::CODEX_PROCESS_NAMES,
+    ))
 }
 
 pub fn halo_process_present() -> io::Result<bool> {
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
-    {
-        return Ok(process_present_from_listing(
-            &process_listing()?,
-            &crate::lifecycle::HALO_PROCESS_NAMES,
-        ));
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "process listing unsupported",
-        ))
-    }
+    Ok(process_present_from_listing(
+        &process_listing()?,
+        &crate::lifecycle::HALO_PROCESS_NAMES,
+    ))
 }
 
 fn process_present_from_listing(listing: &str, names: &[&str]) -> bool {
@@ -135,7 +116,7 @@ fn process_present_from_listing(listing: &str, names: &[&str]) -> bool {
 }
 
 #[cfg(target_os = "macos")]
-fn process_listing() -> io::Result<String> {
+fn mac_process_listing() -> io::Result<String> {
     let output = Command::new("ps").args(["-axo", "comm="]).output()?;
     if !output.status.success() {
         return Err(io::Error::new(
@@ -147,7 +128,7 @@ fn process_listing() -> io::Result<String> {
 }
 
 #[cfg(target_os = "windows")]
-fn process_listing() -> io::Result<String> {
+fn windows_process_listing() -> io::Result<String> {
     let output = Command::new("tasklist")
         .args(["/FO", "CSV", "/NH"])
         .output()?;
@@ -158,6 +139,26 @@ fn process_listing() -> io::Result<String> {
         ));
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+pub(crate) fn process_listing() -> io::Result<String> {
+    #[cfg(target_os = "macos")]
+    {
+        return mac_process_listing();
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        return windows_process_listing();
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "process listing unsupported",
+        ))
+    }
 }
 
 pub fn set_codex_lifecycle_at_login(
@@ -183,6 +184,14 @@ pub fn set_codex_lifecycle_at_login(
 }
 
 #[cfg(target_os = "macos")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LaunchctlFailure {
+    EntryAbsent,
+    Permission,
+    LaunchAgent,
+}
+
+#[cfg(target_os = "macos")]
 fn set_macos_codex_lifecycle_at_login(
     watcher: &Path,
     config: &Path,
@@ -197,7 +206,7 @@ fn set_macos_codex_lifecycle_at_login(
         fs::create_dir_all(&launch_agents).map_err(map_lifecycle_io_error)?;
         fs::write(&plist_path, lifecycle_plist(watcher, config)).map_err(map_lifecycle_io_error)?;
         bootout_launch_agent(&domain, &plist_path)?;
-        run_launchctl("bootstrap", &domain, &plist_path)
+        run_launchctl("bootstrap", &domain, &plist_path).map_err(map_launchctl_failure)
     } else {
         bootout_launch_agent(&domain, &plist_path)?;
         match fs::remove_file(&plist_path) {
@@ -225,38 +234,53 @@ fn launchctl_domain() -> Result<String, AutostartError> {
 }
 
 #[cfg(target_os = "macos")]
-fn run_launchctl(action: &str, domain: &str, plist_path: &Path) -> Result<(), AutostartError> {
+fn run_launchctl(action: &str, domain: &str, plist_path: &Path) -> Result<(), LaunchctlFailure> {
     let output = Command::new("launchctl")
         .arg(action)
         .arg(domain)
         .arg(plist_path)
         .output()
-        .map_err(|_| AutostartError::LifecycleLaunchAgent)?;
+        .map_err(|_| LaunchctlFailure::LaunchAgent)?;
     if output.status.success() {
         Ok(())
     } else {
-        Err(map_launchctl_error(&output.stderr))
+        Err(classify_launchctl_failure(&output.stderr))
     }
 }
 
 #[cfg(target_os = "macos")]
 fn bootout_launch_agent(domain: &str, plist_path: &Path) -> Result<(), AutostartError> {
     match run_launchctl("bootout", domain, plist_path) {
-        Ok(()) | Err(AutostartError::LifecycleLaunchAgent) => Ok(()),
-        Err(error) => Err(error),
+        Ok(()) | Err(LaunchctlFailure::EntryAbsent) => Ok(()),
+        Err(error) => Err(map_launchctl_failure(error)),
     }
 }
 
 #[cfg(target_os = "macos")]
-fn map_launchctl_error(stderr: &[u8]) -> AutostartError {
+fn classify_launchctl_failure(stderr: &[u8]) -> LaunchctlFailure {
     let detail = String::from_utf8_lossy(stderr).to_ascii_lowercase();
     if detail.contains("permission denied")
         || detail.contains("operation not permitted")
         || detail.contains("not permitted")
     {
-        AutostartError::LifecyclePermission
+        LaunchctlFailure::Permission
+    } else if detail.contains("could not find service")
+        || detail.contains("service is not loaded")
+        || detail.contains("no such process")
+    {
+        LaunchctlFailure::EntryAbsent
     } else {
-        AutostartError::LifecycleLaunchAgent
+        LaunchctlFailure::LaunchAgent
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn map_launchctl_failure(error: LaunchctlFailure) -> AutostartError {
+    match error {
+        LaunchctlFailure::Permission => AutostartError::LifecyclePermission,
+        LaunchctlFailure::EntryAbsent | LaunchctlFailure::LaunchAgent => {
+            AutostartError::LifecycleLaunchAgent
+        }
     }
 }
 
@@ -515,6 +539,14 @@ pub fn atomic_replace(source: &Path, target: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "macos")]
+    use std::env;
+    #[cfg(target_os = "macos")]
+    use std::fs;
+    #[cfg(target_os = "macos")]
+    use std::os::unix::fs::PermissionsExt;
+    #[cfg(target_os = "macos")]
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn autostart_errors_have_stable_redacted_categories() {
@@ -568,6 +600,71 @@ mod tests {
             AutostartError::LifecycleLaunchAgent.to_string(),
             "codex-lifecycle:launch-agent"
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    fn bootout_with_fake_launchctl(stderr: &str) -> Result<(), AutostartError> {
+        let _lock = PROCESS_COMMAND_ENV_LOCK.lock().unwrap();
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = env::temp_dir().join(format!("codex-halo-launchctl-{suffix}"));
+        fs::create_dir_all(&directory).unwrap();
+        let launchctl = directory.join("launchctl");
+        fs::write(
+            &launchctl,
+            format!("#!/bin/sh\nprintf '%s' '{stderr}' >&2\nexit 1\n"),
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&launchctl).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&launchctl, permissions).unwrap();
+
+        let previous_path = env::var_os("PATH");
+        let path = previous_path.as_ref().map_or_else(
+            || directory.display().to_string(),
+            |value| format!("{}:{}", directory.display(), value.to_string_lossy()),
+        );
+        env::set_var("PATH", path);
+        let result = bootout_launch_agent("gui/123", &directory.join("entry.plist"));
+        match previous_path {
+            Some(value) => env::set_var("PATH", value),
+            None => env::remove_var("PATH"),
+        }
+        fs::remove_dir_all(directory).unwrap();
+        result
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn bootout_ignores_only_explicit_absent_entry() {
+        assert_eq!(
+            bootout_with_fake_launchctl("Could not find service"),
+            Ok(())
+        );
+        assert_eq!(
+            bootout_with_fake_launchctl("Operation not permitted"),
+            Err(AutostartError::LifecyclePermission)
+        );
+        assert_eq!(
+            bootout_with_fake_launchctl("invalid domain"),
+            Err(AutostartError::LifecycleLaunchAgent)
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn bootout_reports_launchctl_start_failure() {
+        let _lock = PROCESS_COMMAND_ENV_LOCK.lock().unwrap();
+        let previous_path = env::var_os("PATH");
+        env::set_var("PATH", env::temp_dir());
+        let result = bootout_launch_agent("gui/123", Path::new("/tmp/entry.plist"));
+        match previous_path {
+            Some(value) => env::set_var("PATH", value),
+            None => env::remove_var("PATH"),
+        }
+        assert_eq!(result, Err(AutostartError::LifecycleLaunchAgent));
     }
 }
 
