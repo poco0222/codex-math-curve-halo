@@ -405,6 +405,23 @@ test('lifecycle sync is wired into startup and settings transactions', async () 
   assert.match(transactionSource, /follow_codex_lifecycle/);
 });
 
+test('macOS lifecycle setup has one watcher start owner', async () => {
+  const lifecycleSource = await readFile(new URL('../src-tauri/src/lifecycle.rs', import.meta.url), 'utf8');
+  const macStartSource = lifecycleSource.match(
+    /#\[cfg\(target_os = "macos"\)\]\s*fn spawn_watcher_if_missing[\s\S]*?\n\}/,
+  );
+  const nonMacStartSource = lifecycleSource.match(
+    /#\[cfg\(not\(target_os = "macos"\)\)\]\s*fn spawn_watcher_if_missing[\s\S]*?\n\}/,
+  );
+
+  assert(macStartSource);
+  assert.doesNotMatch(macStartSource[0], /process_listing|Command::new/);
+  assert(nonMacStartSource);
+  assert.match(nonMacStartSource[0], /process_listing/);
+  assert.match(nonMacStartSource[0], /WATCHER_PROCESS_NAMES/);
+  assert.match(nonMacStartSource[0], /Command::new/);
+});
+
 test('settings changes reach both overlay and settings windows', async () => {
   const mainSource = await readFile(new URL('../src-tauri/src/main.rs', import.meta.url), 'utf8');
   const settingsSource = await readFile(new URL('./settings.js', import.meta.url), 'utf8');

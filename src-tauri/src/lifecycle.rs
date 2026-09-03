@@ -15,6 +15,7 @@ const CONFIG_TEMP_LIMIT: usize = 64;
 const CONFIG_FILENAME: &str = "lifecycle.json";
 pub(crate) const CODEX_PROCESS_NAMES: [&str; 4] = ["codex", "codex.exe", "chatgpt", "chatgpt.exe"];
 pub(crate) const HALO_PROCESS_NAMES: [&str; 2] = ["codex-halo", "codex-halo.exe"];
+#[cfg(not(target_os = "macos"))]
 const WATCHER_PROCESS_NAMES: [&str; 2] = ["codex-halo-watch", "codex-halo-watch.exe"];
 static CONFIG_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -173,21 +174,32 @@ pub fn sync_app<R: Runtime>(_app: &AppHandle<R>, enabled: bool) -> Result<(), St
         .map_err(|error| error.to_string())?;
 
     if enabled {
-        let listing =
-            platform::process_listing().map_err(|error| process_list_error(error).to_string())?;
-        if !process_present_from_listing(&listing, &WATCHER_PROCESS_NAMES) {
-            Command::new(&watcher_path)
-                .arg("--config")
-                .arg(&config_path)
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .map_err(LifecycleError::Spawn)
-                .map_err(|error| error.to_string())?;
-        }
+        spawn_watcher_if_missing(&watcher_path, &config_path)?;
     }
 
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn spawn_watcher_if_missing(_watcher_path: &Path, _config_path: &Path) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn spawn_watcher_if_missing(watcher_path: &Path, config_path: &Path) -> Result<(), String> {
+    let listing =
+        platform::process_listing().map_err(|error| process_list_error(error).to_string())?;
+    if !process_present_from_listing(&listing, &WATCHER_PROCESS_NAMES) {
+        Command::new(watcher_path)
+            .arg("--config")
+            .arg(config_path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(LifecycleError::Spawn)
+            .map_err(|error| error.to_string())?;
+    }
     Ok(())
 }
 

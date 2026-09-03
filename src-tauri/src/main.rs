@@ -332,7 +332,7 @@ where
         if let Err(error) = set_lifecycle(next.follow_codex_lifecycle) {
             if rollback_settings_side_effects(
                 current,
-                false,
+                true,
                 autostart_changed,
                 &mut set_autostart,
                 &mut set_lifecycle,
@@ -1487,6 +1487,8 @@ mod scan_tests {
         let mut next = current.clone();
         next.follow_codex_lifecycle = true;
         let mut wrote = false;
+        let mut lifecycle_state = current.follow_codex_lifecycle;
+        let mut lifecycle_calls = Vec::new();
 
         let result = save_settings_transaction(
             &current,
@@ -1496,11 +1498,56 @@ mod scan_tests {
                 Ok(())
             },
             |_enabled| Ok(()),
-            |_enabled| Err("codex-lifecycle:registry".to_owned()),
+            |enabled| {
+                lifecycle_state = enabled;
+                lifecycle_calls.push(enabled);
+                if enabled {
+                    Err("codex-lifecycle:registry".to_owned())
+                } else {
+                    Ok(())
+                }
+            },
         );
 
         assert_eq!(result, Err("codex-lifecycle:registry".to_owned()));
         assert!(!wrote);
+        assert_eq!(lifecycle_state, current.follow_codex_lifecycle);
+        assert_eq!(lifecycle_calls, [true, false]);
+    }
+
+    #[test]
+    fn settings_transaction_reconciles_lifecycle_when_disabling_setup_fails() {
+        let mut current = AppSettings::default();
+        current.follow_codex_lifecycle = true;
+        let mut next = current.clone();
+        next.follow_codex_lifecycle = false;
+        let mut wrote = false;
+        let mut lifecycle_state = current.follow_codex_lifecycle;
+        let mut lifecycle_calls = Vec::new();
+
+        let result = save_settings_transaction(
+            &current,
+            &next,
+            |_settings| {
+                wrote = true;
+                Ok(())
+            },
+            |_enabled| Ok(()),
+            |enabled| {
+                lifecycle_state = enabled;
+                lifecycle_calls.push(enabled);
+                if !enabled {
+                    Err("codex-lifecycle:registry".to_owned())
+                } else {
+                    Ok(())
+                }
+            },
+        );
+
+        assert_eq!(result, Err("codex-lifecycle:registry".to_owned()));
+        assert!(!wrote);
+        assert_eq!(lifecycle_state, current.follow_codex_lifecycle);
+        assert_eq!(lifecycle_calls, [false, true]);
     }
 
     #[test]
