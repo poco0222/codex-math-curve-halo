@@ -11,6 +11,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 const HELPER_FILENAME: &str = "codex-halo-hook.exe";
 #[cfg(not(windows))]
 const HELPER_FILENAME: &str = "codex-halo-hook";
+#[cfg(windows)]
+const WATCHER_FILENAME: &str = "codex-halo-watch.exe";
+#[cfg(not(windows))]
+const WATCHER_FILENAME: &str = "codex-halo-watch";
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -129,9 +133,17 @@ pub fn remove_snapshot(state_dir: &Path, input: &HookInput) -> Result<(), HookEr
 }
 
 pub fn install_helper(source: &Path, runtime_root: &Path) -> Result<PathBuf, HookError> {
+    install_binary(source, runtime_root, HELPER_FILENAME)
+}
+
+pub fn install_binary(
+    source: &Path,
+    runtime_root: &Path,
+    filename: &str,
+) -> Result<PathBuf, HookError> {
     prepare_private_dir(runtime_root)?;
-    let destination = runtime_root.join(HELPER_FILENAME);
-    let (temp_path, mut target) = private_temp_file(runtime_root, HELPER_FILENAME)?;
+    let destination = runtime_root.join(filename);
+    let (temp_path, mut target) = private_temp_file(runtime_root, filename)?;
     let result = (|| {
         let mut source = fs::File::open(source)?;
         io::copy(&mut source, &mut target)?;
@@ -149,7 +161,12 @@ pub fn install_helper(source: &Path, runtime_root: &Path) -> Result<PathBuf, Hoo
 
 pub fn install_bundled_helper(runtime_root: &Path) -> Result<PathBuf, HookError> {
     let source = std::env::current_exe()?.with_file_name(HELPER_FILENAME);
-    install_helper(&source, runtime_root)
+    install_binary(&source, runtime_root, HELPER_FILENAME)
+}
+
+pub fn install_bundled_watcher(runtime_root: &Path) -> Result<PathBuf, HookError> {
+    let source = std::env::current_exe()?.with_file_name(WATCHER_FILENAME);
+    install_binary(&source, runtime_root, WATCHER_FILENAME)
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -502,6 +519,21 @@ mod tests {
             );
         }
 
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn installs_the_bundled_watcher_at_a_stable_private_path() {
+        let root = temp_path("watcher");
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("bundled-watcher");
+        let runtime_root = root.join("runtime");
+        fs::write(&source, b"watcher-v1").unwrap();
+
+        let installed = install_binary(&source, &runtime_root, WATCHER_FILENAME).unwrap();
+
+        assert_eq!(installed, runtime_root.join(WATCHER_FILENAME));
+        assert_eq!(fs::read(&installed).unwrap(), b"watcher-v1");
         fs::remove_dir_all(root).unwrap();
     }
 

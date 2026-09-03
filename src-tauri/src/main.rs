@@ -913,6 +913,9 @@ fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
 
     if let Some(helper_dir) = hooks::runtime_root().ok() {
         helper_setup_best_effort(|| hook_protocol::install_bundled_helper(&helper_dir).map(|_| ()));
+        helper_setup_best_effort(|| {
+            hook_protocol::install_bundled_watcher(&helper_dir).map(|_| ())
+        });
     }
 
     let settings = load_app_settings(app.handle()).unwrap_or_else(|_| {

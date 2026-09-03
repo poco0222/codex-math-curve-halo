@@ -35,6 +35,6 @@
       "../plugins/codex-halo/hooks/run-helper.sh": "codex-halo-marketplace/plugins/codex-halo/hooks/run-helper.sh",
       "../plugins/codex-halo/hooks/run-helper.ps1": "codex-halo-marketplace/plugins/codex-halo/hooks/run-helper.ps1"
     },
-    "externalBin": ["binaries/codex-halo-hook"]
+    "externalBin": ["binaries/codex-halo-hook", "binaries/codex-halo-watch"]
   }
 }

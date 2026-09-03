@@ -15,6 +15,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 name = "codex-halo-hook"
 path = "src/bin/codex-halo-hook.rs"
 
+[[bin]]
+name = "codex-halo-watch"
+path = "src/bin/codex-halo-watch.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

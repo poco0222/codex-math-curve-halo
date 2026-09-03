@@ -9,6 +9,10 @@ import {
 test('build script maps target triples to Tauri sidecar names', () => {
   assert.equal(sidecarFilename('aarch64-apple-darwin'), 'codex-halo-hook-aarch64-apple-darwin');
   assert.equal(sidecarFilename('x86_64-pc-windows-msvc'), 'codex-halo-hook-x86_64-pc-windows-msvc.exe');
+  assert.equal(
+    sidecarFilename('aarch64-apple-darwin', 'codex-halo-watch'),
+    'codex-halo-watch-aarch64-apple-darwin',
+  );
 });
 
 test('build script parses an explicit target and computes the release output', () => {
@@ -17,5 +21,9 @@ test('build script parses an explicit target and computes the release output', (
   assert.equal(
     sidecarOutputPath('/repo', target),
     '/repo/src-tauri/binaries/codex-halo-hook-x86_64-pc-windows-msvc.exe',
+  );
+  assert.equal(
+    sidecarOutputPath('/repo', 'x86_64-pc-windows-msvc', 'codex-halo-watch'),
+    '/repo/src-tauri/binaries/codex-halo-watch-x86_64-pc-windows-msvc.exe',
   );
 });

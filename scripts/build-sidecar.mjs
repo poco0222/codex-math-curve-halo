@@ -5,11 +5,11 @@ import { fileURLToPath } from 'node:url';
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-export function sidecarFilename(targetTriple) {
+export function sidecarFilename(targetTriple, binaryName = 'codex-halo-hook') {
   if (!/^[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)+$/.test(targetTriple)) {
     throw new Error('invalid target triple');
   }
-  return `codex-halo-hook-${targetTriple}${targetTriple.includes('windows') ? '.exe' : ''}`;
+  return `${binaryName}-${targetTriple}${targetTriple.includes('windows') ? '.exe' : ''}`;
 }
 
 export function targetTripleFromArgs(args, env = process.env) {
@@ -36,36 +36,38 @@ export function targetTripleFromArgs(args, env = process.env) {
   return target;
 }
 
-export function sidecarOutputPath(projectRoot, targetTriple) {
-  return join(projectRoot, 'src-tauri', 'binaries', sidecarFilename(targetTriple));
+export function sidecarOutputPath(projectRoot, targetTriple, binaryName = 'codex-halo-hook') {
+  return join(projectRoot, 'src-tauri', 'binaries', sidecarFilename(targetTriple, binaryName));
 }
 
 function buildSidecar(targetTriple) {
   const manifest = join(PROJECT_ROOT, 'src-tauri', 'Cargo.toml');
   const env = { ...process.env, CODEX_HALO_BUILD_SIDECAR: '1' };
-  execFileSync('cargo', [
-    'build',
-    '--manifest-path',
-    manifest,
-    '--bin',
-    'codex-halo-hook',
-    '--release',
-    '--target',
-    targetTriple,
-  ], { cwd: PROJECT_ROOT, env, stdio: 'inherit' });
+  for (const binaryName of ['codex-halo-hook', 'codex-halo-watch']) {
+    execFileSync('cargo', [
+      'build',
+      '--manifest-path',
+      manifest,
+      '--bin',
+      binaryName,
+      '--release',
+      '--target',
+      targetTriple,
+    ], { cwd: PROJECT_ROOT, env, stdio: 'inherit' });
 
-  const source = join(
-    PROJECT_ROOT,
-    'src-tauri',
-    'target',
-    targetTriple,
-    'release',
-    `codex-halo-hook${targetTriple.includes('windows') ? '.exe' : ''}`,
-  );
-  const output = sidecarOutputPath(PROJECT_ROOT, targetTriple);
-  mkdirSync(dirname(output), { recursive: true });
-  copyFileSync(source, output);
-  if (!targetTriple.includes('windows')) chmodSync(output, 0o755);
+    const source = join(
+      PROJECT_ROOT,
+      'src-tauri',
+      'target',
+      targetTriple,
+      'release',
+      `${binaryName}${targetTriple.includes('windows') ? '.exe' : ''}`,
+    );
+    const output = sidecarOutputPath(PROJECT_ROOT, targetTriple, binaryName);
+    mkdirSync(dirname(output), { recursive: true });
+    copyFileSync(source, output);
+    if (!targetTriple.includes('windows')) chmodSync(output, 0o755);
+  }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

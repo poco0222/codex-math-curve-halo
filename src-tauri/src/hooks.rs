@@ -16,6 +16,10 @@ static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 const HELPER_FILENAME: &str = "codex-halo-hook.exe";
 #[cfg(not(windows))]
 const HELPER_FILENAME: &str = "codex-halo-hook";
+#[cfg(windows)]
+const WATCHER_FILENAME: &str = "codex-halo-watch.exe";
+#[cfg(not(windows))]
+const WATCHER_FILENAME: &str = "codex-halo-watch";
 
 #[derive(Debug)]
 pub enum HookError {
@@ -121,6 +125,10 @@ pub fn runtime_state_dir() -> Result<PathBuf, HookError> {
 
 pub fn runtime_helper_path() -> Result<PathBuf, HookError> {
     codex_home().map(|path| runtime_helper_path_from(&path))
+}
+
+pub fn runtime_watcher_path() -> Result<PathBuf, HookError> {
+    codex_home().map(|path| runtime_root_from(&path).join(WATCHER_FILENAME))
 }
 
 pub fn cleanup_legacy_entries() -> Result<bool, HookError> {
