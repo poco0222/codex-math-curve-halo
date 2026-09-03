@@ -167,6 +167,7 @@ test('localized setup errors keep only safe categories', () => {
 test('settings page exposes a persisted language selector', async () => {
   const html = await readFile(new URL('./settings.html', import.meta.url), 'utf8');
   const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
+  const css = await readFile(new URL('./styles.css', import.meta.url), 'utf8');
   const i18n = await readFile(new URL('./i18n.js', import.meta.url), 'utf8');
 
   assert.match(html, /id="language"/);
@@ -477,20 +478,28 @@ test('macOS lifecycle setup has one watcher start owner', async () => {
   assert.match(nonMacStartSource[0], /Command::new/);
 });
 
-test('settings page exposes independent state color controls and preset target', async () => {
+test('settings page exposes direct state color targets and independent controls', async () => {
   const html = await readFile(new URL('./settings.html', import.meta.url), 'utf8');
   const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
+  const css = await readFile(new URL('./styles.css', import.meta.url), 'utf8');
 
   for (const state of ['idle', 'thinking', 'executing', 'input_needed', 'completed', 'compacting']) {
     const id = state.replaceAll('_', '-');
+    const label = state === 'input_needed' ? 'Input needed' : `${state[0].toUpperCase()}${state.slice(1)}`;
     assert.match(html, new RegExp(`id="${id}-color"`));
     assert.match(html, new RegExp(`name="${state}_color"`));
     assert.match(html, new RegExp(`id="${id}-color-hex"`));
+    assert.match(html, new RegExp(`aria-label="${label} color"`));
+    assert.match(html, new RegExp(`aria-label="${label} hex color"`));
   }
-  assert.match(html, /id="preset-state"/);
+  assert.doesNotMatch(html, /id="preset-state"/);
+  assert.match(html, /data-color-target="idle"/);
+  assert.match(html, /data-color-reset="idle"/);
   assert.match(html, /id="color-presets"/);
   assert.match(source, /COLOR_PRESET_GROUPS/);
+  assert.match(source, /selectedColorState/);
   assert.match(source, /saveCurrentSettings/);
+  assert.match(css, /@media\s*\(max-width:\s*480px\)[\s\S]*\.state-color-row\s*\{[\s\S]*grid-template-columns:\s*1fr/);
 });
 
 test('settings color controls save only the selected state and reject invalid hex', async () => {
@@ -572,8 +581,11 @@ test('settings color controls save only the selected state and reject invalid he
     new FakeElement({ id: 'start-at-login', type: 'checkbox', checked: false }),
     new FakeElement({ id: 'follow-codex-lifecycle', type: 'checkbox', checked: false }),
     new FakeElement({ id: 'language', type: 'select', value: 'en' }),
-    new FakeElement({ id: 'preset-state', type: 'select', value: 'idle' }),
   ];
+  const colorTargets = ['idle', 'thinking', 'executing', 'input_needed', 'completed', 'compacting']
+    .map((state) => new FakeElement({ dataset: { colorTarget: state } }));
+  const colorResets = ['idle', 'thinking', 'executing', 'input_needed', 'completed', 'compacting']
+    .map((state) => new FakeElement({ dataset: { colorReset: state } }));
   const elements = new Map([
     ['plugin-status', new FakeElement()],
     ['install-plugin', new FakeElement()],
@@ -583,6 +595,10 @@ test('settings color controls save only the selected state and reject invalid he
     ['export-diagnostics', new FakeElement()],
     ['reset-position', new FakeElement()],
     ['color-presets', new FakeElement()],
+    ...['idle', 'thinking', 'executing', 'input_needed', 'completed', 'compacting'].flatMap((state) => {
+      const id = state.replaceAll('_', '-');
+      return [[`${id}-color-preview`, new FakeElement()]];
+    }),
     ...fields.map((field) => [field.id, field]),
   ]);
   const saveCalls = [];
@@ -603,6 +619,8 @@ test('settings color controls save only the selected state and reject invalid he
     getElementById: (id) => elements.get(id) ?? null,
     querySelectorAll: (selector) => {
       if (selector === 'input, select') return fields;
+      if (selector === 'button[data-color-target]') return colorTargets;
+      if (selector === 'button[data-color-reset]') return colorResets;
       if (selector === '[data-i18n]' || selector === '[data-i18n-aria-label]' || selector === '[data-state]') return [];
       return [];
     },
@@ -622,8 +640,9 @@ test('settings color controls save only the selected state and reject invalid he
     await new Promise((resolve) => setImmediate(resolve));
 
     const colorPresets = elements.get('color-presets');
-    const presetState = elements.get('preset-state');
-    presetState.value = 'thinking';
+    colorTargets.find((target) => target.dataset.colorTarget === 'thinking').dispatch('click');
+    assert.equal(colorTargets.find((target) => target.dataset.colorTarget === 'thinking').attributes['aria-pressed'], 'true');
+    assert.equal(colorTargets.find((target) => target.dataset.colorTarget === 'idle').attributes['aria-pressed'], 'false');
     colorPresets.querySelectorAll('.color-swatch')[0].dispatch('click');
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(saveCalls.at(-1).settings.thinking_color, '#A4CAB6');
@@ -634,6 +653,7 @@ test('settings color controls save only the selected state and reject invalid he
     completedHex.dispatch('change');
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(saveCalls.at(-1).settings.completed_color, '#ABCDEF');
+    assert.equal(elements.get('completed-color-preview').style.backgroundColor, '#ABCDEF');
     const saveCount = saveCalls.length;
 
     completedHex.value = 'bad';
@@ -641,6 +661,11 @@ test('settings color controls save only the selected state and reject invalid he
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(saveCalls.length, saveCount);
     assert.equal(elements.get('completed-color').value, '#ABCDEF');
+
+    colorResets.find((reset) => reset.dataset.colorReset === 'completed').dispatch('click');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(saveCalls.at(-1).settings.completed_color, '#35C878');
+    assert.equal(saveCalls.at(-1).settings.thinking_color, '#A4CAB6');
   } finally {
     delete globalThis.document;
     delete globalThis.window;

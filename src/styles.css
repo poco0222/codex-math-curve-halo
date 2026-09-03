@@ -244,22 +244,54 @@ select:focus-visible {
 
 .state-color-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 1fr;
   align-items: center;
   gap: 8px;
 }
 
+.state-color-target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 42px;
+  padding: 5px 8px;
+  text-align: left;
+}
+
+.state-color-target[aria-pressed="true"] {
+  border-color: #ff8a3d;
+  box-shadow: 0 0 0 1px rgb(255 138 61 / 35%);
+}
+
+.state-color-target span:last-child {
+  overflow-wrap: anywhere;
+}
+
+.state-color-preview {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border: 1px solid #68717e;
+  border-radius: 4px;
+  background: #39424e;
+}
+
 .color-editor {
   display: grid;
-  grid-template-columns: 40px 96px;
+  grid-template-columns: 40px minmax(72px, 1fr) auto;
   gap: 6px;
   align-items: center;
 }
 
 input[type="color"] {
   width: 40px;
-  height: 34px;
+  height: 42px;
   padding: 2px;
+}
+
+.color-editor button {
+  white-space: nowrap;
 }
 
 .color-presets {
@@ -281,7 +313,7 @@ input[type="color"] {
 
 .color-preset-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -355,6 +387,10 @@ input[type="color"] {
 
   .state-color-list,
   .color-presets {
+    grid-template-columns: 1fr;
+  }
+
+  .state-color-row {
     grid-template-columns: 1fr;
   }
 

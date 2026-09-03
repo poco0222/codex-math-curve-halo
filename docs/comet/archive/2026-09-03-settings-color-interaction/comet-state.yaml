@@ -1,0 +1,238 @@
+schema: comet.native.v4
+name: settings-color-interaction
+language: zh-CN
+phase: archive
+status: done
+state_version: 7
+brief: brief.md
+spec_changes: []
+workspace:
+  isolation: current
+  change_branch: main
+  target_branch: main
+  finish: null
+loop:
+  stage: done
+  goal_cycle: 1
+  iteration: 1
+  attempt: 1
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: null
+acceptance:
+  - id: A1
+    source: brief.md
+    text: "Scenario: 设置页打开后，六个状态都显示名称、当前颜色预览和 HEX 值；当前预置目标有清晰选中状态。"
+    result: passed
+    reason:
+      text: 设置页提供六个状态行、名称、当前颜色预览、HEX 输入和默认选中的 idle 目标；selectColorState 与
+        syncColorField 负责选中态和预览同步。
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: "Scenario: 用户点击或用键盘选择某个状态，再点击任一预置色时，只有该状态颜色改变并触发现有保存同步。"
+    result: passed
+    reason:
+      text: 状态目标按钮支持点击和键盘激活；预置色只更新 selectedColorState 对应的颜色字段，并经 saveCurrentSettings
+        进入现有串行保存队列。
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: "Scenario: 用户直接编辑某个状态的颜色选择器或 HEX 输入后，该状态自动成为当前预置目标；非法 HEX 不保存。"
+    result: passed
+    reason:
+      text: 颜色 picker 与 HEX 控件的 focus/input/change 事件都会选择对应状态；HEX
+        通过校验后规范化并同步预览，非法值不触发保存。
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: "Scenario: 用户执行某个状态的恢复默认操作时，只有该状态恢复内置默认色并触发现有保存同步。"
+    result: passed
+    reason:
+      text: 六个恢复默认按钮分别读取 DEFAULT_APP_SETTINGS 对应颜色，仅更新目标状态控件、预览和保存 payload。
+      truncated: false
+  - id: A5
+    source: brief.md
+    text: "Scenario: 切换 `en` 与 `zh-CN`，颜色区域的状态名称、操作文本和无效输入提示仍正确渲染；桌面和窄窗口均无横向溢出。"
+    result: passed
+    reason:
+      text: en 与 zh-CN 均补齐状态、颜色控件、恢复默认和无效 HEX 文本；真实 Chrome 检查覆盖
+        320/390/480/760px、键盘焦点和 aria 文本，scrollWidth 均未超过 clientWidth。
+      truncated: false
+builder_handoff:
+  candidate_id: 337df048-2a44-4847-88c4-ed7628764011
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:4cb0b015-89c8-4223-ba6a-979f52f16726
+  iteration: 1
+  summary:
+    text: 重做颜色区交互：移除独立 preset-state
+      下拉框；六个状态行变为直接目标按钮，显示当前颜色预览；预置色按当前目标应用；新增单状态恢复默认；补齐颜色控件状态级 accessible
+      name，并让有效 HEX 输入刷新预览。保留六色字段、70 个预置色、现有 save_settings
+      串行队列、settings-changed、格式校验和光环行为。
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A2
+    - A3
+    - A4
+    - A5
+  checks:
+    - name:
+        text: node syntax and tests
+        truncated: false
+      result: passed
+      note:
+        text: "node --check src/settings.js; node --check src/i18n.js; node --test
+          src/app.test.mjs: 29 passed"
+        truncated: false
+    - name:
+        text: renderer self-check
+        truncated: false
+      result: passed
+      note:
+        text: "npm run check:renderer: PASS (4 profiles)"
+        truncated: false
+    - name:
+        text: git diff check
+        truncated: false
+      result: passed
+      note:
+        text: "git diff --check: no output"
+        truncated: false
+    - name:
+        text: browser settings interaction
+        truncated: false
+      result: passed
+      note:
+        text: 真实 Chrome 检查 760/390px；320/390/480/760px scrollWidth 均等于 clientWidth；70
+          个预置按钮；状态直选、预置色隔离、恢复默认、HEX 预览同步、en/zh-CN aria 文本通过
+        truncated: false
+  checks_truncated: false
+  known_limits:
+    - text: 未执行 Windows 原生运行时或打包验证
+      truncated: false
+    - text: 浏览器检查未连接真实 Tauri IPC；保存合同由现有 Node 行为测试覆盖
+      truncated: false
+  known_limits_truncated: false
+  review:
+    status: passed
+    summary:
+      text: 独立只读复核无阻断问题；确认状态直选、预置色隔离、恢复默认、状态级 accessible name、HEX 预览同步和窄屏边界。
+      truncated: false
+    reviewer_execution_ref: 01a066a0-824d-7051-93ac-3b5ba9f276ba
+  submitted_at: 2026-09-03T09:44:10.593Z
+blockers: []
+verification:
+  candidate_id: 337df048-2a44-4847-88c4-ed7628764011
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:62883211-1587-4d67-af67-934fb8b78fb4
+  iteration: 1
+  attempt: 1
+  assurance: skill-coordinated
+  verdict: pass
+  checks:
+    - id: settings-syntax
+      name:
+        text: node syntax
+        truncated: false
+      argv_display:
+        - text: --check
+          truncated: false
+        - text: src/settings.js
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 28
+    - id: settings-tests
+      name:
+        text: settings behavior tests
+        truncated: false
+      argv_display:
+        - text: --test
+          truncated: false
+        - text: src/app.test.mjs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 109
+    - id: renderer-check
+      name:
+        text: renderer self-check
+        truncated: false
+      argv_display:
+        - text: run
+          truncated: false
+        - text: check:renderer
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 218
+    - id: diff-check
+      name:
+        text: diff whitespace check
+        truncated: false
+      argv_display:
+        - text: diff
+          truncated: false
+        - text: --check
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 14
+    - id: settings-browser-runtime
+      name:
+        text: settings browser geometry and keyboard
+        truncated: false
+      argv_display:
+        - text: /tmp/settings-color-browser-check.mjs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 1690
+  summary:
+    text: 独立只读复核完成；Runtime 检查和 A1-A5 全部通过。
+    truncated: false
+  risks:
+    - text: 真实 Chrome 检查未连接真实 Tauri IPC；保存合同由现有 Node 行为测试覆盖。
+      truncated: false
+    - text: 未执行 Windows 原生运行时或打包验证。
+      truncated: false
+  risks_truncated: false
+  completed_at: 2026-09-03T10:01:40.822Z
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: 独立只读复核完成；Runtime 检查和 A1-A5 全部通过。
+      truncated: false
+    completed_at: 2026-09-03T10:01:40.822Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: true
+created_at: 2026-09-03T09:08:59.074Z
