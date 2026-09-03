@@ -21,6 +21,21 @@ The app starts with an idle overlay and a hidden settings window. Open settings
 from the tray or menu bar. Settings are stored as JSON in the Tauri app config
 directory.
 
+## Follow Codex lifecycle
+
+Enable **Follow Codex lifecycle** to let the native app manage the bundled
+`codex-halo-watch` watcher for Codex CLI and desktop app processes:
+
+- For the CLI, Halo remains active while at least one Codex CLI process exists;
+  after the last CLI process exits, the automatically started Halo exits.
+- For the desktop app, Halo follows the app process lifetime, not individual
+  internal sessions; it exits when the desktop app process exits.
+- The watcher closes only Halo instances it started. A manually started Halo
+  remains running.
+
+`start_at_login` is independent: it controls whether the native app starts at
+login and does not control Codex lifecycle following.
+
 For a macOS package build, generate the target-suffixed helper and bundle with:
 
 ```bash

@@ -20,5 +20,6 @@ The hooks write only hashed session state, state names, and timestamps under
 `CODEX_HOME/codex-halo/state`. Prompts, transcripts, tool inputs, model names,
 and paths are not stored.
 
-The Tauri app remains responsible for the overlay, tray, settings, and state
-display. This Plugin owns the lifecycle hook definition.
+The native Tauri app manages the overlay, tray, settings, state display, and the
+bundled `codex-halo-watch` watcher. This Plugin only defines lifecycle hooks and
+writes state snapshots; it does not control the App process.

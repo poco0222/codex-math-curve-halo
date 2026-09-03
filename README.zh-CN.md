@@ -20,6 +20,20 @@ cargo tauri dev
 应用启动时显示空闲光环，并隐藏设置窗口。可从托盘或菜单栏打开设置。设置以
 JSON 格式保存在 Tauri 应用配置目录中。
 
+## 随 Codex 启停
+
+启用 **随 Codex 启停** 后，由原生 App 管理内置的 `codex-halo-watch` watcher，
+并支持 Codex CLI 和桌面 App 进程：
+
+- CLI：只要至少还有一个 Codex CLI 进程，Halo 就保持；最后一个 CLI 进程退出后，
+  自动启动的 Halo 退出。
+- 桌面 App：按 App 进程的生命周期处理，不按单个内部 session 处理；桌面 App
+  进程退出后，自动 Halo 退出。
+- watcher 只会关闭它自己启动的 Halo。手动启动的 Halo 不会被关闭。
+
+`start_at_login` 保持独立含义：它只控制原生 App 是否在登录时启动，不控制随
+Codex 启停。
+
 macOS 打包时，使用带目标后缀的 helper 并执行打包：
 
 ```bash

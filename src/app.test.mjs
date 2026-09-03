@@ -485,3 +485,18 @@ test('README has English and Simplified Chinese variants', async () => {
   assert.match(chinese, /隐私/);
   assert.match(english, /English|language/i);
 });
+
+test('README documents Codex lifecycle ownership without assigning it to Plugin hooks', async () => {
+  const documents = await Promise.all([
+    readFile(new URL('../README.md', import.meta.url), 'utf8'),
+    readFile(new URL('../README.zh-CN.md', import.meta.url), 'utf8'),
+    readFile(new URL('../plugins/codex-halo/README.md', import.meta.url), 'utf8'),
+  ]);
+  const [english, chinese, plugin] = documents;
+  const pluginHookControlsApp = /(?:Plugin hooks?|hooks?)[^.!?。！？\n]*(?:start|stop|launch|quit|启动|关闭|退出)[^.!?。！？\n]*(?:App|app|应用)/i;
+
+  assert.match(english, /Follow Codex lifecycle/);
+  assert.match(chinese, /随 Codex 启停/);
+  assert.match(plugin, /codex-halo-watch/);
+  for (const document of documents) assert.doesNotMatch(document, pluginHookControlsApp);
+});
