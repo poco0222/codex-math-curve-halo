@@ -15,10 +15,10 @@
 - `follow_codex_lifecycle` 默认值必须为 `false`，旧 `settings.json` 缺少该字段时正常加载。
 - CLI 匹配 `codex` / `codex.exe`；桌面匹配 `ChatGPT` / `ChatGPT.exe` / `Codex` / `Codex.exe`。
 - CLI 与桌面 App 共享一个 combined active set；所有支持的匹配进程退出后才关闭自动 Halo。
-- `lifecycle.json` 的 `managed_pid` 记录当前 Halo App PID；旧 config 缺字段按 `None` 兼容，disabled config 清除该字段。
+- `lifecycle.json` 的 `managed_pid` 与 `managed_token` 记录当前 Halo App managed identity；旧 config 缺字段按 `None` 兼容，缺 token 时不接管已存在 Halo，disabled config 清除 PID 和 token。PID 只作目标索引，token 是 ownership 的第二个校验。
 - watcher 只关闭自己 spawn 的 Halo；手动启动的 Halo 不被强制关闭。
-- watcher 只有在 Codex active、没有 owned child、且发现 Halo 时才接管 `managed_pid`；收尾时通过直接 `--lifecycle-stop <pid>` 定向关闭 adopted Halo。
-- single-instance callback 仅在目标 PID 等于当前 App PID 时退出；普通重复启动打开设置；无现有实例的 stop 首实例在 setup 直接退出且不显示 UI。
+- watcher 只有在 Codex active、没有 owned child、发现 Halo 且 config 同时有 `managed_pid`/`managed_token` 时才接管 identity；每轮 config refresh 发现 PID、token 或 Halo path 变化时，先按旧 identity targeted stop，再接管新 identity。
+- 收尾时通过直接 `--lifecycle-stop <pid> <token>` 定向关闭 adopted Halo；single-instance callback 仅在目标 PID 和 token 同时等于当前 App 实例身份时退出。普通重复启动打开设置；无现有实例的 stop 首实例在 setup 直接退出且不显示 UI。
 - 不读取或记录 Codex 命令行参数、prompt、transcript、路径内容；不使用 shell 拼接执行控制命令。
 - macOS 和 Windows 实现真实启用；其他平台返回 `codex-lifecycle:unsupported`。
 - 不新增 crate；优先使用现有 `std`、`serde`、`windows-sys` 和当前构建链。
@@ -138,11 +138,11 @@ git commit -m "功能: 增加 Codex 生命周期设置"
 - Modify: `src-tauri/src/lib.rs`
 
 **Interfaces:**
-- `LifecycleConfig { enabled: bool, halo_path: PathBuf, managed_pid: Option<u32> }`
+- `LifecycleConfig { enabled: bool, halo_path: PathBuf, managed_pid: Option<u32>, managed_token: Option<String> }`
 - `parse_config(bytes: &[u8]) -> Result<LifecycleConfig, LifecycleError>`
 - `parse_config_path(args: impl IntoIterator<Item = OsString>) -> Option<PathBuf>`
 - `parse_lifecycle_stop_pid(args: impl IntoIterator<Item = String>) -> Option<u32>`
-- `lifecycle_stop_targets(args, current_pid) -> bool`
+- `lifecycle_stop_targets(args, current_pid, current_token) -> bool`
 - `codex_processes_present_from_listing(listing: &str) -> bool`
 - `process_name_matches(value: &str, names: &[&str]) -> bool`
 - `should_spawn_halo(codex_active: bool, halo_exists: bool, owned_child_exists: bool) -> bool`
@@ -218,8 +218,9 @@ fn main() {
 ```
 
 watcher 每 500ms 读取一次配置和进程状态。配置缺失/disabled 时先 kill 自己 spawn 的 child，
-或通过 `managed_pid` 对 adopted Halo 发定向 `--lifecycle-stop <pid>`，再退出。Codex active
-且没有 owned child 时：无 Halo 则 spawn；已有 Halo 且 config 有 `managed_pid` 则 adoption。
+或通过 managed PID/token 对 adopted Halo 发定向 `--lifecycle-stop <pid> <token>`，再退出。Codex active
+且没有 owned child 时：无 Halo 则 spawn；已有 Halo 且 config 同时有 PID/token 则 adoption。每轮
+刷新 adopted identity，配置变化不能继续使用旧目标。
 `stdin`、`stdout`、`stderr` 使用 `Stdio::null()`。
 
 在循环中使用 `Child::try_wait` 回收异常退出的 child；下一轮在 Codex 仍 active 时允许重新启动。只记录固定错误类别，不输出路径和命令行。

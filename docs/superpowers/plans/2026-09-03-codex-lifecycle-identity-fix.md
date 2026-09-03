@@ -14,9 +14,11 @@
 
 - 不新增 crate。
 - `managed_pid` 缺失时旧 config 仍可读取；新增 token 缺失时不能自动信任旧 PID。
+- PID 只作目标索引；token 才是实例 ownership 的第二个校验。
 - watcher 只接管当前 config 的 Halo identity；不能按同名进程批量 kill。
 - targeted stop 必须同时校验 PID 和 token；PID 相同但 token 不同不得退出当前 Halo。
 - watcher 每轮必须刷新 adopted identity；config 的 PID、token、Halo path 改变后不能继续使用旧目标。
+- 缺 token 的旧 config 不接管已存在 Halo，只允许 watcher 自己 spawn 的 child。
 - 不读取或记录 Codex 命令行参数、prompt、transcript、路径内容；控制命令使用直接 `Command::new`，不走 shell。
 - 保留并发颜色功能、`docs/comet/`、生成 sidecar 等未提交改动，不回滚、不覆盖、不暂存。
 - 修改 `main.rs`、`src/app.test.mjs` 时只精确 stage 本任务 hunk。

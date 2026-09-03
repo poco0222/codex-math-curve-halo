@@ -486,16 +486,21 @@ test('README has English and Simplified Chinese variants', async () => {
   assert.match(english, /English|language/i);
 });
 
-test('lifecycle handoff and single-instance stop use a managed PID', async () => {
+test('lifecycle handoff and single-instance stop use a managed PID and token', async () => {
   const lifecycle = await readFile(new URL('../src-tauri/src/lifecycle.rs', import.meta.url), 'utf8');
   const main = await readFile(new URL('../src-tauri/src/main.rs', import.meta.url), 'utf8');
 
   assert.match(lifecycle, /managed_pid/);
   assert.match(lifecycle, /managed_pid:\s*enabled\.then_some\(std::process::id\(\)\)/);
+  assert.match(lifecycle, /managed_token/);
+  assert.match(lifecycle, /adopted_token/);
+  assert.match(lifecycle, /OnceLock<String>/);
   assert.match(lifecycle, /adopted_pid/);
   assert.match(lifecycle, /--lifecycle-stop/);
+  assert.match(lifecycle, /\.arg\(pid\.to_string\(\)\)[\s\S]*?\.arg\(token\)/);
   assert.match(lifecycle, /Command::new\([^)]*halo_path/);
   assert.match(main, /lifecycle_stop_targets/);
+  assert.match(main, /lifecycle_stop_targets\([\s\S]*?std::process::id\(\)[\s\S]*?lifecycle::current_managed_token\(\)[\s\S]*?\)/);
   assert.match(main, /app\.exit\(0\)/);
   assert.match(main, /show_settings_or_report\(app\)/);
   assert.match(main, /setup_app[\s\S]*has_lifecycle_stop_marker/);

@@ -545,7 +545,11 @@ fn show_settings_or_report(app: &AppHandle) {
 
 fn handle_single_instance(app: &AppHandle, args: Vec<String>) {
     if lifecycle::has_lifecycle_stop_marker(args.iter().cloned()) {
-        if lifecycle::lifecycle_stop_targets(args, std::process::id()) {
+        if lifecycle::lifecycle_stop_targets(
+            args,
+            std::process::id(),
+            lifecycle::current_managed_token(),
+        ) {
             app.exit(0);
         }
         return;

@@ -66,24 +66,29 @@ CODEX_HOME/codex-halo/codex-halo-hook
 CODEX_HOME/codex-halo/codex-halo-watch
 ```
 
-新增 `lifecycle.json`，内容保存联动开关、Halo executable 路径和当前 App PID：
+新增 `lifecycle.json`，内容保存联动开关、Halo executable 路径和当前 App managed identity：
 
 ```json
 {
   "enabled": true,
   "halo_path": "/absolute/path/to/codex-halo",
-  "managed_pid": 12345
+  "managed_pid": 12345,
+  "managed_token": "<process-stable-token>"
 }
 ```
 
 文件和目录沿用现有私有权限策略。watcher 从 `--config` 读取绝对配置路径，
 不依赖登录进程是否继承了 shell 的 `CODEX_HOME`。旧 config 缺少
-`managed_pid` 时按 `None` 兼容；禁用时清除该字段。
+`managed_pid` 或 `managed_token` 时按 `None` 兼容；缺少 token 的 config 不可信，不能
+接管已存在的 Halo。PID 只作目标索引，token 是实例 ownership 的第二个校验；禁用时
+清除 PID 和 token。
 
 启用时 `sync_app` 写入当前 Halo App 的绝对 executable 路径和 PID。watcher 只有在
-Codex active、没有自己 spawn 的 child、且进程列表发现 Halo 时，才从
-`managed_pid` 接管该 Halo。Codex 全部退出后，watcher 只对该 PID 通过直接
-`Command::new(halo_path)` 调用 `--lifecycle-stop <pid>`；不按进程名批量关闭。
+Codex active、没有自己 spawn 的 child、进程列表发现 Halo、且 PID/token 都存在时，才从
+config 接管该 Halo。watcher 每轮刷新 adopted identity；PID、token 或 Halo path 任一变化，
+先用旧 identity targeted stop，再清空旧状态并接管新 identity。Codex 全部退出后，watcher
+只对该 PID 和 token 通过直接 `Command::new(halo_path)` 调用
+`--lifecycle-stop <pid> <token>`；不按进程名批量关闭。
 
 ### 4.3 勾选与取消
 
@@ -135,12 +140,12 @@ Codex active、没有自己 spawn 的 child、且进程列表发现 Halo 时，�
   watcher。
 - `save_settings` 在 `follow_codex_lifecycle` 改变时调用生命周期配置事务。
 - watcher 启动 Halo 时使用当前 executable 路径，不通过 shell，不继承无关 stdin/stdout。
-- watcher 分开保存自己 spawn 的 `Child` 和 adopted PID；Codex 仍 active 时可回收并
-  重启 owned child。Codex 全部退出时，owned child 用 `kill` 并等待回收，adopted PID
-  用 `--lifecycle-stop <pid>` 定向关闭。
-- `--lifecycle-stop <pid>` 通过 single-instance callback 处理：目标 PID 等于当前 App
-  PID 时调用 `app.exit(0)`；普通重复启动仍打开设置。无现有实例时，带 stop 参数的
-  首实例在 setup 直接退出且不显示 UI。
+- watcher 分开保存自己 spawn 的 `Child` 和 adopted PID/token；Codex 仍 active 时可回收并
+  重启 owned child。Codex 全部退出时，owned child 用 `kill` 并等待回收，adopted PID/token
+  用 `--lifecycle-stop <pid> <token>` 定向关闭。
+- `--lifecycle-stop <pid> <token>` 通过 single-instance callback 处理：目标 PID 和 token
+  同时等于当前 App 实例身份时调用 `app.exit(0)`，避免 PID reuse；普通重复启动仍打开设置。
+  无现有实例时，带 stop 参数的首实例在 setup 直接退出且不显示 UI。
 - Plugin hooks 只写生命周期状态快照；原生 App 独立管理 watcher 和 Halo App 启停。
 - Halo 的托盘 `Quit` 不删除已启用的 watcher；用户再次启动 Codex 时仍可自动拉起 Halo。
 - watcher 或 Halo 启动失败只记录固定错误类别，不能阻断 Codex 或覆盖设置文件。
