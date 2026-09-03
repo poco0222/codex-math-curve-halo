@@ -1,3 +1,4 @@
+use crate::platform;
 use serde::Deserialize;
 use std::fmt;
 use std::fs;
@@ -8,8 +9,14 @@ use std::thread;
 use std::time::Duration;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
-const CODEX_PROCESS_NAMES: [&str; 4] = ["codex", "codex.exe", "chatgpt", "chatgpt.exe"];
-const HALO_PROCESS_NAMES: [&str; 2] = ["codex-halo", "codex-halo.exe"];
+pub(crate) const CODEX_PROCESS_NAMES: [&str; 4] = ["codex", "codex.exe", "chatgpt", "chatgpt.exe"];
+pub(crate) const HALO_PROCESS_NAMES: [&str; 2] = ["codex-halo", "codex-halo.exe"];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ProcessPresence {
+    codex_active: bool,
+    halo_exists: bool,
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(default)]
@@ -109,9 +116,13 @@ pub fn process_name_matches(value: &str, names: &[&str]) -> bool {
 }
 
 pub fn codex_processes_present_from_listing(listing: &str) -> bool {
+    process_present_from_listing(listing, &CODEX_PROCESS_NAMES)
+}
+
+pub(crate) fn process_present_from_listing(listing: &str, names: &[&str]) -> bool {
     listing
         .lines()
-        .any(|line| process_name_matches(listing_process_name(line), &CODEX_PROCESS_NAMES))
+        .any(|line| process_name_matches(listing_process_name(line), names))
 }
 
 pub fn should_spawn_halo(codex_active: bool, halo_exists: bool, owned_child_exists: bool) -> bool {
@@ -145,7 +156,7 @@ fn run_with<C, RC, PL, SL, ST, SP, RP>(
 where
     C: ManagedChild,
     RC: FnMut(&Path) -> Result<LifecycleConfig, LifecycleError>,
-    PL: FnMut() -> Result<String, LifecycleError>,
+    PL: FnMut() -> Result<ProcessPresence, LifecycleError>,
     SL: FnMut(),
     ST: FnMut(usize) -> bool,
     SP: FnMut(&Path) -> Result<C, LifecycleError>,
@@ -179,7 +190,7 @@ fn run_loop<C, RC, PL, SL, ST, SP>(
 where
     C: ManagedChild,
     RC: FnMut(&Path) -> Result<LifecycleConfig, LifecycleError>,
-    PL: FnMut() -> Result<String, LifecycleError>,
+    PL: FnMut() -> Result<ProcessPresence, LifecycleError>,
     SL: FnMut(),
     ST: FnMut(usize) -> bool,
     SP: FnMut(&Path) -> Result<C, LifecycleError>,
@@ -199,12 +210,20 @@ where
         };
 
         if !config.enabled {
-            watch_iteration(false, "", owned_child, || spawn(&config.halo_path))?;
+            watch_iteration(
+                false,
+                ProcessPresence {
+                    codex_active: false,
+                    halo_exists: false,
+                },
+                owned_child,
+                || spawn(&config.halo_path),
+            )?;
             return Ok(());
         }
 
-        let listing = process_listing()?;
-        watch_iteration(true, &listing, owned_child, || spawn(&config.halo_path))?;
+        let processes = process_listing()?;
+        watch_iteration(true, processes, owned_child, || spawn(&config.halo_path))?;
 
         iteration += 1;
         sleep();
@@ -287,7 +306,7 @@ fn reap_owned_child<C: ManagedChild>(child: &mut Option<C>) -> Result<(), Lifecy
 
 fn watch_iteration<C, F>(
     enabled: bool,
-    listing: &str,
+    processes: ProcessPresence,
     owned_child: &mut Option<C>,
     mut spawn: F,
 ) -> Result<(), LifecycleError>
@@ -301,10 +320,8 @@ where
     }
 
     reap_owned_child(owned_child)?;
-    let codex_active = codex_processes_present_from_listing(listing);
-    let halo_exists = listing
-        .lines()
-        .any(|line| process_name_matches(listing_process_name(line), &HALO_PROCESS_NAMES));
+    let codex_active = processes.codex_active;
+    let halo_exists = processes.halo_exists;
 
     if !codex_active {
         stop_owned_child(owned_child)?;
@@ -346,39 +363,19 @@ fn listing_process_name(line: &str) -> &str {
     line
 }
 
-#[cfg(target_os = "macos")]
-fn process_listing() -> Result<String, LifecycleError> {
-    let output = Command::new("ps")
-        .args(["-axo", "comm="])
-        .output()
-        .map_err(LifecycleError::ProcessList)?;
-    if !output.status.success() {
-        return Err(LifecycleError::ProcessList(io::Error::new(
-            io::ErrorKind::Other,
-            "process list command failed",
-        )));
+fn process_list_error(error: io::Error) -> LifecycleError {
+    if error.kind() == io::ErrorKind::Unsupported {
+        LifecycleError::Unsupported
+    } else {
+        LifecycleError::ProcessList(error)
     }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-#[cfg(target_os = "windows")]
-fn process_listing() -> Result<String, LifecycleError> {
-    let output = Command::new("tasklist")
-        .args(["/FO", "CSV", "/NH"])
-        .output()
-        .map_err(LifecycleError::ProcessList)?;
-    if !output.status.success() {
-        return Err(LifecycleError::ProcessList(io::Error::new(
-            io::ErrorKind::Other,
-            "process list command failed",
-        )));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-fn process_listing() -> Result<String, LifecycleError> {
-    Err(LifecycleError::Unsupported)
+fn process_listing() -> Result<ProcessPresence, LifecycleError> {
+    Ok(ProcessPresence {
+        codex_active: platform::codex_processes_present().map_err(process_list_error)?,
+        halo_exists: platform::halo_process_present().map_err(process_list_error)?,
+    })
 }
 
 fn report(error: &LifecycleError) {
@@ -513,7 +510,11 @@ mod tests {
                 child.exited = exited_before;
             }
             let event_log = events.clone();
-            watch_iteration(config.enabled, listing, &mut child, || {
+            let processes = ProcessPresence {
+                codex_active: codex_processes_present_from_listing(listing),
+                halo_exists: process_present_from_listing(listing, &HALO_PROCESS_NAMES),
+            };
+            watch_iteration(config.enabled, processes, &mut child, || {
                 spawn_count += 1;
                 event_log.borrow_mut().push("spawn");
                 Ok(FakeChild {
@@ -561,13 +562,22 @@ mod tests {
                 listing_reads.set(read + 1);
                 if read == 0 {
                     child_exited.set(false);
-                    Ok("codex\n".to_owned())
+                    Ok(ProcessPresence {
+                        codex_active: true,
+                        halo_exists: false,
+                    })
                 } else if read == 1 {
                     child_exited.set(true);
-                    Ok("codex\n".to_owned())
+                    Ok(ProcessPresence {
+                        codex_active: true,
+                        halo_exists: false,
+                    })
                 } else {
                     child_exited.set(false);
-                    Ok("other\n".to_owned())
+                    Ok(ProcessPresence {
+                        codex_active: false,
+                        halo_exists: false,
+                    })
                 }
             },
             || sleep_calls.set(sleep_calls.get() + 1),

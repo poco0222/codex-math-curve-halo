@@ -96,6 +96,10 @@ test('autostart errors keep only a fixed safe category for settings UI', () => {
     formatSetupError('save_settings', 'start-at-login:permission'),
     'start-at-login setup failed (permission)',
   );
+  assert.equal(
+    formatSetupError('save_settings', 'codex-lifecycle:registry'),
+    'Codex lifecycle setup failed (registry)',
+  );
   assert.equal(formatSetupError('save_settings', 'raw path and payload'), 'save_settings failed');
 });
 
@@ -110,6 +114,10 @@ test('localization defaults and falls back to English', () => {
 });
 
 test('localized setup errors keep only safe categories', () => {
+  assert.equal(
+    formatLocalizedSetupError('save_settings', 'codex-lifecycle:permission', 'zh-CN'),
+    'Codex 生命周期设置失败（权限）',
+  );
   assert.equal(
     formatLocalizedSetupError('save_settings', 'start-at-login:permission', 'zh-CN'),
     '启动时设置失败（权限）',

@@ -48,6 +48,7 @@ const dictionaries = {
     'settings.states.completed': 'Completed',
     'settings.states.compacting': 'Compacting',
     'errors.startAtLogin': 'start-at-login setup failed',
+    'errors.codexLifecycle': 'Codex lifecycle setup failed',
     'errors.permission': 'permission',
     'errors.launchAgent': 'launch-agent',
     'errors.registry': 'registry',
@@ -100,6 +101,7 @@ const dictionaries = {
     'settings.states.completed': '已完成',
     'settings.states.compacting': '压缩中',
     'errors.startAtLogin': '启动时设置失败',
+    'errors.codexLifecycle': 'Codex 生命周期设置失败',
     'errors.permission': '权限',
     'errors.launchAgent': 'LaunchAgent',
     'errors.registry': '注册表',
@@ -132,7 +134,7 @@ const safeSetupErrorKeys = {
   reconciliation: 'errors.reconciliation',
 };
 
-const safeSetupError = /^start-at-login:(permission|launch-agent|registry|unsupported|reconciliation)$/;
+const safeSetupError = /^(?:(start-at-login):(permission|launch-agent|registry|unsupported|reconciliation)|(codex-lifecycle):(permission|launch-agent|registry|unsupported))$/;
 
 export function normalizeLanguage(value) {
   return SUPPORTED_LANGUAGES.includes(value) ? value : DEFAULT_LANGUAGE;
@@ -156,12 +158,18 @@ export function localeForLanguage(language) {
 }
 
 export function formatSetupError(command, error, language = DEFAULT_LANGUAGE) {
-  const category = typeof error === 'string' ? error.match(safeSetupError)?.[1] : null;
-  if (!category) return `${command} failed`;
+  const match = typeof error === 'string' ? error.match(safeSetupError) : null;
+  if (!match) return `${command} failed`;
 
-  const prefix = getText(language, 'errors.startAtLogin');
+  const prefix = match[1] ?? match[3];
+  const category = match[2] ?? match[4];
+
+  const prefixText = getText(
+    language,
+    prefix === 'codex-lifecycle' ? 'errors.codexLifecycle' : 'errors.startAtLogin',
+  );
   const label = getText(language, safeSetupErrorKeys[category]);
   const isChinese = normalizeLanguage(language) === 'zh-CN';
   const parentheses = isChinese ? ['（', '）'] : ['(', ')'];
-  return `${prefix}${isChinese ? '' : ' '}${parentheses[0]}${label}${parentheses[1]}`;
+  return `${prefixText}${isChinese ? '' : ' '}${parentheses[0]}${label}${parentheses[1]}`;
 }
