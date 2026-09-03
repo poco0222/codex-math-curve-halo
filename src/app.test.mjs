@@ -181,6 +181,19 @@ test('settings page exposes a persisted language selector', async () => {
   assert.match(i18n, /settings\.followCodexLifecycle/);
 });
 
+test('settings page uses a responsive dashboard grid', async () => {
+  const html = await readFile(new URL('./settings.html', import.meta.url), 'utf8');
+  const css = await readFile(new URL('./styles.css', import.meta.url), 'utf8');
+  const mainSource = await readFile(new URL('../src-tauri/src/main.rs', import.meta.url), 'utf8');
+
+  assert.match(html, /class="settings-dashboard"/);
+  assert.match(html, /class="settings-panel settings-panel-wide"/);
+  assert.match(css, /\.settings-dashboard\s*\{[\s\S]*display:\s*grid/);
+  assert.match(css, /\.settings-dashboard\s*\{[\s\S]*grid-template-columns:\s*repeat\(2/);
+  assert.match(css, /@media\s*\(max-width:\s*720px\)/);
+  assert.match(mainSource, /\.inner_size\(760\.0, 760\.0\)/);
+});
+
 test('settings page exposes plugin install controls and no legacy hook controls', async () => {
   const html = await readFile(new URL('./settings.html', import.meta.url), 'utf8');
   const i18n = await readFile(new URL('./i18n.js', import.meta.url), 'utf8');

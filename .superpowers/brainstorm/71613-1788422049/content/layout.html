@@ -1,0 +1,77 @@
+<style>
+  .layout-options { display: grid; gap: 18px; }
+  .layout-options .card { overflow: hidden; }
+  .layout-options .card-image { padding: 12px; background: #0d1117; }
+  .layout-options .card-body h3 { margin-bottom: 6px; }
+  .layout-options .card-body p { margin: 0; }
+  .concept { overflow: hidden; border: 1px solid #3a4554; border-radius: 8px; background: #151b23; color: #e8edf3; box-shadow: 0 8px 24px rgba(0,0,0,.22); }
+  .concept-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid #2c3542; }
+  .concept-title { font-size: 12px; font-weight: 700; }
+  .concept-muted { color: #8290a0; font-size: 9px; }
+  .concept-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 9px; }
+  .concept-grid.sidebar { grid-template-columns: 50px 1fr; }
+  .concept-grid.tabs { display: block; }
+  .concept-sidebar { display: grid; align-content: start; gap: 7px; padding: 7px; border-right: 1px solid #2c3542; color: #8d9aaa; font-size: 9px; }
+  .concept-sidebar strong { color: #ff9b58; }
+  .concept-tabs { display: flex; gap: 12px; padding: 0 9px 8px; border-bottom: 1px solid #2c3542; color: #8d9aaa; font-size: 9px; }
+  .concept-tabs strong { color: #f1f4f7; border-bottom: 2px solid #ff8a3d; padding-bottom: 6px; }
+  .concept-panel { min-width: 0; padding: 9px; border: 1px solid #303b49; border-radius: 5px; background: #1b222c; }
+  .concept-panel.wide { grid-column: 1 / -1; }
+  .concept-panel-title { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px; font-size: 9px; font-weight: 700; }
+  .concept-field { height: 14px; margin-top: 5px; border: 1px solid #3e4a58; border-radius: 3px; background: #242d38; }
+  .concept-field.short { width: 58%; }
+  .concept-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+  .concept-color-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+  .concept-color { height: 20px; border: 1px solid #3d4855; border-radius: 3px; }
+  .concept-actions { display: flex; gap: 5px; margin-top: 7px; }
+  .concept-button { flex: 1; height: 16px; border-radius: 3px; background: #293441; }
+  .concept-button.accent { background: #ff8a3d; }
+  .concept-preview { min-height: 46px; display: grid; place-items: center; margin-bottom: 7px; border: 1px solid #334050; border-radius: 4px; background: radial-gradient(circle, rgba(255,138,61,.28), transparent 42%), #10151b; }
+  .concept-ring { width: 28px; height: 28px; border: 3px solid #ff8a3d; border-radius: 50%; box-shadow: 0 0 18px rgba(255,138,61,.75); }
+  @media (min-width: 900px) { .layout-options { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; } }
+</style>
+
+<h2>哪种设置页结构更合适？</h2>
+<p class="subtitle">按内容分组，不改字段和功能。点击卡片选择方向。</p>
+
+<div class="layout-options cards">
+  <div class="card" data-choice="grid" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="concept">
+        <div class="concept-top"><span class="concept-title">Codex Halo</span><span class="concept-muted">Enabled · English</span></div>
+        <div class="concept-grid">
+          <div class="concept-panel"><div class="concept-panel-title"><span>Display</span><span class="concept-muted">Live preview</span></div><div class="concept-preview"><div class="concept-ring"></div></div><div class="concept-field"></div><div class="concept-fields"><div class="concept-field"></div><div class="concept-field"></div></div></div>
+          <div class="concept-panel"><div class="concept-panel-title"><span>Renderer</span><span class="concept-muted">Performance</span></div><div class="concept-fields"><div class="concept-field"></div><div class="concept-field"></div><div class="concept-field"></div><div class="concept-field"></div></div></div>
+          <div class="concept-panel"><div class="concept-panel-title"><span>Plugin</span><span class="concept-muted">Integration</span></div><div class="concept-actions"><div class="concept-button accent"></div><div class="concept-button"></div></div></div>
+          <div class="concept-panel"><div class="concept-panel-title"><span>Diagnostics</span><span class="concept-muted">System state</span></div><div class="concept-field short"></div><div class="concept-actions"><div class="concept-button"></div><div class="concept-button"></div></div></div>
+          <div class="concept-panel wide"><div class="concept-panel-title"><span>State colors</span><span class="concept-muted">6 states</span></div><div class="concept-color-row"><div class="concept-color" style="background:#A7ADB5"></div><div class="concept-color" style="background:#FF8A3D"></div><div class="concept-color" style="background:#339CFF"></div></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body"><h3>A · Dashboard grid</h3><p>信息一眼可扫。适合桌面设置窗口。</p></div>
+  </div>
+
+  <div class="card" data-choice="sidebar" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="concept">
+        <div class="concept-top"><span class="concept-title">Codex Halo</span><span class="concept-muted">Enabled</span></div>
+        <div class="concept-grid sidebar">
+          <nav class="concept-sidebar"><strong>Display</strong><span>Renderer</span><span>Colors</span><span>Plugin</span></nav>
+          <div><div class="concept-panel"><div class="concept-panel-title"><span>Display</span><span class="concept-muted">Live preview</span></div><div class="concept-preview"><div class="concept-ring"></div></div><div class="concept-fields"><div class="concept-field"></div><div class="concept-field"></div></div><div class="concept-fields"><div class="concept-field"></div><div class="concept-field"></div></div></div><div class="concept-panel" style="margin-top:7px"><div class="concept-panel-title"><span>Renderer</span><span class="concept-muted">6 controls</span></div><div class="concept-fields"><div class="concept-field"></div><div class="concept-field"></div><div class="concept-field"></div><div class="concept-field"></div></div></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body"><h3>B · Sidebar sections</h3><p>页面短、结构清。适合后续设置项会增加。</p></div>
+  </div>
+
+  <div class="card" data-choice="tabs" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="concept">
+        <div class="concept-top"><span class="concept-title">Codex Halo</span><span class="concept-muted">Enabled · English</span></div>
+        <div class="concept-tabs"><strong>Display</strong><span>Colors</span><span>System</span></div>
+        <div class="concept-grid tabs"><div class="concept-panel"><div class="concept-panel-title"><span>Display</span><span class="concept-muted">Live preview</span></div><div class="concept-preview"><div class="concept-ring"></div></div><div class="concept-fields"><div class="concept-field"></div><div class="concept-field"></div><div class="concept-field"></div><div class="concept-field"></div></div><div class="concept-actions"><div class="concept-button accent"></div><div class="concept-button"></div></div></div></div>
+      </div>
+    </div>
+    <div class="card-body"><h3>C · Tabbed focus</h3><p>每次只看一组。最干净，但需要切换。</p></div>
+  </div>
+</div>

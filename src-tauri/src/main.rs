@@ -1029,7 +1029,7 @@ fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
     let settings_window =
         WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
             .title(settings_window_title(&settings.language))
-            .inner_size(420.0, 680.0)
+            .inner_size(760.0, 760.0)
             .visible(false)
             .build()?;
     settings_window.on_window_event({
