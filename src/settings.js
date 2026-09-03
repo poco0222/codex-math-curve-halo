@@ -15,25 +15,23 @@ import {
 } from './i18n.js';
 
 const invoke = window.__TAURI__?.core?.invoke ?? window.__TAURI__?.invoke;
-const pluginStatus = document.getElementById('plugin-status');
-const installPluginButton = document.getElementById('install-plugin');
-const uninstallPluginButton = document.getElementById('uninstall-plugin');
+const settingsPanelHost = document.getElementById('settings-panel-host');
+const sectionTabs = [...document.querySelectorAll('[data-section-target]')];
+const sectionNames = ['display', 'animation', 'colors', 'integration', 'test'];
 const pluginOperationStatuses = {
   installed: 'settings.pluginInstalled',
   uninstalled: 'settings.pluginUninstalled',
   failed: 'settings.pluginOperationFailed',
 };
-const diagnostics = document.getElementById('diagnostics');
-const formula = document.getElementById('formula');
-const colorPresets = document.getElementById('color-presets');
-const stateColorList = document.querySelector?.('.state-color-list') ?? null;
-const opacityValue = document.getElementById('opacity-value');
 const saveStatus = document.getElementById('settings-save-status');
 const saveStatusElements = saveStatus ? [saveStatus] : [];
 const colorFields = Object.entries(STATE_COLOR_KEYS).map(([state, key]) => ({ state, key }));
+let activeSection = 'display';
 let selectedColorState = 'idle';
+let settingsModel = { ...DEFAULT_APP_SETTINGS };
 let currentLanguage = DEFAULT_LANGUAGE;
 let currentPluginStatus = 'settings.pluginReady';
+let pluginOperationInFlight = false;
 let currentSaveStatus = 'ready';
 let setupError = null;
 let currentDisplayState = { state: 'idle', updated_at_ms: 0 };
@@ -71,16 +69,51 @@ function control(key) {
   return document.getElementById(key.replaceAll('_', '-'));
 }
 
-function selectColorState(state) {
-  if (!STATE_COLOR_KEYS[state]) return;
-  selectedColorState = state;
-  for (const target of document.querySelectorAll('button[data-color-target]')) {
-    target.setAttribute('aria-pressed', String(target.dataset.colorTarget === state));
+function settingKey(field) {
+  return field.name || field.id.replaceAll('-', '_');
+}
+
+function updateSettingsModel(field) {
+  const key = settingKey(field);
+  if (!key || !Object.hasOwn(settingsModel, key)) return;
+  settingsModel[key] = field.type === 'checkbox'
+    ? field.checked
+    : field.type === 'number' || field.type === 'range'
+      ? Number(field.value)
+      : field.value;
+}
+
+function syncSettingsModelFromControls() {
+  const fields = [
+    document.getElementById('language'),
+    document.getElementById('enabled'),
+    ...(settingsPanelHost?.querySelectorAll?.('input, select') ?? []),
+  ];
+  for (const field of fields) {
+    if (!field) continue;
+    if (field.dataset.colorHex) {
+      const key = STATE_COLOR_KEYS[field.dataset.colorHex];
+      if (key && isHexColor(field.value)) settingsModel[key] = field.value.toUpperCase();
+      continue;
+    }
+    updateSettingsModel(field);
   }
-  for (const row of document.querySelectorAll('.state-color-row[data-color-state]')) {
-    row.dataset.active = String(row.dataset.colorState === state);
+}
+
+function syncControlsFromSettings(excluded) {
+  const fields = [
+    document.getElementById('language'),
+    document.getElementById('enabled'),
+    ...(settingsPanelHost?.querySelectorAll?.('input, select') ?? []),
+  ];
+  for (const field of fields) {
+    if (!field || field === excluded || field.dataset.colorHex) continue;
+    const value = settingsModel[settingKey(field)];
+    if (value === undefined) continue;
+    if (field.type === 'checkbox') field.checked = Boolean(value);
+    else field.value = String(value);
   }
-  if (stateColorList) stateColorList.dataset.activeState = state;
+  syncColorField(selectedColorState, settingsModel[STATE_COLOR_KEYS[selectedColorState]]);
 }
 
 function syncColorField(state, value) {
@@ -95,9 +128,23 @@ function syncColorField(state, value) {
   hex?.setCustomValidity?.('');
 }
 
+function updateColorSetting(state, value) {
+  const key = STATE_COLOR_KEYS[state];
+  const normalized = normalizeHexColor(value, DEFAULT_APP_SETTINGS[key]);
+  settingsModel[key] = normalized;
+  syncColorField(state, normalized);
+}
+
+function readSettings() {
+  syncSettingsModelFromControls();
+  return { ...settingsModel };
+}
+
 function renderColorPresets() {
+  const colorPresets = document.getElementById('color-presets');
   if (!colorPresets || typeof document.createElement !== 'function') return;
-  colorPresets.textContent = '';
+  colorPresets.replaceChildren();
+  const state = selectedColorState;
   for (const group of COLOR_PRESET_GROUPS) {
     const section = document.createElement('section');
     section.className = 'color-preset-group';
@@ -118,11 +165,7 @@ function renderColorPresets() {
       label.textContent = color;
       button.append(chip, label);
       button.addEventListener('click', () => {
-        const state = selectedColorState;
-        const picker = control(STATE_COLOR_KEYS[state]);
-        if (!picker) return;
-        picker.value = color;
-        syncColorField(state, color);
+        updateColorSetting(state, color);
         void saveCurrentSettings();
       });
       grid.append(button);
@@ -132,56 +175,104 @@ function renderColorPresets() {
   }
 }
 
-function readSettings() {
-  const number = (key) => Number(control(key).value);
-  const value = (key, fallback) => control(key)?.value ?? fallback;
-  return {
-    enabled: control('enabled').checked,
-    opacity: number('opacity'),
-    offset_x: number('offset_x'),
-    offset_y: number('offset_y'),
-    curve_id: control('curve_id').value,
-    particle_count: number('particle_count'),
-    trail_span: number('trail_span'),
-    duration_ms: number('duration_ms'),
-    pulse_duration_ms: number('pulse_duration_ms'),
-    rotation_duration_ms: number('rotation_duration_ms'),
-    stroke_width: number('stroke_width'),
-    ...Object.fromEntries(colorFields.map(({ key }) => [
-      key,
-      normalizeHexColor(value(key, DEFAULT_APP_SETTINGS[key]), DEFAULT_APP_SETTINGS[key]),
-    ])),
-    start_at_login: control('start_at_login').checked,
-    follow_codex_lifecycle: control('follow_codex_lifecycle').checked,
-    language: control('language').value,
-  };
+function renderColorStateTabs() {
+  const tabs = document.getElementById('color-state-tabs');
+  if (!tabs) return;
+  tabs.replaceChildren();
+  for (const { state } of colorFields) {
+    const tab = document.createElement('button');
+    tab.id = `color-tab-${state}`;
+    tab.type = 'button';
+    tab.className = 'color-state-tab';
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('aria-selected', String(state === selectedColorState));
+    tab.setAttribute('aria-controls', 'color-state-panel');
+    tab.tabIndex = state === selectedColorState ? 0 : -1;
+    tab.textContent = getStateLabel(currentLanguage, state);
+    tab.addEventListener('click', () => selectColorState(state, true));
+    tab.addEventListener('keydown', (event) => {
+      const index = colorFields.findIndex((item) => item.state === state);
+      const next = event.key === 'ArrowRight' || event.key === 'ArrowDown'
+        ? (index + 1) % colorFields.length
+        : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+          ? (index - 1 + colorFields.length) % colorFields.length
+          : event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? colorFields.length - 1
+              : -1;
+      if (next < 0) return;
+      event.preventDefault();
+      selectColorState(colorFields[next].state, true);
+    });
+    tabs.append(tab);
+  }
 }
 
-function applySettings(settings) {
-  if (!settings) return;
-  const language = normalizeLanguage(settings.language);
-  control('language').value = language;
-  for (const [key, value] of Object.entries(settings)) {
-    if (key === 'language') continue;
-    const field = control(key);
-    if (!field || document.activeElement === field) continue;
-    if (field.type === 'checkbox') field.checked = Boolean(value);
-    else field.value = String(value);
-  }
-  for (const { state, key } of colorFields) {
-    if (settings[key] !== undefined) syncColorField(state, settings[key]);
-  }
-  renderLanguage(language);
-  renderOpacity();
-  renderFormula(settings);
+function mountColorState(state = selectedColorState) {
+  const panel = document.getElementById('color-state-panel');
+  const key = STATE_COLOR_KEYS[state];
+  if (!panel || !key) return;
+  panel.replaceChildren();
+  panel.setAttribute('aria-labelledby', `color-tab-${state}`);
+
+  const summary = document.createElement('div');
+  summary.className = 'color-editor-summary';
+  const preview = document.createElement('span');
+  preview.id = `${key.replaceAll('_', '-')}-preview`;
+  preview.className = 'state-color-preview';
+  preview.setAttribute('aria-hidden', 'true');
+  const label = document.createElement('strong');
+  label.dataset.colorStateLabel = state;
+  label.textContent = getStateLabel(currentLanguage, state);
+  summary.append(preview, label);
+
+  const editor = document.createElement('div');
+  editor.className = 'color-editor';
+  const picker = document.createElement('input');
+  picker.id = key.replaceAll('_', '-');
+  picker.name = key;
+  picker.type = 'color';
+  picker.dataset.colorInput = 'true';
+  const hex = document.createElement('input');
+  hex.id = `${key.replaceAll('_', '-')}-hex`;
+  hex.name = `${key}_hex`;
+  hex.type = 'text';
+  hex.maxLength = 7;
+  hex.pattern = '^#[0-9A-Fa-f]{6}$';
+  hex.inputMode = 'text';
+  hex.dataset.colorHex = state;
+  const reset = document.createElement('button');
+  reset.type = 'button';
+  reset.dataset.colorReset = state;
+  reset.dataset.i18n = 'settings.resetColor';
+  reset.textContent = getText(currentLanguage, 'settings.resetColor');
+  editor.append(picker, hex, reset);
+  panel.append(summary, editor);
+
+  bindColorEditor(state, picker, hex, reset);
+  syncColorField(state, settingsModel[key]);
 }
 
-function renderFormula(settings = readSettings()) {
+function selectColorState(state, focus = false) {
+  if (!STATE_COLOR_KEYS[state]) return;
+  syncSettingsModelFromControls();
+  selectedColorState = state;
+  renderColorStateTabs();
+  mountColorState(state);
+  renderColorPresets();
+  if (focus) document.getElementById(`color-tab-${state}`)?.focus();
+}
+
+function renderFormula(settings = settingsModel) {
+  const formula = document.getElementById('formula');
+  if (!formula) return;
   const profile = getCurveProfile(settings.curve_id);
   formula.textContent = formatFormula(profile, settings);
 }
 
 function renderOpacity() {
+  const opacityValue = document.getElementById('opacity-value');
   if (!opacityValue) return;
   const value = Number(control('opacity')?.value);
   if (Number.isFinite(value)) opacityValue.textContent = `${Math.round(value * 100)}%`;
@@ -197,7 +288,8 @@ function setSaveStatus(status) {
 
 function renderPluginStatus(status = currentPluginStatus) {
   currentPluginStatus = status;
-  pluginStatus.textContent = getText(currentLanguage, status);
+  const pluginStatus = document.getElementById('plugin-status');
+  if (pluginStatus) pluginStatus.textContent = getText(currentLanguage, status);
 }
 
 function renderDiagnostics(displayState = {}) {
@@ -211,6 +303,8 @@ function renderDiagnostics(displayState = {}) {
     ? new Date(updatedAt).toLocaleString(localeForLanguage(currentLanguage))
     : getText(currentLanguage, 'settings.diagnosticsNever');
   const detail = `${getText(currentLanguage, 'settings.diagnosticsState')}: ${state} | ${getText(currentLanguage, 'settings.diagnosticsLastEvent')}: ${timestamp}`;
+  const diagnostics = document.getElementById('diagnostics');
+  if (!diagnostics) return;
   if (!setupError) {
     diagnostics.textContent = detail;
     return;
@@ -240,10 +334,29 @@ function renderLanguage(language) {
     control(key)?.setAttribute('aria-label', `${label} ${getText(currentLanguage, 'settings.colorPicker')}`);
     control(`${key}_hex`)?.setAttribute('aria-label', `${label} ${getText(currentLanguage, 'settings.colorHex')}`);
   }
+  if (activeSection === 'colors') {
+    renderColorStateTabs();
+    const label = document.querySelector?.('[data-color-state-label]');
+    if (label) label.textContent = getStateLabel(currentLanguage, selectedColorState);
+  }
   renderPluginStatus();
   renderDiagnostics();
   setSaveStatus(currentSaveStatus);
   renderColorPresets();
+}
+
+function applySettings(settings) {
+  if (!settings) return;
+  settingsModel = {
+    ...settingsModel,
+    ...settings,
+    language: normalizeLanguage(settings.language ?? settingsModel.language),
+  };
+  syncControlsFromSettings(document.activeElement);
+  renderLanguage(settingsModel.language);
+  renderOpacity();
+  renderFormula(settingsModel);
+  syncColorField(selectedColorState, settingsModel[STATE_COLOR_KEYS[selectedColorState]]);
 }
 
 async function refreshDiagnostics() {
@@ -281,121 +394,166 @@ async function saveCurrentSettings() {
   });
 }
 
-document.getElementById('export-diagnostics').addEventListener('click', () => {
-  const payload = {
-    state: currentDisplayState.state,
-    updated_at_ms: currentDisplayState.updated_at_ms,
-  };
-  const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = 'codex-halo-diagnostics.json';
-  link.click();
-  URL.revokeObjectURL(url);
-});
-
-for (const field of document.querySelectorAll('input, select')) {
-  if (field.dataset.colorInput || field.dataset.colorHex) continue;
-  const event = field.type === 'number' || field.type === 'range' ? 'input' : 'change';
-  field.addEventListener(event, saveCurrentSettings);
-  if (field.id === 'curve-id') field.addEventListener('change', () => renderFormula());
-  if (field.id === 'opacity') field.addEventListener('input', renderOpacity);
-  if (field.id === 'language') field.addEventListener('change', () => renderLanguage(field.value));
-}
-
-for (const link of document.querySelectorAll('[data-section-target]')) {
-  link.addEventListener('click', () => {
-    for (const item of document.querySelectorAll('[data-section-target]')) {
-      item.classList?.toggle('is-active', item === link);
+async function runPluginAction(command, successStatus) {
+  if (pluginOperationInFlight) return;
+  pluginOperationInFlight = true;
+  setPluginButtonsDisabled(true);
+  renderPluginStatus('settings.pluginWorking');
+  try {
+    const result = await invokeCommand(command);
+    if (result.ok) {
+      clearSetupError();
+      renderPluginStatus(successStatus);
+    } else {
+      renderPluginStatus('settings.pluginOperationFailed');
     }
-  });
+  } finally {
+    pluginOperationInFlight = false;
+    setPluginButtonsDisabled(false);
+  }
 }
 
-for (const { state, key } of colorFields) {
-  const picker = control(key);
-  const hex = control(`${key}_hex`);
-  picker?.addEventListener('focus', () => selectColorState(state));
-  hex?.addEventListener('focus', () => selectColorState(state));
-  picker?.addEventListener('input', () => {
-    selectColorState(state);
-    syncColorField(state, picker.value);
+function setPluginButtonsDisabled(disabled) {
+  document.getElementById('install-plugin')?.toggleAttribute('disabled', disabled);
+  document.getElementById('uninstall-plugin')?.toggleAttribute('disabled', disabled);
+}
+
+function bindSettingsFields(root) {
+  for (const field of root.querySelectorAll('input, select')) {
+    if (field.dataset.colorInput || field.dataset.colorHex) continue;
+    const event = field.type === 'number' || field.type === 'range' ? 'input' : 'change';
+    field.addEventListener(event, () => {
+      updateSettingsModel(field);
+      if (field.id === 'curve-id') renderFormula(settingsModel);
+      if (field.id === 'opacity') renderOpacity();
+      if (field.id === 'language') renderLanguage(field.value);
+      void saveCurrentSettings();
+    });
+  }
+}
+
+function bindColorEditor(state, picker, hex, reset) {
+  const key = STATE_COLOR_KEYS[state];
+  const label = getStateLabel(currentLanguage, state);
+  picker.setAttribute('aria-label', `${label} ${getText(currentLanguage, 'settings.colorPicker')}`);
+  hex.setAttribute('aria-label', `${label} ${getText(currentLanguage, 'settings.colorHex')}`);
+  reset.setAttribute('aria-label', `${getText(currentLanguage, 'settings.resetColor')} ${label}`);
+  picker.addEventListener('input', () => {
+    updateColorSetting(state, picker.value);
     void saveCurrentSettings();
   });
-  hex?.addEventListener('input', () => hex.setCustomValidity(''));
-  hex?.addEventListener('change', () => {
+  hex.addEventListener('input', () => hex.setCustomValidity(''));
+  hex.addEventListener('change', () => {
     const value = hex.value.trim();
     if (!isHexColor(value)) {
-      hex.value = picker?.value ?? DEFAULT_APP_SETTINGS[key];
+      hex.value = settingsModel[key];
       hex.setCustomValidity(getText(currentLanguage, 'settings.invalidColor'));
       hex.reportValidity?.();
       return;
     }
-    const normalized = value.toUpperCase();
-    selectColorState(state);
-    if (picker) picker.value = normalized;
-    hex.value = normalized;
-    syncColorField(state, normalized);
+    updateColorSetting(state, value.toUpperCase());
     hex.setCustomValidity('');
     void saveCurrentSettings();
   });
-}
-
-for (const target of document.querySelectorAll('button[data-color-target]')) {
-  target.addEventListener('click', () => selectColorState(target.dataset.colorTarget));
-}
-
-for (const reset of document.querySelectorAll('button[data-color-reset]')) {
   reset.addEventListener('click', () => {
-    const state = reset.dataset.colorReset;
-    const key = STATE_COLOR_KEYS[state];
-    if (!key) return;
-    const value = DEFAULT_APP_SETTINGS[key];
-    const picker = control(key);
-    if (picker) picker.value = value;
-    selectColorState(state);
-    syncColorField(state, value);
+    updateColorSetting(state, DEFAULT_APP_SETTINGS[key]);
     void saveCurrentSettings();
   });
 }
 
-async function runPluginAction(command, successStatus) {
-  installPluginButton.disabled = true;
-  uninstallPluginButton.disabled = true;
-  renderPluginStatus('settings.pluginWorking');
-  const result = await invokeCommand(command);
-  if (result.ok) {
-    clearSetupError();
-    renderPluginStatus(successStatus);
-  } else {
-    renderPluginStatus('settings.pluginOperationFailed');
-  }
-  installPluginButton.disabled = false;
-  uninstallPluginButton.disabled = false;
-}
-
-installPluginButton.addEventListener('click', () => runPluginAction('install_plugin', 'settings.pluginInstalled'));
-uninstallPluginButton.addEventListener('click', () => runPluginAction('uninstall_plugin', 'settings.pluginUninstalled'));
-
-document.getElementById('reset-position').addEventListener('click', async () => {
-  const result = await saveSettings(() => invokeCommand('reset_position'));
-  if (result.ok) {
-    clearSetupError();
-    applySettings(result.value);
-  }
-});
-
-for (const button of document.querySelectorAll('[data-state]')) {
-  button.addEventListener('click', async () => {
-    const result = await invokeCommand('simulate_state', { state: button.dataset.state });
+function bindIntegrationActions() {
+  document.getElementById('install-plugin')?.addEventListener('click', () => runPluginAction('install_plugin', 'settings.pluginInstalled'));
+  document.getElementById('uninstall-plugin')?.addEventListener('click', () => runPluginAction('uninstall_plugin', 'settings.pluginUninstalled'));
+  setPluginButtonsDisabled(pluginOperationInFlight);
+  document.getElementById('export-diagnostics')?.addEventListener('click', () => {
+    const payload = {
+      state: currentDisplayState.state,
+      updated_at_ms: currentDisplayState.updated_at_ms,
+    };
+    const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'codex-halo-diagnostics.json';
+    link.click();
+    URL.revokeObjectURL(url);
+  });
+  document.getElementById('reset-position')?.addEventListener('click', async () => {
+    const result = await saveSettings(() => invokeCommand('reset_position'));
     if (result.ok) {
       clearSetupError();
-      renderDiagnostics(result.value);
+      applySettings(result.value);
     }
   });
 }
 
-selectColorState('idle');
-renderColorPresets();
+function bindTestActions() {
+  if (!settingsPanelHost) return;
+  for (const button of settingsPanelHost.querySelectorAll('[data-state]')) {
+    button.addEventListener('click', async () => {
+      const result = await invokeCommand('simulate_state', { state: button.dataset.state });
+      if (result.ok) {
+        clearSetupError();
+        renderDiagnostics(result.value);
+      }
+    });
+  }
+}
+
+function mountSettingsSection(section) {
+  const template = document.querySelector?.(`[data-section-template="${section}"]`);
+  if (!template || !settingsPanelHost) return;
+  syncSettingsModelFromControls();
+  settingsPanelHost.replaceChildren(template.content.cloneNode(true));
+  settingsPanelHost.setAttribute('aria-labelledby', `settings-tab-${section}`);
+  activeSection = section;
+  if (section === 'colors') {
+    renderColorStateTabs();
+    mountColorState();
+  }
+  bindSettingsFields(settingsPanelHost);
+  if (section === 'integration') bindIntegrationActions();
+  if (section === 'test') bindTestActions();
+  syncControlsFromSettings();
+  renderLanguage(currentLanguage);
+  renderOpacity();
+  renderFormula(settingsModel);
+  renderPluginStatus();
+  renderDiagnostics();
+}
+
+function selectSettingsSection(section, focus = false) {
+  if (!sectionNames.includes(section)) return;
+  for (const tab of sectionTabs) {
+    const selected = tab.dataset.sectionTarget === section;
+    tab.classList.toggle('is-active', selected);
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+  }
+  mountSettingsSection(section);
+  if (focus) document.getElementById(`settings-tab-${section}`)?.focus();
+}
+
+bindSettingsFields(document);
+for (const tab of sectionTabs) {
+  tab.addEventListener('click', () => selectSettingsSection(tab.dataset.sectionTarget, true));
+  tab.addEventListener('keydown', (event) => {
+    const index = sectionNames.indexOf(tab.dataset.sectionTarget);
+    const next = event.key === 'ArrowRight' || event.key === 'ArrowDown'
+      ? (index + 1) % sectionNames.length
+      : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+        ? (index - 1 + sectionNames.length) % sectionNames.length
+        : event.key === 'Home'
+          ? 0
+          : event.key === 'End'
+            ? sectionNames.length - 1
+            : -1;
+    if (next < 0) return;
+    event.preventDefault();
+    selectSettingsSection(sectionNames[next], true);
+  });
+}
+
+mountSettingsSection(activeSection);
 loadSettings();
 window.setInterval(refreshDiagnostics, 500);

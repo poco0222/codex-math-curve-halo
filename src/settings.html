@@ -16,12 +16,12 @@
             <strong>Codex Halo</strong>
           </div>
         </div>
-        <nav class="settings-nav" data-section-nav aria-label="Settings sections" data-i18n-aria-label="settings.navigation">
-          <a class="settings-nav-link is-active" href="#display-section" data-section-target="display-section" data-i18n="settings.display">Display</a>
-          <a class="settings-nav-link" href="#animation-section" data-section-target="animation-section" data-i18n="settings.renderer">Renderer</a>
-          <a class="settings-nav-link" href="#colors-section" data-section-target="colors-section" data-i18n="settings.colors">State colors</a>
-          <a class="settings-nav-link" href="#integration-section" data-section-target="integration-section" data-i18n="settings.integration">Integration</a>
-          <a class="settings-nav-link" href="#test-section" data-section-target="test-section" data-i18n="settings.simulateState">Test</a>
+        <nav class="settings-nav" data-section-nav role="tablist" aria-label="Settings sections" data-i18n-aria-label="settings.navigation">
+          <button id="settings-tab-display" class="settings-nav-link is-active" type="button" role="tab" aria-selected="true" tabindex="0" aria-controls="settings-panel-host" data-section-target="display" data-i18n="settings.display">Display</button>
+          <button id="settings-tab-animation" class="settings-nav-link" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="settings-panel-host" data-section-target="animation" data-i18n="settings.renderer">Renderer</button>
+          <button id="settings-tab-colors" class="settings-nav-link" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="settings-panel-host" data-section-target="colors" data-i18n="settings.colors">State colors</button>
+          <button id="settings-tab-integration" class="settings-nav-link" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="settings-panel-host" data-section-target="integration" data-i18n="settings.integration">Integration</button>
+          <button id="settings-tab-test" class="settings-nav-link" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="settings-panel-host" data-section-target="test" data-i18n="settings.simulateState">Test</button>
         </nav>
       </aside>
 
@@ -49,6 +49,10 @@
         </header>
 
         <form id="settings-form" class="settings-dashboard">
+          <div id="settings-panel-host" class="settings-panel-host" role="tabpanel" aria-labelledby="settings-tab-display"></div>
+        </form>
+
+        <template data-section-template="display">
           <fieldset id="display-section" class="settings-panel settings-panel-display" data-section="display">
             <legend data-i18n="settings.display">Display</legend>
             <div class="field-stack">
@@ -78,7 +82,9 @@
               </div>
             </div>
           </fieldset>
+        </template>
 
+        <template data-section-template="animation">
           <fieldset id="animation-section" class="settings-panel settings-panel-animation" data-section="animation">
             <legend data-i18n="settings.renderer">Renderer</legend>
             <div class="two-column">
@@ -109,87 +115,25 @@
             </div>
             <output id="formula" class="formula" aria-label="Active formula" data-i18n-aria-label="settings.activeFormula"></output>
           </fieldset>
+        </template>
 
+        <template data-section-template="colors">
           <fieldset id="colors-section" class="settings-panel settings-panel-wide" data-section="colors">
             <legend data-i18n="settings.colors">State colors</legend>
             <div class="section-heading-row">
               <span class="section-helper" data-i18n="settings.colorSelectionHint">Select a state to edit its color</span>
               <span class="state-color-count" data-i18n="settings.stateCount">6 states</span>
             </div>
-            <div class="state-color-list">
-              <div class="state-color-row" data-color-state="idle" data-active="true">
-                <button type="button" class="state-color-target" data-color-target="idle" aria-pressed="true">
-                  <span id="idle-color-preview" class="state-color-preview" aria-hidden="true"></span>
-                  <span data-i18n="settings.states.idle">Idle</span>
-                </button>
-                <div class="color-editor">
-                  <input id="idle-color" name="idle_color" type="color" value="#A7ADB5" aria-label="Idle color" data-color-input />
-                  <input id="idle-color-hex" name="idle_color_hex" type="text" value="#A7ADB5" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Idle hex color" data-color-hex="idle" />
-                  <button type="button" data-color-reset="idle" data-i18n="settings.resetColor" aria-label="Reset Idle color">Reset</button>
-                </div>
-              </div>
-              <div class="state-color-row" data-color-state="thinking" data-active="false">
-                <button type="button" class="state-color-target" data-color-target="thinking" aria-pressed="false">
-                  <span id="thinking-color-preview" class="state-color-preview" aria-hidden="true"></span>
-                  <span data-i18n="settings.states.thinking">Thinking</span>
-                </button>
-                <div class="color-editor">
-                  <input id="thinking-color" name="thinking_color" type="color" value="#FF8A3D" aria-label="Thinking color" data-color-input />
-                  <input id="thinking-color-hex" name="thinking_color_hex" type="text" value="#FF8A3D" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Thinking hex color" data-color-hex="thinking" />
-                  <button type="button" data-color-reset="thinking" data-i18n="settings.resetColor" aria-label="Reset Thinking color">Reset</button>
-                </div>
-              </div>
-              <div class="state-color-row" data-color-state="executing" data-active="false">
-                <button type="button" class="state-color-target" data-color-target="executing" aria-pressed="false">
-                  <span id="executing-color-preview" class="state-color-preview" aria-hidden="true"></span>
-                  <span data-i18n="settings.states.executing">Executing</span>
-                </button>
-                <div class="color-editor">
-                  <input id="executing-color" name="executing_color" type="color" value="#339CFF" aria-label="Executing color" data-color-input />
-                  <input id="executing-color-hex" name="executing_color_hex" type="text" value="#339CFF" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Executing hex color" data-color-hex="executing" />
-                  <button type="button" data-color-reset="executing" data-i18n="settings.resetColor" aria-label="Reset Executing color">Reset</button>
-                </div>
-              </div>
-              <div class="state-color-row" data-color-state="input_needed" data-active="false">
-                <button type="button" class="state-color-target" data-color-target="input_needed" aria-pressed="false">
-                  <span id="input-needed-color-preview" class="state-color-preview" aria-hidden="true"></span>
-                  <span data-i18n="settings.states.inputNeeded">Input needed</span>
-                </button>
-                <div class="color-editor">
-                  <input id="input-needed-color" name="input_needed_color" type="color" value="#F05252" aria-label="Input needed color" data-color-input />
-                  <input id="input-needed-color-hex" name="input_needed_color_hex" type="text" value="#F05252" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Input needed hex color" data-color-hex="input_needed" />
-                  <button type="button" data-color-reset="input_needed" data-i18n="settings.resetColor" aria-label="Reset Input needed color">Reset</button>
-                </div>
-              </div>
-              <div class="state-color-row" data-color-state="completed" data-active="false">
-                <button type="button" class="state-color-target" data-color-target="completed" aria-pressed="false">
-                  <span id="completed-color-preview" class="state-color-preview" aria-hidden="true"></span>
-                  <span data-i18n="settings.states.completed">Completed</span>
-                </button>
-                <div class="color-editor">
-                  <input id="completed-color" name="completed_color" type="color" value="#35C878" aria-label="Completed color" data-color-input />
-                  <input id="completed-color-hex" name="completed_color_hex" type="text" value="#35C878" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Completed hex color" data-color-hex="completed" />
-                  <button type="button" data-color-reset="completed" data-i18n="settings.resetColor" aria-label="Reset Completed color">Reset</button>
-                </div>
-              </div>
-              <div class="state-color-row" data-color-state="compacting" data-active="false">
-                <button type="button" class="state-color-target" data-color-target="compacting" aria-pressed="false">
-                  <span id="compacting-color-preview" class="state-color-preview" aria-hidden="true"></span>
-                  <span data-i18n="settings.states.compacting">Compacting</span>
-                </button>
-                <div class="color-editor">
-                  <input id="compacting-color" name="compacting_color" type="color" value="#A56BFF" aria-label="Compacting color" data-color-input />
-                  <input id="compacting-color-hex" name="compacting_color_hex" type="text" value="#A56BFF" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" inputmode="text" aria-label="Compacting hex color" data-color-hex="compacting" />
-                  <button type="button" data-color-reset="compacting" data-i18n="settings.resetColor" aria-label="Reset Compacting color">Reset</button>
-                </div>
-              </div>
-            </div>
+            <div id="color-state-tabs" class="color-state-tabs" role="tablist" aria-label="Color states" data-i18n-aria-label="settings.colors"></div>
+            <div id="color-state-panel" class="color-state-panel" role="tabpanel" aria-labelledby="color-tab-idle"></div>
             <details id="color-presets-details" class="color-presets-disclosure">
               <summary data-i18n="settings.presetPalettes">Preset palettes</summary>
               <div id="color-presets" class="color-presets"></div>
             </details>
           </fieldset>
+        </template>
 
+        <template data-section-template="integration">
           <fieldset id="integration-section" class="settings-panel settings-panel-wide" data-section="integration">
             <legend data-i18n="settings.integration">Integration</legend>
             <div class="integration-grid">
@@ -227,7 +171,9 @@
               </label>
             </div>
           </fieldset>
+        </template>
 
+        <template data-section-template="test">
           <fieldset id="test-section" class="settings-panel settings-panel-wide" data-section="test">
             <legend data-i18n="settings.simulateState">Simulate state</legend>
             <div class="state-grid">
@@ -239,7 +185,7 @@
               <button type="button" data-state="compacting" data-i18n="settings.states.compacting">Compacting</button>
             </div>
           </fieldset>
-        </form>
+        </template>
       </section>
     </main>
     <script type="module" src="/settings.js"></script>

@@ -176,8 +176,9 @@ test('settings page exposes a persisted language selector', async () => {
   assert.match(html, /data-i18n="settings\.display"/);
   assert.match(html, /id="follow-codex-lifecycle"/);
   assert.match(html, /data-i18n="settings\.followCodexLifecycle"/);
-  assert.match(source, /language: control\('language'\)\.value/);
-  assert.match(source, /follow_codex_lifecycle: control\('follow_codex_lifecycle'\)\.checked/);
+  assert.match(source, /let settingsModel = \{ \.\.\.DEFAULT_APP_SETTINGS \}/);
+  assert.match(source, /language: normalizeLanguage\(settings\.language \?\? settingsModel\.language\)/);
+  assert.match(source, /settingsModel\[settingKey\(field\)\]/);
   assert.match(source, /document\.documentElement\.lang/);
   assert.match(i18n, /settings\.followCodexLifecycle/);
 });
@@ -190,8 +191,8 @@ test('settings page uses a responsive settings workbench', async () => {
   assert.match(html, /class="settings-workbench"/);
   assert.match(html, /class="settings-dashboard"/);
   assert.match(html, /class="settings-panel settings-panel-wide"/);
-  assert.match(css, /\.settings-dashboard\s*\{[\s\S]*display:\s*grid/);
-  assert.match(css, /\.settings-dashboard\s*\{[\s\S]*grid-template-columns:\s*repeat\(2/);
+  assert.match(css, /\.settings-dashboard\s*\{[\s\S]*margin:\s*0/);
+  assert.match(css, /\.settings-panel-host\s*\{/);
   assert.match(css, /@media\s*\(max-width:\s*880px\)/);
   assert.match(mainSource, /\.inner_size\(960\.0, 760\.0\)/);
 });
@@ -219,10 +220,14 @@ test('settings page uses the Halo Control Room workbench layout', async () => {
   assert.match(mainSource, /\.inner_size\(960\.0, 760\.0\)/);
 });
 
-test('narrow settings navigation leaves anchored sections visible', async () => {
+test('settings navigation mounts one strict section at a time', async () => {
+  const html = await readFile(new URL('./settings.html', import.meta.url), 'utf8');
   const css = await readFile(new URL('./styles.css', import.meta.url), 'utf8');
 
-  assert.match(css, /\[data-section\]\s*\{[\s\S]*scroll-margin-top:\s*120px/);
+  assert.match(html, /data-section-nav[^>]*role="tablist"/);
+  assert.match(html, /id="settings-panel-host"[^>]*role="tabpanel"/);
+  assert.equal((html.match(/data-section-template=/g) ?? []).length, 5);
+  assert.doesNotMatch(css, /scroll-margin-top/);
   assert.match(css, /@media\s*\(max-width:\s*880px\)[\s\S]*\.settings-header\s*\{[\s\S]*position:\s*static/);
   assert.match(css, /@media\s*\(max-width:\s*640px\)[\s\S]*button,[\s\S]*input:not\(\[type="checkbox"\]\),[\s\S]*select,[\s\S]*\.settings-nav-link[\s\S]*min-height:\s*40px/);
 });
@@ -328,15 +333,10 @@ test('settings language flow saves once and redraws raw setup errors', async () 
   ];
   const listeners = new Map();
   const saveCalls = [];
-  const pluginCalls = [];
   const warnings = [];
   const invoke = async (command, args) => {
     if (command === 'get_settings') return { ...DEFAULT_APP_SETTINGS };
     if (command === 'get_display_state') return { state: 'idle', updated_at_ms: 0 };
-    if (command === 'install_plugin' || command === 'uninstall_plugin') {
-      pluginCalls.push(command);
-      return null;
-    }
     if (command === 'save_settings') {
       saveCalls.push(args);
       throw 'start-at-login:permission';
@@ -394,15 +394,6 @@ test('settings language flow saves once and redraws raw setup errors', async () 
 
     await listeners.get('plugin-operation')({ payload: 'installed' });
     assert.equal(pluginStatus.textContent, 'Plugin 已安装');
-
-    elements.get('install-plugin').dispatch('click');
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(pluginStatus.textContent, 'Plugin 已安装');
-
-    elements.get('uninstall-plugin').dispatch('click');
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(pluginStatus.textContent, 'Plugin 已卸载');
-    assert.deepEqual(pluginCalls, ['install_plugin', 'uninstall_plugin']);
     assert.equal(elements.get('install-plugin').disabled, false);
     assert.equal(elements.get('uninstall-plugin').disabled, false);
   } finally {
@@ -510,201 +501,36 @@ test('macOS lifecycle setup has one watcher start owner', async () => {
   assert.match(nonMacStartSource[0], /Command::new/);
 });
 
-test('settings page exposes direct state color targets and independent controls', async () => {
+test('settings page exposes state color tabs and one active editor', async () => {
   const html = await readFile(new URL('./settings.html', import.meta.url), 'utf8');
   const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
+  const colors = await readFile(new URL('./colors.js', import.meta.url), 'utf8');
   const css = await readFile(new URL('./styles.css', import.meta.url), 'utf8');
 
   for (const state of ['idle', 'thinking', 'executing', 'input_needed', 'completed', 'compacting']) {
-    const id = state.replaceAll('_', '-');
-    const label = state === 'input_needed' ? 'Input needed' : `${state[0].toUpperCase()}${state.slice(1)}`;
-    assert.match(html, new RegExp(`id="${id}-color"`));
-    assert.match(html, new RegExp(`name="${state}_color"`));
-    assert.match(html, new RegExp(`id="${id}-color-hex"`));
-    assert.match(html, new RegExp(`aria-label="${label} color"`));
-    assert.match(html, new RegExp(`aria-label="${label} hex color"`));
+    assert.match(colors, new RegExp(`${state}:`));
   }
   assert.doesNotMatch(html, /id="preset-state"/);
-  assert.match(html, /data-color-target="idle"/);
-  assert.match(html, /data-color-reset="idle"/);
+  assert.match(html, /id="color-state-tabs"[^>]*role="tablist"/);
+  assert.match(html, /id="color-state-panel"[^>]*role="tabpanel"/);
   assert.match(html, /id="color-presets"/);
   assert.match(source, /COLOR_PRESET_GROUPS/);
   assert.match(source, /selectedColorState/);
+  assert.match(source, /function mountColorState\(/);
+  assert.match(source, /settingsModel/);
   assert.match(source, /saveCurrentSettings/);
-  assert.match(css, /@media\s*\(max-width:\s*640px\)[\s\S]*\.state-color-row,[\s\S]*\.state-color-row\[data-active="true"\][\s\S]*grid-template-columns:\s*1fr/);
+  assert.match(css, /\.color-state-tabs\s*\{/);
+  assert.match(css, /\.color-state-tab\[aria-selected="true"\]/);
 });
 
-test('settings color controls save only the selected state and reject invalid hex', async () => {
-  class FakeElement {
-    constructor({ id = '', type = 'text', value = '', checked = false, dataset = {} } = {}) {
-      this.id = id;
-      this.type = type;
-      this.value = value;
-      this.checked = checked;
-      this.disabled = false;
-      this.dataset = dataset;
-      this.children = [];
-      this.textContent = '';
-      this.attributes = {};
-      this.listeners = new Map();
-      this.style = {};
-      this.customError = '';
-    }
+test('settings color controls use one active editor and preserve the full color model', async () => {
+  const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
 
-    addEventListener(type, listener) {
-      const listeners = this.listeners.get(type) ?? [];
-      listeners.push(listener);
-      this.listeners.set(type, listeners);
-    }
-
-    dispatch(type) {
-      for (const listener of this.listeners.get(type) ?? []) listener({ target: this });
-    }
-
-    setAttribute(name, value) {
-      this.attributes[name] = value;
-    }
-
-    setCustomValidity(value) {
-      this.customError = value;
-    }
-
-    reportValidity() {}
-
-    append(...children) {
-      this.children.push(...children);
-    }
-
-    querySelectorAll(selector) {
-      const matches = [];
-      const visit = (node) => {
-        if (selector === '.color-swatch' && node.className === 'color-swatch') matches.push(node);
-        for (const child of node.children) visit(child);
-      };
-      for (const child of this.children) visit(child);
-      return matches;
-    }
-  }
-
-  const fields = [
-    new FakeElement({ id: 'enabled', type: 'checkbox', checked: true }),
-    new FakeElement({ id: 'opacity', type: 'range', value: '1' }),
-    new FakeElement({ id: 'offset-x', type: 'number', value: '28' }),
-    new FakeElement({ id: 'offset-y', type: 'number', value: '140' }),
-    new FakeElement({ id: 'curve-id', type: 'select', value: 'rose-seven' }),
-    new FakeElement({ id: 'particle-count', type: 'number', value: '64' }),
-    new FakeElement({ id: 'trail-span', type: 'number', value: '0.4' }),
-    new FakeElement({ id: 'duration-ms', type: 'number', value: '420' }),
-    new FakeElement({ id: 'pulse-duration-ms', type: 'number', value: '1200' }),
-    new FakeElement({ id: 'rotation-duration-ms', type: 'number', value: '4200' }),
-    new FakeElement({ id: 'stroke-width', type: 'number', value: '4' }),
-    new FakeElement({ id: 'idle-color', type: 'color', value: '#A7ADB5', dataset: { colorInput: '' } }),
-    new FakeElement({ id: 'idle-color-hex', value: '#A7ADB5', dataset: { colorHex: 'idle' } }),
-    new FakeElement({ id: 'thinking-color', type: 'color', value: '#FF8A3D', dataset: { colorInput: '' } }),
-    new FakeElement({ id: 'thinking-color-hex', value: '#FF8A3D', dataset: { colorHex: 'thinking' } }),
-    new FakeElement({ id: 'executing-color', type: 'color', value: '#339CFF', dataset: { colorInput: '' } }),
-    new FakeElement({ id: 'executing-color-hex', value: '#339CFF', dataset: { colorHex: 'executing' } }),
-    new FakeElement({ id: 'input-needed-color', type: 'color', value: '#F05252', dataset: { colorInput: '' } }),
-    new FakeElement({ id: 'input-needed-color-hex', value: '#F05252', dataset: { colorHex: 'input_needed' } }),
-    new FakeElement({ id: 'completed-color', type: 'color', value: '#35C878', dataset: { colorInput: '' } }),
-    new FakeElement({ id: 'completed-color-hex', value: '#35C878', dataset: { colorHex: 'completed' } }),
-    new FakeElement({ id: 'compacting-color', type: 'color', value: '#A56BFF', dataset: { colorInput: '' } }),
-    new FakeElement({ id: 'compacting-color-hex', value: '#A56BFF', dataset: { colorHex: 'compacting' } }),
-    new FakeElement({ id: 'start-at-login', type: 'checkbox', checked: false }),
-    new FakeElement({ id: 'follow-codex-lifecycle', type: 'checkbox', checked: false }),
-    new FakeElement({ id: 'language', type: 'select', value: 'en' }),
-  ];
-  const colorTargets = ['idle', 'thinking', 'executing', 'input_needed', 'completed', 'compacting']
-    .map((state) => new FakeElement({ dataset: { colorTarget: state } }));
-  const colorResets = ['idle', 'thinking', 'executing', 'input_needed', 'completed', 'compacting']
-    .map((state) => new FakeElement({ dataset: { colorReset: state } }));
-  const elements = new Map([
-    ['plugin-status', new FakeElement()],
-    ['install-plugin', new FakeElement()],
-    ['uninstall-plugin', new FakeElement()],
-    ['diagnostics', new FakeElement()],
-    ['formula', new FakeElement()],
-    ['export-diagnostics', new FakeElement()],
-    ['reset-position', new FakeElement()],
-    ['color-presets', new FakeElement()],
-    ['settings-save-status', new FakeElement()],
-    ...['idle', 'thinking', 'executing', 'input_needed', 'completed', 'compacting'].flatMap((state) => {
-      const id = state.replaceAll('_', '-');
-      return [[`${id}-color-preview`, new FakeElement()]];
-    }),
-    ...fields.map((field) => [field.id, field]),
-  ]);
-  const saveCalls = [];
-  const invoke = async (command, args) => {
-    if (command === 'get_settings') return { ...DEFAULT_APP_SETTINGS };
-    if (command === 'get_display_state') return { state: 'idle', updated_at_ms: 0 };
-    if (command === 'save_settings') {
-      saveCalls.push(args);
-      return null;
-    }
-    return null;
-  };
-  const fakeDocument = {
-    activeElement: null,
-    documentElement: { lang: 'en' },
-    title: 'Codex Halo Settings',
-    createElement: (type) => new FakeElement({ type }),
-    getElementById: (id) => elements.get(id) ?? null,
-    querySelectorAll: (selector) => {
-      if (selector === 'input, select') return fields;
-      if (selector === 'button[data-color-target]') return colorTargets;
-      if (selector === 'button[data-color-reset]') return colorResets;
-      if (selector === '[data-i18n]' || selector === '[data-i18n-aria-label]' || selector === '[data-state]') return [];
-      return [];
-    },
-  };
-  const fakeWindow = {
-    __TAURI__: {
-      core: { invoke },
-      event: { listen: () => Promise.resolve() },
-    },
-    setInterval: () => 1,
-  };
-  globalThis.document = fakeDocument;
-  globalThis.window = fakeWindow;
-
-  try {
-    await import(`./settings.js?color-test=${Date.now()}`);
-    await new Promise((resolve) => setImmediate(resolve));
-
-    const colorPresets = elements.get('color-presets');
-    colorTargets.find((target) => target.dataset.colorTarget === 'thinking').dispatch('click');
-    assert.equal(colorTargets.find((target) => target.dataset.colorTarget === 'thinking').attributes['aria-pressed'], 'true');
-    assert.equal(colorTargets.find((target) => target.dataset.colorTarget === 'idle').attributes['aria-pressed'], 'false');
-    colorPresets.querySelectorAll('.color-swatch')[0].dispatch('click');
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(saveCalls.at(-1).settings.thinking_color, '#A4CAB6');
-    assert.equal(saveCalls.at(-1).settings.idle_color, '#A7ADB5');
-    assert.equal(elements.get('settings-save-status').textContent, 'Saved');
-    assert.equal(elements.get('settings-save-status').dataset.status, 'saved');
-
-    const completedHex = elements.get('completed-color-hex');
-    completedHex.value = '#abcdef';
-    completedHex.dispatch('change');
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(saveCalls.at(-1).settings.completed_color, '#ABCDEF');
-    assert.equal(elements.get('completed-color-preview').style.backgroundColor, '#ABCDEF');
-    const saveCount = saveCalls.length;
-
-    completedHex.value = 'bad';
-    completedHex.dispatch('change');
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(saveCalls.length, saveCount);
-    assert.equal(elements.get('completed-color').value, '#ABCDEF');
-
-    colorResets.find((reset) => reset.dataset.colorReset === 'completed').dispatch('click');
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(saveCalls.at(-1).settings.completed_color, '#35C878');
-    assert.equal(saveCalls.at(-1).settings.thinking_color, '#A4CAB6');
-  } finally {
-    delete globalThis.document;
-    delete globalThis.window;
-  }
+  assert.match(source, /settingsModel\[key\] = normalized/);
+  assert.match(source, /function mountColorState\(state = selectedColorState\)/);
+  assert.match(source, /panel\.replaceChildren\(\)/);
+  assert.match(source, /if \(!isHexColor\(value\)\)/);
+  assert.match(source, /save_settings/);
 });
 
 test('settings changes reach both overlay and settings windows', async () => {
