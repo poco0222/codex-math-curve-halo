@@ -199,12 +199,17 @@ test('initial settings load does not replace a focused local field', async () =>
     querySelectorAll: (selector) => selector === 'input, select' ? [opacity] : [],
   };
   const listeners = new Map();
+  const saveCalls = [];
   let resolveSettings;
-  const invoke = async (command) => {
+  const invoke = async (command, args) => {
     if (command === 'get_settings') {
       return new Promise((resolve) => { resolveSettings = resolve; });
     }
     if (command === 'get_display_state') return { state: 'idle', updated_at_ms: 0 };
+    if (command === 'save_settings') {
+      saveCalls.push(args);
+      return { saved: true };
+    }
     return null;
   };
   const fakeDocument = {
@@ -238,12 +243,100 @@ test('initial settings load does not replace a focused local field', async () =>
     fakeDocument.activeElement = opacity;
     opacity.value = '0.6';
     opacity.dispatch('input');
-    resolveSettings({ ...DEFAULT_APP_SETTINGS, opacity: 0.8 });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(saveCalls, []);
+    resolveSettings({ ...DEFAULT_APP_SETTINGS, opacity: 0.8, curve_id: 'spiral-search' });
     await new Promise((resolve) => setImmediate(resolve));
 
     fakeDocument.activeElement = null;
     await listeners.get('settings-changed')({ payload: { curve_id: 'spiral-search' } });
     assert.equal(opacity.value, '0.6');
+    assert.equal(saveCalls.length, 1);
+    assert.equal(saveCalls[0].settings.opacity, 0.6);
+    assert.equal(saveCalls[0].settings.curve_id, 'spiral-search');
+  } finally {
+    globalThis.document = originalDocument;
+    globalThis.window = originalWindow;
+  }
+});
+
+test('settings event received before initial load wins over stale response', async () => {
+  class FakeField {
+    constructor({ id, type, value }) {
+      this.id = id;
+      this.type = type;
+      this.value = value;
+      this.checked = false;
+      this.name = '';
+      this.dataset = {};
+      this.listeners = new Map();
+      this.attributes = {};
+    }
+
+    addEventListener(type, listener) {
+      const listeners = this.listeners.get(type) ?? [];
+      listeners.push(listener);
+      this.listeners.set(type, listeners);
+    }
+
+    dispatch(type) {
+      for (const listener of this.listeners.get(type) ?? []) {
+        listener({ target: this, currentTarget: this });
+      }
+    }
+
+    setAttribute(name, value) {
+      this.attributes[name] = String(value);
+    }
+  }
+
+  const curve = new FakeField({ id: 'curve-id', type: 'select', value: 'rose-seven' });
+  const settingsPanelHost = {
+    querySelectorAll: (selector) => selector === 'input, select' ? [curve] : [],
+  };
+  const listeners = new Map();
+  let resolveSettings;
+  const invoke = async (command) => {
+    if (command === 'get_settings') {
+      return new Promise((resolve) => { resolveSettings = resolve; });
+    }
+    if (command === 'get_display_state') return { state: 'idle', updated_at_ms: 0 };
+    return null;
+  };
+  const fakeDocument = {
+    activeElement: null,
+    documentElement: { lang: 'en' },
+    title: 'Codex Halo Settings',
+    getElementById: (id) => id === 'settings-panel-host' ? settingsPanelHost : id === 'curve-id' ? curve : null,
+    querySelectorAll: (selector) => selector === 'input, select' ? [curve] : [],
+  };
+  const fakeWindow = {
+    __TAURI__: {
+      core: { invoke },
+      event: {
+        listen: (event, handler) => {
+          listeners.set(event, handler);
+          return Promise.resolve();
+        },
+      },
+    },
+    setInterval: () => 1,
+  };
+  const originalDocument = globalThis.document;
+  const originalWindow = globalThis.window;
+  globalThis.document = fakeDocument;
+  globalThis.window = fakeWindow;
+
+  try {
+    await import(`./settings.js?event-before-load=${Date.now()}`);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const event = listeners.get('settings-changed')({ payload: { curve_id: 'spiral-search' } });
+    resolveSettings({ ...DEFAULT_APP_SETTINGS, curve_id: 'rose-seven' });
+    await event;
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(curve.value, 'spiral-search');
   } finally {
     globalThis.document = originalDocument;
     globalThis.window = originalWindow;
@@ -601,6 +694,17 @@ test('localization defaults and falls back to English', () => {
   assert.equal(getText('zh-CN', 'settings.display'), '显示');
   assert.equal(getStateLabel('zh-CN', 'input_needed'), '需要输入');
   assert.equal(getCurveLabel('zh-CN', 'rose-seven'), '七瓣玫瑰');
+});
+
+test('settings navigation uses a localized Test label', async () => {
+  const html = await readFile(new URL('./settings.html', import.meta.url), 'utf8');
+  const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
+
+  assert.match(html, /data-view-target="test"[^>]*data-i18n="settings\.test">Test<\/button>/);
+  assert.match(html, /<legend data-i18n="settings\.simulateState">Simulate state<\/legend>/);
+  assert.match(source, /labelKey: 'settings\.test'/);
+  assert.equal(getText('en', 'settings.test'), 'Test');
+  assert.equal(getText('zh-CN', 'settings.test'), '测试');
 });
 
 test('state color presets preserve all supplied hexadecimal values', async () => {
@@ -1063,7 +1167,7 @@ test('renderer startup uses exact frontend defaults after get_settings fails', a
   assert.equal(DEFAULT_APP_SETTINGS.language, 'en');
   assert.match(appSource, /const settings = await invokeCommand\('get_settings'\) \?\? DEFAULT_APP_SETTINGS/);
   assert.match(appSource, /window\.setInterval\(displayBridge\.pollDisplayState, POLL_INTERVAL_MS\)/);
-  assert.match(settingsSource, /applySettings\(settings\.ok \? settings\.value : DEFAULT_APP_SETTINGS\)/);
+  assert.match(settingsSource, /applySettings\(settings\.ok \? settings\.value : DEFAULT_APP_SETTINGS, \{ preserveLocalEdits: true \}\)/);
   assert.match(mainSource, /settings_transaction: Mutex<\(\)>/);
   assert.match(mainSource, /settings_transaction[\s\S]*?\.lock\(\)/);
 });
@@ -1115,7 +1219,8 @@ test('settings page exposes state color tabs and one active editor', async () =>
   assert.match(html, /id="color-presets"/);
   assert.match(source, /COLOR_PRESET_GROUPS/);
   assert.match(source, /selectedColorState/);
-  assert.match(source, /function mountColorState\(/);
+  assert.match(source, /function mountColorStateDetail\(/);
+  assert.doesNotMatch(source, /function mountColorState\(/);
   assert.match(source, /settingsStore\.getSettings\(\)/);
   assert.match(source, /saveCurrentSettings/);
   assert.match(css, /\.color-state-tabs\s*\{/);
@@ -1282,6 +1387,7 @@ test('settings color list preserves inactive edits across state switches', async
   fakeDocument.createElement = (tagName) => make({ tagName });
 
   const saveCalls = [];
+  const listeners = new Map();
   const invoke = async (command, args) => {
     if (command === 'get_settings') return { ...DEFAULT_APP_SETTINGS };
     if (command === 'get_display_state') return { state: 'idle', updated_at_ms: 0 };
@@ -1294,7 +1400,18 @@ test('settings color list preserves inactive edits across state switches', async
   const originalDocument = globalThis.document;
   const originalWindow = globalThis.window;
   globalThis.document = fakeDocument;
-  globalThis.window = { __TAURI__: { core: { invoke } }, setInterval: () => 1 };
+  globalThis.window = {
+    __TAURI__: {
+      core: { invoke },
+      event: {
+        listen: (event, handler) => {
+          listeners.set(event, handler);
+          return Promise.resolve();
+        },
+      },
+    },
+    setInterval: () => 1,
+  };
 
   try {
     const settingsModule = await import(`./settings.js?master-detail-test=${Date.now()}`);
@@ -1364,8 +1481,13 @@ test('settings color list preserves inactive edits across state switches', async
     await new Promise((resolve) => setImmediate(resolve));
     stateRow('completed').dispatch('click');
     const completedHex = findById('completed-color-hex');
+    fakeDocument.activeElement = completedHex;
     completedHex.value = '#12345';
     completedHex.dispatch('change');
+    assert.equal(completedHex.value, '#12345');
+    assert.equal(completedHex.validationMessage, 'Use #RRGGBB');
+    assert.equal(saveCalls.length, 5);
+    await listeners.get('settings-changed')({ payload: { completed_color: '#35C878' } });
     assert.equal(completedHex.value, '#12345');
     assert.equal(completedHex.validationMessage, 'Use #RRGGBB');
     assert.equal(saveCalls.length, 5);
@@ -1385,7 +1507,8 @@ test('settings color controls use one active editor and preserve the full color 
   const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
 
   assert.match(source, /settingsStore\.patchSetting\(key, normalized\)/);
-  assert.match(source, /function mountColorState\(state = selectedColorState\)/);
+  assert.match(source, /function mountColorStateDetail\(state = selectedColorState\)/);
+  assert.doesNotMatch(source, /function mountColorState\(/);
   assert.match(source, /panel\.replaceChildren\(\)/);
   assert.match(source, /if \(!isHexColor\(value\)\)/);
   assert.match(source, /save_settings/);

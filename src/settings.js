@@ -117,7 +117,7 @@ const SETTINGS_VIEWS = {
   },
   test: {
     template: 'test',
-    labelKey: 'settings.simulateState',
+    labelKey: 'settings.test',
     bind: () => bindTestActions(),
   },
 };
@@ -128,6 +128,10 @@ let currentPluginStatus = 'settings.pluginReady';
 let currentSaveStatus = 'ready';
 let setupError = null;
 let currentDisplayState = { state: 'idle', updated_at_ms: 0 };
+let initialSettingsReady = false;
+let pendingInitialSave = false;
+let initialSettingsLoadPromise = Promise.resolve();
+const localSettingEdits = new Set();
 
 const settingsBridge = createSettingsBridge({
   invoke,
@@ -182,7 +186,7 @@ function settingKey(field) {
     : field.name || field.id.replaceAll('-', '_');
 }
 
-function updateSettingsModel(field) {
+function updateSettingsModel(field, local = false) {
   const key = settingKey(field);
   if (!key || !Object.hasOwn(settingsStore.getSettings(), key)) return;
   settingsStore.patchSetting(key, field.type === 'checkbox'
@@ -190,6 +194,7 @@ function updateSettingsModel(field) {
     : field.type === 'number' || field.type === 'range'
       ? Number(field.value)
       : field.value);
+  if (local && !initialSettingsReady) localSettingEdits.add(key);
 }
 
 function syncSettingsModelFromControls() {
@@ -233,15 +238,18 @@ function syncColorField(state, value) {
   const preview = control(`${key}_preview`);
   const normalized = normalizeHexColor(value, DEFAULT_APP_SETTINGS[key]);
   if (picker && document.activeElement !== picker) picker.value = normalized;
-  if (hex && document.activeElement !== hex) hex.value = normalized;
+  if (hex && document.activeElement !== hex) {
+    hex.value = normalized;
+    hex.setCustomValidity?.('');
+  }
   if (preview) preview.style.backgroundColor = normalized;
-  hex?.setCustomValidity?.('');
 }
 
-function updateColorSetting(state, value) {
+function updateColorSetting(state, value, local = false) {
   const key = STATE_COLOR_KEYS[state];
   const normalized = normalizeHexColor(value, DEFAULT_APP_SETTINGS[key]);
   settingsStore.patchSetting(key, normalized);
+  if (local && !initialSettingsReady) localSettingEdits.add(key);
   renderColorStateList();
   syncColorField(state, normalized);
 }
@@ -276,7 +284,7 @@ function renderColorPresets() {
       label.textContent = color;
       button.append(chip, label);
       button.addEventListener('click', () => {
-        updateColorSetting(state, color);
+        updateColorSetting(state, color, true);
         void saveCurrentSettings();
       });
       grid.append(button);
@@ -380,10 +388,6 @@ function mountColorStateDetail(state = selectedColorState) {
   syncColorField(state, settingsStore.getSettings()[key]);
 }
 
-function mountColorState(state = selectedColorState) {
-  return mountColorStateDetail(state);
-}
-
 function selectColorState(state, focus = false) {
   if (!STATE_COLOR_KEYS[state]) return;
   syncSettingsModelFromControls();
@@ -479,7 +483,7 @@ function renderLanguage(language) {
   renderColorPresets();
 }
 
-function applySettings(settings) {
+function applySettings(settings, { preserveLocalEdits = false } = {}) {
   if (!settings) return;
   const activeField = document.activeElement;
   const activeKey = activeField && settingKey(activeField);
@@ -488,6 +492,9 @@ function applySettings(settings) {
     language: normalizeLanguage(settings.language ?? settingsStore.getSettings().language),
   };
   if (activeKey && Object.hasOwn(settingsStore.getSettings(), activeKey)) delete incoming[activeKey];
+  if (preserveLocalEdits) {
+    for (const key of localSettingEdits) delete incoming[key];
+  }
   const nextSettings = settingsStore.mergeSettings(incoming);
   syncControlsFromSettings(activeField);
   renderLanguage(nextSettings.language);
@@ -502,9 +509,21 @@ async function refreshDiagnostics() {
 }
 
 async function loadSettings() {
-  const settings = await invokeCommand('get_settings');
-  applySettings(settings.ok ? settings.value : DEFAULT_APP_SETTINGS);
+  const result = await settingsStore.enqueue(async () => {
+    const settings = await invokeCommand('get_settings');
+    applySettings(settings.ok ? settings.value : DEFAULT_APP_SETTINGS, { preserveLocalEdits: true });
+    if (settings.ok) {
+      initialSettingsReady = true;
+      localSettingEdits.clear();
+    }
+    return settings;
+  });
+  if (result.ok && pendingInitialSave) {
+    pendingInitialSave = false;
+    await settingsStore.saveLatest();
+  }
   await refreshDiagnostics();
+  return result;
 }
 
 const settingsChangedSubscription = settingsBridge.subscribe(
@@ -520,6 +539,10 @@ pluginOperationSubscription?.catch?.(() => {});
 
 function saveCurrentSettings() {
   readSettings();
+  if (!initialSettingsReady) {
+    pendingInitialSave = true;
+    return initialSettingsLoadPromise;
+  }
   return settingsStore.save();
 }
 
@@ -552,7 +575,7 @@ function bindSettingsFields(root) {
     if (field.dataset.colorInput || field.dataset.colorHex) continue;
     const event = field.type === 'number' || field.type === 'range' ? 'input' : 'change';
     field.addEventListener(event, () => {
-      updateSettingsModel(field);
+      updateSettingsModel(field, true);
       if (field.id === 'curve-id') renderFormula();
       if (field.id === 'opacity') renderOpacity();
       if (field.id === 'language') renderLanguage(field.value);
@@ -568,7 +591,7 @@ function bindColorEditor(state, picker, hex, reset) {
   hex.setAttribute('aria-label', `${label} ${getText(currentLanguage, 'settings.colorHex')}`);
   reset.setAttribute('aria-label', `${getText(currentLanguage, 'settings.resetColor')} ${label}`);
   picker.addEventListener('input', () => {
-    updateColorSetting(state, picker.value);
+    updateColorSetting(state, picker.value, true);
     void saveCurrentSettings();
   });
   hex.addEventListener('input', () => hex.setCustomValidity(''));
@@ -579,12 +602,12 @@ function bindColorEditor(state, picker, hex, reset) {
       hex.reportValidity?.();
       return;
     }
-    updateColorSetting(state, value.toUpperCase());
+    updateColorSetting(state, value.toUpperCase(), true);
     hex.setCustomValidity('');
     void saveCurrentSettings();
   });
   reset.addEventListener('click', () => {
-    updateColorSetting(state, DEFAULT_APP_SETTINGS[key]);
+    updateColorSetting(state, DEFAULT_APP_SETTINGS[key], true);
     void saveCurrentSettings();
   });
 }
@@ -657,5 +680,5 @@ settingsViewController = createSettingsViewController({
   },
 });
 settingsViewController.bind();
-loadSettings();
+initialSettingsLoadPromise = loadSettings();
 window.setInterval(refreshDiagnostics, 500);

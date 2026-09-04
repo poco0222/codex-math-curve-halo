@@ -66,6 +66,7 @@ const requiredLanguages = ['en', 'zh-CN'];
 assert.deepEqual(Object.keys(dictionaries).sort(), requiredLanguages);
 const requiredI18nKeys = [
   'settings.appearance',
+  'settings.test',
   'settings.display',
   'settings.renderer',
   'settings.diagnostics',
@@ -89,7 +90,8 @@ assert.match(settings, /const SETTINGS_VIEWS = \{/);
 assert.match(settings, /function mountSettingsView\(/);
 assert.match(settings, /host\.replaceChildren\(/);
 assert.doesNotMatch(settings, /const sectionNames = \[/);
-assert.match(settings, /function mountColorState\(/);
+assert.match(settings, /function mountColorStateDetail\(/);
+assert.doesNotMatch(settings, /function mountColorState\(/);
 assert.match(settings, /const settingsStore = createSettingsStore\(/);
 assert.match(settings, /settingsStore\.getSettings\(\)/);
 assert.match(settings, /settingsStore\.patchSetting\(/);

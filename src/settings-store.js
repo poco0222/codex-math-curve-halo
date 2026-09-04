@@ -34,5 +34,8 @@ export function createSettingsStore({ defaults, persist, enqueue = createSerialT
       const snapshot = getSettings();
       return enqueueTask(() => persist(snapshot));
     },
+    saveLatest() {
+      return enqueueTask(() => persist(getSettings()));
+    },
   };
 }
