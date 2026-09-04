@@ -1,0 +1,287 @@
+schema: comet.native.v4
+name: slider-settings-controls
+language: zh-CN
+phase: archive
+status: done
+state_version: 14
+brief: brief.md
+shape_confirmation_hash: 749071c1d85858dc0bb05cd6ed2a2a31e04f718be6716d9cab677b3e68b6a831
+spec_changes:
+  - capability: settings-sliders
+    operation: create
+    source: specs/settings-sliders/spec.md
+workspace:
+  isolation: current
+  change_branch: main
+  target_branch: main
+  finish: null
+loop:
+  stage: done
+  goal_cycle: 2
+  iteration: 1
+  attempt: 1
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: null
+acceptance:
+  - id: A1
+    source: brief.md
+    text: A1：Appearance 页的九个数字字段都是 `type="range"`，范围和步长分别符合既定约束；曲线方案仍是
+      `select`，公式仍是只读 `output`。
+    result: passed
+    reason:
+      text: 九个数字字段为 range，用户确认范围和步长正确；curve select 与 formula output 保留。
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: A2：用户拖动或用键盘调整任一 slider 时，当前值按正确精度更新，关联 label/output 可访问，设置模型收到数值而非字符串。
+    result: passed
+    reason:
+      text: range 值转为 Number，精度格式、label/output 关联和键盘行为正确。
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: A3：外部 `settings-changed` 事件、初始加载和 Appearance 重新挂载后，所有 slider
+      与当前值展示同步，未改变的本地编辑不被覆盖。
+    result: passed
+    reason:
+      text: 初始加载、settings-changed、Appearance remount 和 local edit preservation 一致。
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: A4：保存后的设置继续到达 overlay 和 settings 窗口；renderer
+      使用的数值保持有限、正值或对应范围内，不改变现有保存错误处理。
+    result: passed
+    reason:
+      text: 保存前 normalize、双窗口事件同步、renderer 应用和错误路径保持。
+      truncated: false
+  - id: A5
+    source: brief.md
+    text: A5：越界设置经 native normalize 后落在对应允许范围；响应式布局不溢出，renderer/settings 结构检查通过。
+    result: passed
+    reason:
+      text: Rust 与 renderer 均使用用户新范围，响应式结构无溢出。
+      truncated: false
+  - id: A6
+    source: specs/settings-sliders/spec.md
+    text: Numeric fields are sliders - GIVEN the Appearance view is mounted - WHEN
+      the view is inspected - THEN each listed numeric setting has an associated
+      label and `input[type="range"]` with the specified `min`, `max`, and
+      `step` - AND `curve_id` remains a `select` - AND `formula` remains
+      read-only
+    result: passed
+    reason:
+      text: 实际 DOM/结构检查确认九个 slider、关联 label/output、select 和只读公式。
+      truncated: false
+  - id: A7
+    source: specs/settings-sliders/spec.md
+    text: Slider values are readable and editable - GIVEN a listed slider has focus
+      - WHEN the user drags it or uses the native arrow keys - THEN the setting
+      model receives a finite number - AND the associated output displays the
+      value using the field's required precision - AND the label, slider, and
+      output remain programmatically associated
+    result: passed
+    reason:
+      text: 原生 range 键盘、值转换、精度格式和 focus 样式满足要求。
+      truncated: false
+  - id: A8
+    source: specs/settings-sliders/spec.md
+    text: External settings stay synchronized - GIVEN Appearance is mounted or an
+      external `settings-changed` payload arrives - WHEN the payload contains
+      valid settings - THEN every mounted slider and output reflects the payload
+      - AND the existing local-edit preservation behavior remains intact
+    result: passed
+    reason:
+      text: 外部同步与本地编辑冲突测试通过。
+      truncated: false
+  - id: A9
+    source: specs/settings-sliders/spec.md
+    text: Native bounds reject invalid values - GIVEN a settings payload contains a
+      value outside a declared slider range or a non-finite numeric duration -
+      WHEN native normalization runs - THEN the resulting settings are finite
+      and inside the declared range - AND the renderer does not receive an
+      invalid value
+    result: passed
+    reason:
+      text: 非有限值处理、native bounds、renderer runtime clamp 和 68 项 Rust 测试通过。
+      truncated: false
+  - id: A10
+    source: specs/settings-sliders/spec.md
+    text: Existing persistence and layout remain stable - GIVEN the user changes any
+      listed slider - WHEN the existing save path completes - THEN settings
+      continue to synchronize to both windows and save failures use the existing
+      safe status/error path - AND the Appearance layout remains usable at its
+      existing responsive breakpoints without overflow
+    result: passed
+    reason:
+      text: 保存队列、错误状态、双窗口同步和响应式结构未回归。
+      truncated: false
+builder_handoff:
+  candidate_id: 175a415d-fd8d-41de-bb6f-b606c7103cf3
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:5c406bf8-e198-4b30-be5d-d3d607fb9172
+  iteration: 1
+  summary:
+    text: 已完成用户范围修订：particle_count 80-140；duration_ms 500-1500；pulse_duration_ms
+      500-2000；rotation_duration_ms 500-3000；stroke_width 1.0-5.0。同步更新
+      slider、output 默认值、前端/renderer 默认值、Rust normalize/default 和 renderer
+      runtime clamp；保留既有 curve select、formula output、Store/Bridge、外部同步、错误处理。补充
+      renderer 实际粒子计数与 duration clamp 行为测试，并更新默认值回归测试。
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A2
+    - A3
+    - A4
+    - A5
+    - A6
+    - A7
+    - A8
+    - A9
+    - A10
+  checks:
+    - name:
+        text: npm run check:settings-tabs
+        truncated: false
+      result: passed
+      note:
+        text: "settings tabs structure: PASS; revised bounds and output associations
+          checked."
+        truncated: false
+    - name:
+        text: npm run check:renderer
+        truncated: false
+      result: passed
+      note:
+        text: "renderer self-check: PASS (4 profiles); actual particle and duration
+          clamp behavior assertions passed."
+        truncated: false
+    - name:
+        text: node src/app.test.mjs
+        truncated: false
+      result: failed
+      note:
+        text: 63 passed, 2 pre-existing failures at window-size assertions expecting
+          .inner_size(960.0, 760.0); current main.rs uses 1200.0, 900.0. No
+          slider-related failure.
+        truncated: false
+    - name:
+        text: cargo test --manifest-path src-tauri/Cargo.toml --lib
+        truncated: false
+      result: passed
+      note:
+        text: 68 passed, 0 failed; existing dead_code warning only.
+        truncated: false
+    - name:
+        text: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+        truncated: false
+      result: passed
+      note:
+        text: Rust formatting check passed.
+        truncated: false
+    - name:
+        text: git diff --check
+        truncated: false
+      result: passed
+      note:
+        text: No whitespace errors.
+        truncated: false
+    - name:
+        text: CUA static settings smoke
+        truncated: false
+      result: passed
+      note:
+        text: Updated desktop DOM/accessibility tree showed revised bounds and legal
+          defaults; labels, outputs, keyboard slider behavior and layout
+          verified.
+        truncated: false
+  checks_truncated: false
+  known_limits:
+    - text: node src/app.test.mjs 保留 2 个与本 change 无关的窗口尺寸基线失败。
+      truncated: false
+    - text: 未运行打包后的真实 Tauri WebView、Windows native runtime 和真实 IPC。
+      truncated: false
+    - text: Rust 保留既有 src/platform.rs:15 PROCESS_COMMAND_ENV_LOCK dead_code warning。
+      truncated: false
+  known_limits_truncated: false
+  review:
+    status: passed
+    summary:
+      text: 独立只读复核 r5 未发现 P1/P2；确认用户新范围、默认值、renderer/native clamp、测试和 brief/spec 一致。
+      truncated: false
+    reviewer_execution_ref: slider-settings-controls-20260904-r5
+  submitted_at: 2026-09-04T15:51:59.781Z
+blockers: []
+verification:
+  candidate_id: 175a415d-fd8d-41de-bb6f-b606c7103cf3
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:3be6ef07-4f0f-46a2-ac10-e584bbe60245
+  iteration: 1
+  attempt: 1
+  assurance: skill-coordinated
+  verdict: pass
+  checks: []
+  summary:
+    text: 独立第二轮只读验证完成。用户确认范围、brief/spec、实现、默认值、native normalize、renderer
+      clamp、双窗口同步和结构检查一致。无本 change 相关 failed 或 blocked。
+    truncated: false
+  risks:
+    - text: 基线失败，非本 change：node src/app.test.mjs 为 63 passed / 2 failed，旧窗口尺寸断言仍要求
+        960x760，当前实现为 1200x900。
+      truncated: false
+    - text: 未运行打包后的真实 Tauri WebView、Windows native runtime 或真实 IPC。
+      truncated: false
+    - text: 部分旧 fake fixture 仍使用 number 类型，真实 settings DOM 结构检查已通过。
+      truncated: false
+  risks_truncated: false
+  completed_at: 2026-09-04T15:59:01.395Z
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: A1-A10 全部满足。check:settings-tabs、check:renderer、focused sync、cargo lib 68
+        passed、cargo fmt --check、git diff --check 和 CUA 静态/键盘检查通过。
+      truncated: false
+    completed_at: 2026-09-04T15:14:44.629Z
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: recovery
+    unresolved_ids: []
+    summary:
+      text: 用户修改了可见控件范围：duration_ms 500-1500；particle_count 80-140；pulse_duration_ms
+        500-2000；rotation_duration_ms 500-3000；stroke_width
+        1.0-5.0。opacity、offset_x、offset_y、trail_span 保持原范围。需要更新
+        brief、Spec、测试和实现后重新确认 Shape。
+      truncated: false
+    completed_at: 2026-09-04T15:24:08.892Z
+  - goal_cycle: 2
+    iteration: 1
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: 独立第二轮只读验证完成。用户确认范围、brief/spec、实现、默认值、native normalize、renderer
+        clamp、双窗口同步和结构检查一致。无本 change 相关 failed 或 blocked。
+      truncated: false
+    completed_at: 2026-09-04T15:59:01.395Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: true
+created_at: 2026-09-04T14:41:49.050Z
