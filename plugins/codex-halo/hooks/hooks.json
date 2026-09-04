@@ -41,6 +41,19 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${PLUGIN_ROOT}/hooks/run-helper.sh\"",
+            "commandWindows": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"$env:PLUGIN_ROOT\\hooks\\run-helper.ps1\"",
+            "timeout": 5,
+            "statusMessage": "Updating Codex Halo"
+          }
+        ]
+      }
+    ],
     "PermissionRequest": [
       {
         "matcher": "",
@@ -78,6 +91,19 @@
             "command": "sh \"${PLUGIN_ROOT}/hooks/run-helper.sh\"",
             "commandWindows": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"$env:PLUGIN_ROOT\\hooks\\run-helper.ps1\"",
             "timeout": 5,
+            "statusMessage": "Updating Codex Halo"
+          }
+        ]
+      }
+    ],
+    "Interrupt": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${PLUGIN_ROOT}/hooks/run-helper.sh\"",
+            "commandWindows": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"$env:PLUGIN_ROOT\\hooks\\run-helper.ps1\"",
+            "timeout": 3,
             "statusMessage": "Updating Codex Halo"
           }
         ]

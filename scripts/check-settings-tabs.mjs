@@ -54,11 +54,11 @@ assert.match(html, /settings-tab-display[^>]*aria-selected="true"[^>]*tabindex="
 assert.equal((html.match(/role="tab"/g) ?? []).length, 4);
 assert.equal((html.match(/role="tab"[^>]*tabindex="-1"/g) ?? []).length, 3);
 assert.match(html, /id="settings-panel-host"[^>]*role="tabpanel"(?![^>]*tabindex)/);
-for (const state of ['idle', 'thinking', 'executing', 'input_needed', 'completed', 'compacting']) {
+for (const state of ['idle', 'thinking', 'executing', 'input_needed', 'completed', 'interrupted', 'compacting']) {
   assert.match(colors, new RegExp(`${state}: '.*_color'`));
 }
 assert.equal((colors.match(/id: 'palette-/g) ?? []).length, 10);
-assert.equal((colors.match(/#[0-9A-Fa-f]{6}/g) ?? []).length, 76);
+assert.equal((colors.match(/#[0-9A-Fa-f]{6}/g) ?? []).length, 77);
 assert.match(i18n, /DEFAULT_LANGUAGE = 'en'/);
 assert.match(i18n, /SUPPORTED_LANGUAGES = \['en', 'zh-CN'\]/);
 const dictionaries = runInNewContext(`(${readObjectLiteral(i18n, 'dictionaries')})`, Object.create(null));
@@ -75,7 +75,7 @@ const requiredI18nKeys = [
   'settings.diagnosticsLastEvent',
   'settings.diagnosticsNever',
   'settings.diagnosticsSetupError',
-  ...['idle', 'thinking', 'executing', 'inputNeeded', 'completed', 'compacting'].map((state) => `settings.states.${state}`),
+  ...['idle', 'thinking', 'executing', 'inputNeeded', 'completed', 'interrupted', 'compacting'].map((state) => `settings.states.${state}`),
 ];
 const englishKeys = Object.keys(dictionaries.en).sort();
 for (const language of requiredLanguages) {

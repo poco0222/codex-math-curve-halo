@@ -21,6 +21,7 @@ const STATE_STYLES = {
   executing: { color: DEFAULT_STATE_COLORS.executing, alpha: 0.82, radius: 17, pulse: 0.1, speed: 1.45, rotation: 1.55 },
   input_needed: { color: DEFAULT_STATE_COLORS.input_needed, alpha: 0.76, radius: 17, pulse: 0.2, speed: 0.72, rotation: 0.9 },
   completed: { color: DEFAULT_STATE_COLORS.completed, alpha: 0.58, radius: 15, pulse: 0.12, speed: 0.42, rotation: 0.7 },
+  interrupted: { color: DEFAULT_STATE_COLORS.interrupted, alpha: 0.68, radius: 16, pulse: 0.2, speed: 0.58, rotation: 0.82 },
   compacting: { color: DEFAULT_STATE_COLORS.compacting, alpha: 0.72, radius: 16, pulse: 0.24, speed: 0.88, rotation: 1.05 },
 };
 

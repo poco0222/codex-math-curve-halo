@@ -5,7 +5,8 @@
 ### Requirement: Persist independent state colors
 
 `AppSettings` SHALL persist one color for each existing state: `idle`,
-`thinking`, `executing`, `input_needed`, `completed`, and `compacting`.
+`thinking`, `executing`, `input_needed`, `completed`, `interrupted`, and
+`compacting`.
 The wire fields SHALL be named `<state>_color` and contain canonical
 `#RRGGBB` values.
 
@@ -17,10 +18,11 @@ defaults:
 - `executing_color`: `#339CFF`
 - `input_needed_color`: `#F05252`
 - `completed_color`: `#35C878`
+- `interrupted_color`: `#FEBA07`
 - `compacting_color`: `#A56BFF`
 
 When an older file is loaded, the normalized complete settings object SHALL be
-written back so the persisted contract contains all six color fields.
+written back so the persisted contract contains all seven color fields.
 
 Invalid color values SHALL fail the save before the settings file is written.
 Loading a damaged settings file SHALL use the existing settings recovery path.
@@ -32,7 +34,7 @@ Acceptance coverage: A1, A5.
 ### Requirement: Configure colors from the settings window
 
 The settings window SHALL expose one color picker and one editable hexadecimal
-field for each of the six states. Each state control SHALL read and write only
+field for each of the seven states. Each state control SHALL read and write only
 its own `<state>_color` field.
 
 The window SHALL expose all 70 preset colors from the supplied source images,

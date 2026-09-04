@@ -10,14 +10,16 @@ pub enum HaloState {
     Executing,
     InputNeeded,
     Completed,
+    Interrupted,
     Compacting,
 }
 
-pub const STATE_PRIORITY: [HaloState; 6] = [
+pub const STATE_PRIORITY: [HaloState; 7] = [
     HaloState::InputNeeded,
     HaloState::Compacting,
     HaloState::Executing,
     HaloState::Thinking,
+    HaloState::Interrupted,
     HaloState::Completed,
     HaloState::Idle,
 ];
@@ -30,6 +32,7 @@ const DEFAULT_THINKING_COLOR: &str = "#FF8A3D";
 const DEFAULT_EXECUTING_COLOR: &str = "#339CFF";
 const DEFAULT_INPUT_NEEDED_COLOR: &str = "#F05252";
 const DEFAULT_COMPLETED_COLOR: &str = "#35C878";
+const DEFAULT_INTERRUPTED_COLOR: &str = "#FEBA07";
 const DEFAULT_COMPACTING_COLOR: &str = "#A56BFF";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -60,7 +63,7 @@ fn priority(state: HaloState) -> u8 {
 
 fn expiry_ms(state: HaloState) -> Option<i64> {
     match state {
-        HaloState::Completed => Some(COMPLETED_EXPIRY_MS),
+        HaloState::Completed | HaloState::Interrupted => Some(COMPLETED_EXPIRY_MS),
         HaloState::Thinking | HaloState::Executing | HaloState::Compacting => {
             Some(ACTIVE_EXPIRY_MS)
         }
@@ -185,6 +188,7 @@ pub struct AppSettings {
     pub executing_color: String,
     pub input_needed_color: String,
     pub completed_color: String,
+    pub interrupted_color: String,
     pub compacting_color: String,
     pub start_at_login: bool,
     pub follow_codex_lifecycle: bool,
@@ -222,6 +226,7 @@ impl AppSettings {
         self.executing_color = normalize_color(self.executing_color)?;
         self.input_needed_color = normalize_color(self.input_needed_color)?;
         self.completed_color = normalize_color(self.completed_color)?;
+        self.interrupted_color = normalize_color(self.interrupted_color)?;
         self.compacting_color = normalize_color(self.compacting_color)?;
         Ok(self)
     }
@@ -257,6 +262,7 @@ impl Default for AppSettings {
             executing_color: DEFAULT_EXECUTING_COLOR.to_owned(),
             input_needed_color: DEFAULT_INPUT_NEEDED_COLOR.to_owned(),
             completed_color: DEFAULT_COMPLETED_COLOR.to_owned(),
+            interrupted_color: DEFAULT_INTERRUPTED_COLOR.to_owned(),
             compacting_color: DEFAULT_COMPACTING_COLOR.to_owned(),
             start_at_login: false,
             follow_codex_lifecycle: false,
@@ -271,7 +277,9 @@ mod tests {
 
     #[test]
     fn uses_the_required_state_priority_order() {
-        assert_eq!(priority(HaloState::InputNeeded), 6);
+        assert_eq!(priority(HaloState::InputNeeded), 7);
+        assert_eq!(priority(HaloState::Interrupted), 3);
+        assert_eq!(priority(HaloState::Completed), 2);
         assert_eq!(priority(HaloState::Idle), 1);
     }
 
@@ -283,6 +291,7 @@ mod tests {
             (HaloState::Executing, "executing"),
             (HaloState::InputNeeded, "input_needed"),
             (HaloState::Completed, "completed"),
+            (HaloState::Interrupted, "interrupted"),
             (HaloState::Compacting, "compacting"),
         ];
 
@@ -333,16 +342,14 @@ mod tests {
     }
 
     #[test]
-    fn expires_completed_after_three_seconds() {
+    fn expires_terminal_states_after_three_seconds() {
         let now = 1_000_000;
-        assert_eq!(
-            reduce_snapshots(
-                &[Snapshot::new("a", HaloState::Completed, now - 3_001)],
-                now
-            )
-            .state,
-            HaloState::Idle
-        );
+        for state in [HaloState::Completed, HaloState::Interrupted] {
+            assert_eq!(
+                reduce_snapshots(&[Snapshot::new("a", state, now - 3_001)], now).state,
+                HaloState::Idle,
+            );
+        }
     }
 
     #[test]
@@ -401,6 +408,7 @@ mod tests {
         let now = 1_000_000;
         let cases = [
             (HaloState::Completed, 3_000),
+            (HaloState::Interrupted, 3_000),
             (HaloState::Idle, 60_000),
             (HaloState::Thinking, 60_000),
             (HaloState::Executing, 60_000),
@@ -543,6 +551,7 @@ mod tests {
             "executing_color",
             "input_needed_color",
             "completed_color",
+            "interrupted_color",
             "compacting_color",
             "start_at_login",
             "language",
@@ -560,6 +569,7 @@ mod tests {
         assert_eq!(settings.executing_color, "#339CFF");
         assert_eq!(settings.input_needed_color, "#F05252");
         assert_eq!(settings.completed_color, "#35C878");
+        assert_eq!(settings.interrupted_color, "#FEBA07");
         assert_eq!(settings.compacting_color, "#A56BFF");
     }
 

@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 pub const MARKETPLACE_NAME: &str = "codex-halo";
 pub const PLUGIN_ID: &str = "codex-halo@codex-halo";
+const LEGACY_PLUGIN_ID: &str = "codex-halo@personal";
 pub const RESOURCE_ROOT: &str = "codex-halo-marketplace";
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 const COMMAND_POLL_INTERVAL: Duration = Duration::from_millis(50);
@@ -110,7 +111,7 @@ pub fn install(marketplace_root: &Path) -> Result<(), PluginError> {
     if let Err(error) = run_step(Step::AddPlugin, &plugin_args) {
         if marketplace_added {
             let rollback_args = uninstall_args();
-            if run_step(Step::RemoveMarketplace, &rollback_args[1]).is_err() {
+            if run_step(Step::RemoveMarketplace, &rollback_args[2]).is_err() {
                 return Err(PluginError::PartialInstall);
             }
         }
@@ -127,13 +128,17 @@ pub fn uninstall(marketplace_root: &Path) -> Result<(), PluginError> {
         MarketplaceState::Conflict => return Err(PluginError::MarketplaceNotOwned),
         MarketplaceState::Missing | MarketplaceState::Owned => {}
     }
-    let [plugin_args, marketplace_args] = uninstall_args();
+    let [plugin_args, legacy_plugin_args, marketplace_args] = uninstall_args();
     let plugin_result = run_step(Step::RemovePlugin, &plugin_args);
+    let legacy_plugin_result = run_step(Step::RemovePlugin, &legacy_plugin_args);
     let marketplace_result = run_step(Step::RemoveMarketplace, &marketplace_args);
-    match (plugin_result, marketplace_result) {
-        (Ok(()), result) => result,
-        (Err(error), Ok(())) => Err(error),
-        (Err(_), Err(_)) => Err(PluginError::PartialUninstall),
+    let plugin_error = [plugin_result, legacy_plugin_result]
+        .into_iter()
+        .find_map(Result::err);
+    match (plugin_error, marketplace_result) {
+        (None, result) => result,
+        (Some(error), Ok(())) => Err(error),
+        (Some(_), Err(_)) => Err(PluginError::PartialUninstall),
     }
 }
 
@@ -213,12 +218,18 @@ fn install_args(marketplace_root: &Path) -> [Vec<OsString>; 2] {
     ]
 }
 
-fn uninstall_args() -> [Vec<OsString>; 2] {
+fn uninstall_args() -> [Vec<OsString>; 3] {
     [
         vec![
             "plugin".into(),
             "remove".into(),
             PLUGIN_ID.into(),
+            "--json".into(),
+        ],
+        vec![
+            "plugin".into(),
+            "remove".into(),
+            LEGACY_PLUGIN_ID.into(),
             "--json".into(),
         ],
         vec![
@@ -342,12 +353,16 @@ mod tests {
     }
 
     #[test]
-    fn uninstall_args_remove_only_codex_halo() {
-        let [plugin, marketplace] = uninstall_args();
+    fn uninstall_args_remove_current_and_legacy_codex_halo() {
+        let [plugin, legacy_plugin, marketplace] = uninstall_args();
 
         assert_eq!(
             strings(&plugin),
             ["plugin", "remove", "codex-halo@codex-halo", "--json"]
+        );
+        assert_eq!(
+            strings(&legacy_plugin),
+            ["plugin", "remove", "codex-halo@personal", "--json"]
         );
         assert_eq!(
             strings(&marketplace),

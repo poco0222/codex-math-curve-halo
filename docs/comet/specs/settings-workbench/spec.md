@@ -31,12 +31,12 @@ The `Appearance` View SHALL group the current Display and Renderer settings into
 
 ## Requirement: State colors Master-Detail editor
 
-The `State colors` View SHALL use a Master-Detail layout for the six existing Halo states.
+The `State colors` View SHALL use a Master-Detail layout for the seven existing Halo states.
 
 ### Scenario: Scan color states
 
 - **WHEN** the `State colors` View is active
-- **THEN** the state list shows `idle`, `thinking`, `executing`, `input_needed`, `completed`, and `compacting`
+- **THEN** the state list shows `idle`, `thinking`, `executing`, `input_needed`, `completed`, `interrupted`, and `compacting`
 - **AND** each row shows the localized state label, current color swatch, and current Hex value
 - **AND** exactly one row is selected
 
@@ -51,7 +51,7 @@ The `State colors` View SHALL use a Master-Detail layout for the six existing Ha
 
 - **WHEN** a future state-level setting such as audio linkage or state-specific animation is added
 - **THEN** it can be added to the selected state's detail context without changing the state list interaction
-- **AND** the current six-state color contract remains intact
+- **AND** the current seven-state color contract remains intact
 
 ### Scenario: Use colors on a narrow viewport
 

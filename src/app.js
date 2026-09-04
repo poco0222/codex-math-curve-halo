@@ -24,6 +24,7 @@ export const DEFAULT_APP_SETTINGS = Object.freeze({
   executing_color: DEFAULT_STATE_COLORS.executing,
   input_needed_color: DEFAULT_STATE_COLORS.input_needed,
   completed_color: DEFAULT_STATE_COLORS.completed,
+  interrupted_color: DEFAULT_STATE_COLORS.interrupted,
   compacting_color: DEFAULT_STATE_COLORS.compacting,
   start_at_login: false,
   follow_codex_lifecycle: false,

@@ -90,9 +90,11 @@ pub fn map_event(input: &HookInput) -> Option<HookAction> {
         )),
         "UserPromptSubmit" => Some(HookAction::Set(HaloState::Thinking)),
         "PreToolUse" => Some(HookAction::Set(HaloState::Executing)),
+        "PostToolUse" => Some(HookAction::Set(HaloState::Thinking)),
         "PermissionRequest" => Some(HookAction::Set(HaloState::InputNeeded)),
         "PreCompact" => Some(HookAction::Set(HaloState::Compacting)),
         "PostCompact" => Some(HookAction::Set(HaloState::Thinking)),
+        "Interrupt" => Some(HookAction::Set(HaloState::Interrupted)),
         "Stop" => Some(HookAction::Set(HaloState::Completed)),
         "SessionEnd" => Some(HookAction::Remove),
         _ => None,
@@ -348,14 +350,16 @@ mod tests {
     }
 
     #[test]
-    fn maps_only_the_eight_codex_lifecycle_events() {
+    fn maps_codex_lifecycle_events_to_halo_actions() {
         let cases = [
             ("SessionStart", HookAction::Set(HaloState::Idle)),
             ("UserPromptSubmit", HookAction::Set(HaloState::Thinking)),
             ("PreToolUse", HookAction::Set(HaloState::Executing)),
+            ("PostToolUse", HookAction::Set(HaloState::Thinking)),
             ("PermissionRequest", HookAction::Set(HaloState::InputNeeded)),
             ("PreCompact", HookAction::Set(HaloState::Compacting)),
             ("PostCompact", HookAction::Set(HaloState::Thinking)),
+            ("Interrupt", HookAction::Set(HaloState::Interrupted)),
             ("Stop", HookAction::Set(HaloState::Completed)),
             ("SessionEnd", HookAction::Remove),
         ];
@@ -414,7 +418,7 @@ mod tests {
 
     #[test]
     fn ignores_unknown_events() {
-        let input = parse_hook_input(&fixture("PostToolUse")).unwrap();
+        let input = parse_hook_input(&fixture("Unknown")).unwrap();
 
         assert_eq!(map_event(&input), None);
     }

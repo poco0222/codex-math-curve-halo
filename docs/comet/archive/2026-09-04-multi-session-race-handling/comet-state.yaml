@@ -1,0 +1,189 @@
+schema: comet.native.v4
+name: multi-session-race-handling
+language: zh-CN
+phase: archive
+status: done
+state_version: 9
+brief: brief.md
+spec_changes: []
+workspace:
+  isolation: current
+  change_branch: main
+  target_branch: main
+  finish: null
+loop:
+  stage: done
+  goal_cycle: 2
+  iteration: 1
+  attempt: 1
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: null
+acceptance:
+  - id: A1
+    source: brief.md
+    text: "`Stop` 产生 `completed`，不产生 `interrupted`。"
+    result: passed
+    reason:
+      text: Stop 仍映射为 completed，未映射为 interrupted。
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: "`Interrupt` 产生 `interrupted`，并且与 `completed` 使用不同的状态值和颜色配置。"
+    result: passed
+    reason:
+      text: Interrupt 映射为 interrupted，并拥有独立 wire value 与 interrupted_color。
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: "`PostToolUse` 产生 `thinking`。"
+    result: passed
+    reason:
+      text: PostToolUse 映射为 thinking。
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: "`interrupted` 在 `3s` 后按现有过期规则回到 `idle`。"
+    result: passed
+    reason:
+      text: interrupted 与 completed 共用 3s 过期规则，超过 3s 后回到 idle。
+      truncated: false
+  - id: A5
+    source: brief.md
+    text: 既有状态相关设置、序列化和测试不丢失；新增状态在所有状态列表和颜色配置中完整出现。
+    result: passed
+    reason:
+      text: 既有状态合同保留；新增状态已接入 Rust、Web、颜色、设置、Plugin、文档与测试。
+      truncated: false
+builder_handoff:
+  candidate_id: 42d7e73e-9261-4917-8522-3c8e1b6f53b3
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:38933fd4-6617-40aa-b094-5e4e7cb89721
+  iteration: 1
+  summary:
+    text: 补齐 PostToolUse 和 Interrupt；新增 interrupted 状态区分正常 completed 与用户中断；更新 Rust
+      状态合同、snapshot、reducer、设置颜色、i18n、托盘模拟、Plugin hooks、README、当前 Specs
+      和测试。不处理多线程竞态、SubagentStart/SubagentStop 或 PostToolUseFailure。
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A2
+    - A3
+    - A4
+    - A5
+  checks:
+    - name:
+        text: Rust fmt and tests
+        truncated: false
+      result: passed
+      note:
+        text: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check; cargo
+          test --manifest-path src-tauri/Cargo.toml --lib --tests; 72 lib + 26
+          bin + 5 hook + 2 integration tests passed
+        truncated: false
+    - name:
+        text: Plugin package and settings checks
+        truncated: false
+      result: passed
+      note:
+        text: node --test scripts/plugin-package.test.mjs; node
+          scripts/check-settings-tabs.mjs
+        truncated: false
+    - name:
+        text: Renderer self-check
+        truncated: false
+      result: passed
+      note:
+        text: node scripts/check-renderer.mjs
+        truncated: false
+    - name:
+        text: Frontend app tests
+        truncated: false
+      result: failed
+      note:
+        text: 62 passed, 2 pre-existing layout baseline failures in src/app.test.mjs for
+          settings page inner_size assertions
+        truncated: false
+    - name:
+        text: Diff hygiene
+        truncated: false
+      result: passed
+      note:
+        text: git diff --check
+        truncated: false
+  checks_truncated: false
+  known_limits:
+    - text: 未运行真实 Codex /hooks 信任与事件触发检查。
+      truncated: false
+    - text: 未运行真实 Tauri UI、Windows PowerShell 或 Windows runtime 检查。
+      truncated: false
+    - text: 前端完整测试保留 2 个与本 change 无关的既有布局基线失败。
+      truncated: false
+  known_limits_truncated: false
+  review:
+    status: passed
+    summary:
+      text: 只读审查未发现 P0/P1 correctness 问题；已修正 settings-workbench 的七状态合同文字，并补充
+        interrupted 超时回归测试。真实 Codex、Tauri 和 Windows runtime 仍未验证。
+      truncated: false
+    reviewer_execution_ref: 01a06bc5-af29-7a02-b912-fa392d65082d
+  submitted_at: 2026-09-04T09:46:17.241Z
+blockers: []
+verification:
+  candidate_id: 42d7e73e-9261-4917-8522-3c8e1b6f53b3
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:e1de4dd4-da56-4e4b-b9b0-7ffae639c02a
+  iteration: 1
+  attempt: 1
+  assurance: skill-coordinated
+  verdict: pass
+  checks: []
+  summary:
+    text: 独立只读验收支持 A1-A5 全部通过。未将真实 Codex、Tauri 或 Windows runtime 未验证内容计为运行时通过。
+    truncated: false
+  risks:
+    - text: 真实 Codex /hooks 信任、安装和事件触发未验证。
+      truncated: false
+    - text: 真实 Tauri UI、Windows PowerShell 和 Windows runtime 未验证。
+      truncated: false
+    - text: src/app.test.mjs 保留 2 个既有 settings inner_size 布局基线失败；62 passed, 2
+        failed，不属于本 change 新失败。
+      truncated: false
+  risks_truncated: false
+  completed_at: 2026-09-04T09:52:54.936Z
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 0
+    outcome: recovery
+    unresolved_ids: []
+    summary:
+      text: Native confirmed acceptance criteria changed
+      truncated: false
+    completed_at: 2026-09-04T09:41:27.111Z
+  - goal_cycle: 2
+    iteration: 1
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: 独立只读验收支持 A1-A5 全部通过。未将真实 Codex、Tauri 或 Windows runtime 未验证内容计为运行时通过。
+      truncated: false
+    completed_at: 2026-09-04T09:52:54.936Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: true
+created_at: 2026-09-04T09:18:16.323Z

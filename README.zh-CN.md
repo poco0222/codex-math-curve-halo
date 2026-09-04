@@ -47,17 +47,19 @@ cargo tauri build --target aarch64-apple-darwin
 安装并启用 `codex-halo`。然后在 `/hooks` 中检查并信任 hooks，最后启动新的
 Codex session。
 
-**卸载 Plugin** 只移除 `codex-halo` 和它的 marketplace 注册，不会移除原生 App、
-helper 或其他 hooks。安装 Plugin 时，如果 `~/.codex/hooks.json` 中存在旧版
-Codex Halo 条目，App 会执行一次带备份的清理；其他条目保持不变。
+**卸载 Plugin** 会移除 `codex-halo`、旧版 `codex-halo@personal` 安装身份以及本
+应用自己的 marketplace 注册；不会移除原生 App、helper、`personal` marketplace
+或其他 hooks。安装 Plugin 时，如果 `~/.codex/hooks.json` 中存在旧版 Codex Halo
+条目，App 会执行一次带备份的清理；其他条目保持不变。
 
 Plugin helper 使用共享的 `CODEX_HOME/codex-halo/state` 目录。Codex 可能要求用户
 检查并信任新的或变更过的 hooks。Plugin 安装不会自动绕过信任步骤。
 
-自有的 `SessionStart`、`Stop` 和 `SessionEnd` hooks 会同步运行，以保持状态变化
-与 Codex 事件顺序一致。带有 `source: "compact"` 的 `SessionStart` 会映射为
-`thinking`；source 字段不会被保存。状态模拟使用 Rust reducer，不会增加真实
-session 计数。
+自有的生命周期 hooks 会同步运行，以保持状态变化与 Codex 事件顺序一致。
+`PostToolUse` 会映射回 `thinking`；`Interrupt` 会映射为 `interrupted`；
+`Stop` 会映射为 `completed`。带有 `source: "compact"` 的 `SessionStart` 会
+映射为 `thinking`；source 字段不会被保存。状态模拟使用 Rust reducer，不会增加
+真实 session 计数。
 
 ## 设置与诊断
 

@@ -41,15 +41,17 @@ test('Codex Halo marketplace has a unique install identity', async () => {
   assert.equal(marketplace.plugins[0].source.path, './plugins/codex-halo');
 });
 
-test('default plugin hooks cover the eight synchronous Halo lifecycle events', async () => {
+test('default plugin hooks cover the synchronous Halo lifecycle events', async () => {
   const config = await readJson('hooks/hooks.json');
   const expected = {
     SessionStart: 'startup|resume|clear|compact',
     UserPromptSubmit: undefined,
     PreToolUse: '',
+    PostToolUse: undefined,
     PermissionRequest: '',
     PreCompact: 'manual|auto',
     PostCompact: 'manual|auto',
+    Interrupt: undefined,
     Stop: undefined,
     SessionEnd: undefined,
   };
@@ -67,6 +69,7 @@ test('default plugin hooks cover the eight synchronous Halo lifecycle events', a
     assert.doesNotMatch(handler.command, /--state-dir/);
     assert.match(handler.commandWindows, /PLUGIN_ROOT/);
     assert.match(handler.commandWindows, /run-helper\.ps1/);
+    assert.equal(handler.timeout, event === 'Interrupt' || event === 'SessionEnd' ? 3 : 5, event);
   }
 });
 

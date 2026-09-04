@@ -1082,6 +1082,7 @@ test('localization defaults and falls back to English', () => {
   assert.equal(normalizeLanguage('zh-CN'), 'zh-CN');
   assert.equal(getText('zh-CN', 'settings.display'), '显示');
   assert.equal(getStateLabel('zh-CN', 'input_needed'), '需要输入');
+  assert.equal(getStateLabel('zh-CN', 'interrupted'), '已中断');
   assert.equal(getCurveLabel('zh-CN', 'rose-seven'), '七瓣玫瑰');
 });
 
@@ -1109,6 +1110,7 @@ test('state color presets preserve all supplied hexadecimal values', async () =>
     executing: '#339CFF',
     input_needed: '#F05252',
     completed: '#35C878',
+    interrupted: '#FEBA07',
     compacting: '#A56BFF',
   };
   const expectedPresets = [
@@ -1581,6 +1583,7 @@ test('renderer startup uses exact frontend defaults after get_settings fails', a
     executing_color: '#339CFF',
     input_needed_color: '#F05252',
     completed_color: '#35C878',
+    interrupted_color: '#FEBA07',
     compacting_color: '#A56BFF',
     start_at_login: false,
     follow_codex_lifecycle: false,
@@ -1632,7 +1635,7 @@ test('settings page exposes state color tabs and one active editor', async () =>
   const colors = await readFile(new URL('./colors.js', import.meta.url), 'utf8');
   const css = await readFile(new URL('./styles.css', import.meta.url), 'utf8');
 
-  for (const state of ['idle', 'thinking', 'executing', 'input_needed', 'completed', 'compacting']) {
+  for (const state of ['idle', 'thinking', 'executing', 'input_needed', 'completed', 'interrupted', 'compacting']) {
     assert.match(colors, new RegExp(`${state}:`));
   }
   assert.doesNotMatch(html, /id="preset-state"/);
@@ -1847,9 +1850,9 @@ test('settings color list preserves invalid Hex drafts after blur and refresh', 
     const rowSwatch = (state) => stateRow(state).children[0].style.backgroundColor;
     const mountedEditors = () => collectNodes(findById('color-state-panel'))
       .filter((node) => node.className === 'color-editor');
-    assert.equal(stateTabs().length, 6);
+    assert.equal(stateTabs().length, 7);
     assert.equal(stateTabs().filter((row) => row.getAttribute('aria-selected') === 'true').length, 1);
-    assert.deepEqual(stateTabs().map((row) => row.tabIndex), [0, -1, -1, -1, -1, -1]);
+    assert.deepEqual(stateTabs().map((row) => row.tabIndex), [0, -1, -1, -1, -1, -1, -1]);
 
     let prevented = false;
     stateRow('idle').dispatch('keydown', {
@@ -1860,7 +1863,7 @@ test('settings color list preserves invalid Hex drafts after blur and refresh', 
     });
     assert.equal(prevented, true);
     assert.equal(stateRow('thinking').getAttribute('aria-selected'), 'true');
-    assert.deepEqual(stateTabs().map((row) => row.tabIndex), [-1, 0, -1, -1, -1, -1]);
+    assert.deepEqual(stateTabs().map((row) => row.tabIndex), [-1, 0, -1, -1, -1, -1, -1]);
     assert.equal(fakeDocument.activeElement.id, 'color-tab-thinking');
 
     stateRow('thinking').dispatch('keydown', { key: 'Home', preventDefault() {} });

@@ -7,13 +7,15 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const EVENTS: [(&str, HaloState); 8] = [
+const EVENTS: [(&str, HaloState); 10] = [
     ("SessionStart", HaloState::Idle),
     ("UserPromptSubmit", HaloState::Thinking),
     ("PreToolUse", HaloState::Executing),
+    ("PostToolUse", HaloState::Thinking),
     ("PermissionRequest", HaloState::InputNeeded),
     ("PreCompact", HaloState::Compacting),
     ("PostCompact", HaloState::Thinking),
+    ("Interrupt", HaloState::Interrupted),
     ("Stop", HaloState::Completed),
     ("SessionEnd", HaloState::Idle),
 ];
@@ -84,7 +86,7 @@ fn plugin_helper_updates_only_the_runtime_state_directory() {
     let helper = helper_source();
     fs::create_dir_all(&codex_home).unwrap();
 
-    for (event, expected) in EVENTS[..7].iter().copied() {
+    for (event, expected) in EVENTS[..9].iter().copied() {
         run_plugin_hook(&helper, &codex_home, "plugin-session", event);
         let snapshots = snapshots(&state_dir);
         let display = reduce_snapshots(&snapshots, now_ms());

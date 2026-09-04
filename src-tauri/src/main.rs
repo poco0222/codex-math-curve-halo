@@ -16,12 +16,13 @@ use tauri_plugin_autostart::MacosLauncher;
 const SETTINGS_FILENAME: &str = "settings.json";
 const SETTINGS_INVALID_LIMIT: u32 = 64;
 const SIMULATION_SESSION_KEY: &str = "__codex_halo_simulation__";
-const STATE_COLOR_SETTING_KEYS: [&str; 6] = [
+const STATE_COLOR_SETTING_KEYS: [&str; 7] = [
     "idle_color",
     "thinking_color",
     "executing_color",
     "input_needed_color",
     "completed_color",
+    "interrupted_color",
     "compacting_color",
 ];
 static SETTINGS_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -46,6 +47,7 @@ struct TrayMenuItems {
     simulate_executing: MenuItem<tauri::Wry>,
     simulate_input_needed: MenuItem<tauri::Wry>,
     simulate_completed: MenuItem<tauri::Wry>,
+    simulate_interrupted: MenuItem<tauri::Wry>,
     simulate_compacting: MenuItem<tauri::Wry>,
     reset_position: MenuItem<tauri::Wry>,
     quit: MenuItem<tauri::Wry>,
@@ -670,6 +672,7 @@ mod tray_tests {
                 "Simulate Executing",
                 "Simulate Input needed",
                 "Simulate Completed",
+                "Simulate Interrupted",
                 "Simulate Compacting",
                 "Reset position",
                 "Quit",
@@ -695,6 +698,7 @@ mod tray_tests {
                 "模拟执行",
                 "模拟需要输入",
                 "模拟已完成",
+                "模拟已中断",
                 "模拟压缩",
                 "重置位置",
                 "退出",
@@ -724,7 +728,7 @@ fn is_simplified_chinese(language: &str) -> bool {
     language == "zh-CN"
 }
 
-fn tray_labels(settings: &AppSettings) -> [&'static str; 12] {
+fn tray_labels(settings: &AppSettings) -> [&'static str; 13] {
     let chinese = is_simplified_chinese(&settings.language);
     let toggle_overlay = match (chinese, settings.enabled) {
         (true, true) => "禁用叠加层",
@@ -775,6 +779,11 @@ fn tray_labels(settings: &AppSettings) -> [&'static str; 12] {
             "Simulate Completed"
         },
         if chinese {
+            "模拟已中断"
+        } else {
+            "Simulate Interrupted"
+        },
+        if chinese {
             "模拟压缩"
         } else {
             "Simulate Compacting"
@@ -807,6 +816,7 @@ fn update_tray_menu(items: &TrayMenuItems, settings: &AppSettings) {
         &items.simulate_executing,
         &items.simulate_input_needed,
         &items.simulate_completed,
+        &items.simulate_interrupted,
         &items.simulate_compacting,
         &items.reset_position,
         &items.quit,
@@ -886,6 +896,13 @@ fn build_tray(
             true,
             None::<&str>,
         )?,
+        simulate_interrupted: MenuItem::with_id(
+            app,
+            "simulate-interrupted",
+            "Simulate Interrupted",
+            true,
+            None::<&str>,
+        )?,
         simulate_compacting: MenuItem::with_id(
             app,
             "simulate-compacting",
@@ -921,6 +938,7 @@ fn build_tray(
             &items.simulate_executing,
             &items.simulate_input_needed,
             &items.simulate_completed,
+            &items.simulate_interrupted,
             &items.simulate_compacting,
             &items.reset_position,
             &separator_three,
@@ -973,6 +991,10 @@ fn build_tray(
         "simulate-completed" => {
             let runtime = app.state::<ReducerRuntimeState>();
             let _ = simulate_state_inner(app, HaloState::Completed, &runtime);
+        }
+        "simulate-interrupted" => {
+            let runtime = app.state::<ReducerRuntimeState>();
+            let _ = simulate_state_inner(app, HaloState::Interrupted, &runtime);
         }
         "simulate-compacting" => {
             let runtime = app.state::<ReducerRuntimeState>();
@@ -1391,6 +1413,7 @@ mod scan_tests {
             "executing_color",
             "input_needed_color",
             "completed_color",
+            "interrupted_color",
             "compacting_color",
         ] {
             object.remove(key);
@@ -1408,6 +1431,7 @@ mod scan_tests {
             "executing_color",
             "input_needed_color",
             "completed_color",
+            "interrupted_color",
             "compacting_color",
         ] {
             assert!(persisted.get(key).is_some(), "missing {key}");

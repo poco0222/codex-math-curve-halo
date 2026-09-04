@@ -4,6 +4,7 @@ export const DEFAULT_STATE_COLORS = Object.freeze({
   executing: '#339CFF',
   input_needed: '#F05252',
   completed: '#35C878',
+  interrupted: '#FEBA07',
   compacting: '#A56BFF',
 });
 
@@ -13,6 +14,7 @@ export const STATE_COLOR_KEYS = Object.freeze({
   executing: 'executing_color',
   input_needed: 'input_needed_color',
   completed: 'completed_color',
+  interrupted: 'interrupted_color',
   compacting: 'compacting_color',
 });
 

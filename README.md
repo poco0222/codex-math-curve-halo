@@ -51,19 +51,22 @@ click **Install Plugin**. The app registers its bundled local marketplace and
 installs/enables `codex-halo` through the Codex CLI. Review and trust its hooks
 once in `/hooks`, then start a new Codex session.
 
-**Uninstall Plugin** removes only `codex-halo` and its marketplace registration.
-It does not remove the native app, its helper, or unrelated hooks. During Plugin
-installation, an existing Codex Halo legacy entry in `~/.codex/hooks.json` is
-removed once, with a backup; unrelated entries stay unchanged.
+**Uninstall Plugin** removes `codex-halo`, the legacy `codex-halo@personal`
+installation identity, and this app's marketplace registration. It does not
+remove the native app, its helper, the `personal` marketplace, or unrelated
+hooks. During Plugin installation, an existing Codex Halo legacy entry in
+`~/.codex/hooks.json` is removed once, with a backup; unrelated entries stay
+unchanged.
 
 The Plugin helper uses the shared `CODEX_HOME/codex-halo/state` directory. Codex
 may require the user to review and trust new or changed hooks. Installing a
 Plugin never auto-trusts them.
 
-The owned `SessionStart`, `Stop`, and `SessionEnd` hooks run synchronously so
-state changes keep Codex event order. `SessionStart` with `source: "compact"`
-maps to `thinking`; the source field is not stored. State simulation uses the
-Rust reducer and does not add to the real session count.
+The owned lifecycle hooks run synchronously so state changes keep Codex event
+order. `PostToolUse` maps back to `thinking`; `Interrupt` maps to
+`interrupted`; `Stop` maps to `completed`. `SessionStart` with
+`source: "compact"` maps to `thinking`; the source field is not stored. State
+simulation uses the Rust reducer and does not add to the real session count.
 
 ## Settings and diagnostics
 
