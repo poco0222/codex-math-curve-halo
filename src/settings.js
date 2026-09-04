@@ -517,9 +517,11 @@ function renderLanguage(language = settingsStore.getSettings().language) {
     if (tab) tab.textContent = getText(currentLanguage, view.labelKey);
   }
   if (settingsStore.getUiState().activeView === 'colors') {
+    const { selectedColorState } = settingsStore.getUiState();
     renderColorStateList();
     const label = document.querySelector?.('[data-color-state-label]');
-    if (label) label.textContent = getStateLabel(currentLanguage, settingsStore.getUiState().selectedColorState);
+    if (label) label.textContent = getStateLabel(currentLanguage, selectedColorState);
+    syncColorField(selectedColorState, settingsStore.getSettings()[STATE_COLOR_KEYS[selectedColorState]]);
   }
   renderPluginStatus();
   renderDiagnostics();

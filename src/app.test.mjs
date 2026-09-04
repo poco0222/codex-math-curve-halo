@@ -1838,6 +1838,10 @@ test('settings color list preserves invalid Hex drafts after blur and refresh', 
     assert.equal(completedHex.value, '#12345');
     assert.equal(completedHex.validationMessage, 'Use #RRGGBB');
     assert.equal(saveCalls.length, 5);
+    language.value = 'zh-CN';
+    language.dispatch('change');
+    assert.equal(completedHex.value, '#12345');
+    assert.equal(completedHex.validationMessage, '请输入 #RRGGBB');
     assert.equal(mountedEditors().length, 1);
 
     stateRow('thinking').dispatch('click');
