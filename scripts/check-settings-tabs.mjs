@@ -13,6 +13,8 @@ for (const view of ['appearance', 'colors', 'integration', 'test']) {
 }
 assert.match(html, /id="particle-count"/);
 assert.match(html, /id="color-state-list"/);
+assert.match(html, /id="display-section"[^>]*>[\s\S]*?<\/fieldset>\s*<fieldset id="animation-section"/);
+assert.doesNotMatch(html, /data-section-target=/);
 assert.match(html, /data-section-nav[^>]*role="tablist"/);
 assert.match(html, /id="color-state-tabs"[^>]*role="tablist"/);
 assert.match(html, /id="color-state-panel"[^>]*role="tabpanel"(?![^>]*tabindex)/);
@@ -27,7 +29,7 @@ assert.equal((colors.match(/id: 'palette-/g) ?? []).length, 10);
 assert.equal((colors.match(/#[0-9A-Fa-f]{6}/g) ?? []).length, 76);
 assert.match(settings, /const SETTINGS_VIEWS = \{/);
 assert.match(settings, /function mountSettingsView\(/);
-assert.match(settings, /settingsPanelHost\.replaceChildren\(/);
+assert.match(settings, /host\.replaceChildren\(/);
 assert.doesNotMatch(settings, /const sectionNames = \[/);
 assert.match(settings, /function mountColorState\(/);
 assert.match(settings, /settingsModel/);

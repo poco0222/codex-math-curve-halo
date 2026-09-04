@@ -326,6 +326,8 @@ test('settings page uses the Halo Control Room workbench layout', async () => {
   assert.match(html, /data-view-template="appearance"/);
   assert.match(html, /id="particle-count"/);
   assert.match(html, /id="color-state-list"/);
+  assert.match(html, /id="display-section"[^>]*>[\s\S]*?<\/fieldset>\s*<fieldset id="animation-section"/);
+  assert.doesNotMatch(html, /data-section-target=/);
   assert.match(html, /<details[^>]+id="color-presets-details"/);
   assert.match(css, /\.settings-workbench\s*\{/);
   assert.match(css, /\.settings-sidebar\s*\{/);
@@ -336,7 +338,7 @@ test('settings page uses the Halo Control Room workbench layout', async () => {
   assert.match(source, /saveSettings\(async \(\) => \{[\s\S]*setSaveStatus\('saving'\)/);
   assert.match(source, /const SETTINGS_VIEWS = \{/);
   assert.match(source, /function mountSettingsView\(viewId\)/);
-  assert.match(source, /settingsPanelHost\.replaceChildren\(/);
+  assert.match(source, /host\.replaceChildren\(/);
   assert.doesNotMatch(source, /const sectionNames = \[/);
   assert.match(mainSource, /\.inner_size\(960\.0, 760\.0\)/);
 });
@@ -351,6 +353,102 @@ test('settings navigation mounts one strict section at a time', async () => {
   assert.doesNotMatch(css, /scroll-margin-top/);
   assert.match(css, /@media\s*\(max-width:\s*880px\)[\s\S]*\.settings-header\s*\{[\s\S]*position:\s*static/);
   assert.match(css, /@media\s*\(max-width:\s*640px\)[\s\S]*button,[\s\S]*input:not\(\[type="checkbox"\]\),[\s\S]*select,[\s\S]*\.settings-nav-link[\s\S]*min-height:\s*40px/);
+});
+
+test('settings View controller mounts one View and roves focus through navigation', async () => {
+  const tabs = [];
+  let focusedTab = null;
+  const makeTab = (viewId) => {
+    const listeners = new Map();
+    return {
+      id: `settings-tab-${viewId}`,
+      dataset: { viewTarget: viewId },
+      classList: { toggle() {} },
+      tabIndex: -1,
+      addEventListener(type, listener) {
+        listeners.set(type, listener);
+      },
+      dispatch(type, event) {
+        listeners.get(type)?.(event);
+      },
+      focus() {
+        focusedTab = this;
+      },
+      setAttribute() {},
+    };
+  };
+  const viewIds = ['appearance', 'colors', 'integration', 'test'];
+  tabs.push(...viewIds.map(makeTab));
+  const host = {
+    children: [],
+    querySelectorAll() {
+      return [];
+    },
+    replaceChildren(...children) {
+      this.children = children;
+    },
+    setAttribute() {},
+  };
+  const templates = new Map(viewIds.map((viewId) => [viewId, {
+    content: {
+      cloneNode() {
+        return { viewId };
+      },
+    },
+  }]));
+  const fakeDocument = {
+    body: { classList: { contains: () => false } },
+    documentElement: { lang: 'en' },
+    getElementById: (id) => id === 'settings-panel-host' ? host : null,
+    querySelectorAll: (selector) => selector === '[data-view-target]' ? tabs : [],
+    querySelector: (selector) => {
+      const match = selector.match(/^\[data-view-template="(.+)"\]$/);
+      return match ? templates.get(match[1]) ?? null : null;
+    },
+  };
+  const fakeWindow = { setInterval: () => 1 };
+  globalThis.document = fakeDocument;
+  globalThis.window = fakeWindow;
+
+  try {
+    const settingsModule = await import(`./settings.js?view-controller-test=${Date.now()}`);
+    assert.equal(typeof settingsModule.createSettingsViewController, 'function');
+
+    const views = Object.fromEntries(viewIds.map((viewId) => [viewId, {
+      template: viewId,
+      labelKey: `settings.${viewId}`,
+      bind() {},
+    }]));
+    const controller = settingsModule.createSettingsViewController({
+      views,
+      host,
+      tabs,
+      getTemplate: (view) => templates.get(view.template),
+    });
+
+    controller.bind();
+    assert.equal(controller.getActiveView(), 'appearance');
+    assert.deepEqual(host.children, [{ viewId: 'appearance' }]);
+
+    let prevented = false;
+    tabs[0].dispatch('keydown', {
+      key: 'ArrowRight',
+      preventDefault() {
+        prevented = true;
+      },
+    });
+
+    assert.equal(prevented, true);
+    assert.equal(controller.getActiveView(), 'colors');
+    assert.deepEqual(host.children, [{ viewId: 'colors' }]);
+    assert.equal(host.children.length, 1);
+    assert.equal(tabs[0].tabIndex, -1);
+    assert.equal(tabs[1].tabIndex, 0);
+    assert.equal(focusedTab, tabs[1]);
+  } finally {
+    delete globalThis.document;
+    delete globalThis.window;
+  }
 });
 
 test('settings page exposes plugin install controls and no legacy hook controls', async () => {

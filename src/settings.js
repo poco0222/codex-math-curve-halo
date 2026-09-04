@@ -14,6 +14,70 @@ import {
   normalizeLanguage,
 } from './i18n.js';
 
+export function createSettingsViewController({
+  views,
+  host,
+  tabs,
+  getTemplate,
+  beforeMount = () => {},
+  afterMount = () => {},
+}) {
+  const viewIds = Object.keys(views);
+  let activeView = viewIds[0];
+  const tabFor = (viewId) => tabs.find((tab) => tab.dataset.viewTarget === viewId);
+
+  function mountSettingsView(viewId) {
+    const view = views[viewId];
+    const template = view && getTemplate(view);
+    if (!view || !template || !host) return false;
+    beforeMount(viewId);
+    host.replaceChildren(template.content.cloneNode(true));
+    const tab = tabFor(viewId);
+    host.setAttribute?.('aria-labelledby', tab?.id ?? `settings-tab-${viewId}`);
+    activeView = viewId;
+    view.bind();
+    afterMount(viewId);
+    return true;
+  }
+
+  function selectSettingsView(viewId, focus = false) {
+    if (!views[viewId]) return false;
+    for (const tab of tabs) {
+      const selected = tab.dataset.viewTarget === viewId;
+      tab.classList.toggle('is-active', selected);
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+    }
+    if (!mountSettingsView(viewId)) return false;
+    if (focus) tabFor(viewId)?.focus();
+    return true;
+  }
+
+  function bind() {
+    for (const tab of tabs) {
+      tab.addEventListener('click', () => selectSettingsView(tab.dataset.viewTarget, true));
+      tab.addEventListener('keydown', (event) => {
+        const index = viewIds.indexOf(tab.dataset.viewTarget);
+        const next = event.key === 'ArrowRight' || event.key === 'ArrowDown'
+          ? (index + 1) % viewIds.length
+          : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+            ? (index - 1 + viewIds.length) % viewIds.length
+            : event.key === 'Home'
+              ? 0
+              : event.key === 'End'
+                ? viewIds.length - 1
+                : -1;
+        if (next < 0) return;
+        event.preventDefault();
+        selectSettingsView(viewIds[next], true);
+      });
+    }
+    return mountSettingsView(activeView);
+  }
+
+  return { bind, getActiveView: () => activeView, mountSettingsView, selectSettingsView };
+}
+
 const invoke = window.__TAURI__?.core?.invoke ?? window.__TAURI__?.invoke;
 const settingsPanelHost = document.getElementById('settings-panel-host');
 const viewTabs = [...document.querySelectorAll('[data-view-target]')];
@@ -54,7 +118,7 @@ const SETTINGS_VIEWS = {
     bind: () => bindTestActions(),
   },
 };
-let activeView = 'appearance';
+let settingsViewController;
 let selectedColorState = 'idle';
 let settingsModel = { ...DEFAULT_APP_SETTINGS };
 let currentLanguage = DEFAULT_LANGUAGE;
@@ -366,7 +430,7 @@ function renderLanguage(language) {
     const tab = viewTabs.find((candidate) => candidate.dataset.viewTarget === viewId);
     if (tab) tab.textContent = getText(currentLanguage, view.labelKey);
   }
-  if (activeView === 'colors') {
+  if (settingsViewController?.getActiveView() === 'colors') {
     renderColorStateTabs();
     const label = document.querySelector?.('[data-color-state-label]');
     if (label) label.textContent = getStateLabel(currentLanguage, selectedColorState);
@@ -533,57 +597,29 @@ function bindTestActions() {
 }
 
 function mountSettingsView(viewId) {
-  const view = SETTINGS_VIEWS[viewId];
-  if (!view || !settingsPanelHost) return;
-  const template = document.querySelector?.(`[data-view-template="${view.template}"]`);
-  if (!template || !settingsPanelHost) return;
-  syncSettingsModelFromControls();
-  settingsPanelHost.replaceChildren(template.content.cloneNode(true));
-  const tab = viewTabs.find((candidate) => candidate.dataset.viewTarget === viewId);
-  settingsPanelHost.setAttribute('aria-labelledby', tab?.id ?? `settings-tab-${viewId}`);
-  activeView = viewId;
-  view.bind();
-  syncControlsFromSettings();
-  renderLanguage(currentLanguage);
-  renderOpacity();
-  renderFormula(settingsModel);
-  renderPluginStatus();
-  renderDiagnostics();
+  return settingsViewController?.mountSettingsView(viewId) ?? false;
 }
 
 function selectSettingsView(viewId, focus = false) {
-  if (!SETTINGS_VIEWS[viewId]) return;
-  for (const tab of viewTabs) {
-    const selected = tab.dataset.viewTarget === viewId;
-    tab.classList.toggle('is-active', selected);
-    tab.setAttribute('aria-selected', String(selected));
-    tab.tabIndex = selected ? 0 : -1;
-  }
-  mountSettingsView(viewId);
-  if (focus) viewTabs.find((tab) => tab.dataset.viewTarget === viewId)?.focus();
+  return settingsViewController?.selectSettingsView(viewId, focus) ?? false;
 }
 
 bindSettingsFields(document);
-const viewIds = Object.keys(SETTINGS_VIEWS);
-for (const tab of viewTabs) {
-  tab.addEventListener('click', () => selectSettingsView(tab.dataset.viewTarget, true));
-  tab.addEventListener('keydown', (event) => {
-    const index = viewIds.indexOf(tab.dataset.viewTarget);
-    const next = event.key === 'ArrowRight' || event.key === 'ArrowDown'
-      ? (index + 1) % viewIds.length
-      : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
-        ? (index - 1 + viewIds.length) % viewIds.length
-        : event.key === 'Home'
-          ? 0
-          : event.key === 'End'
-            ? viewIds.length - 1
-            : -1;
-    if (next < 0) return;
-    event.preventDefault();
-    selectSettingsView(viewIds[next], true);
-  });
-}
-
-mountSettingsView(activeView);
+settingsViewController = createSettingsViewController({
+  views: SETTINGS_VIEWS,
+  host: settingsPanelHost,
+  tabs: viewTabs,
+  getTemplate: (view) => document.querySelector?.(`[data-view-template="${view.template}"]`),
+  beforeMount: syncSettingsModelFromControls,
+  afterMount: () => {
+    syncControlsFromSettings();
+    renderLanguage(currentLanguage);
+    renderOpacity();
+    renderFormula(settingsModel);
+    renderPluginStatus();
+    renderDiagnostics();
+  },
+});
+settingsViewController.bind();
 loadSettings();
 window.setInterval(refreshDiagnostics, 500);
