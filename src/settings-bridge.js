@@ -13,7 +13,7 @@ export function createSettingsBridge({
   return {
     async command(name, args) {
       if (typeof invoke !== 'function') {
-        warnFailure(name);
+        reportFailure(name, undefined);
         return { ok: false, value: null };
       }
       try {

@@ -56,6 +56,17 @@ test('settings bridge warns when invoke is unavailable', async () => {
   assert.deepEqual(warnings, [['Codex Halo: save_settings failed']]);
 });
 
+test('settings bridge reports failure when invoke is unavailable', async () => {
+  const failures = [];
+  const bridge = createSettingsBridge({
+    warn: () => {},
+    onFailure: (...args) => failures.push(args),
+  });
+
+  assert.deepEqual(await bridge.command('get_settings'), { ok: false, value: null });
+  assert.deepEqual(failures, [['get_settings', undefined]]);
+});
+
 test('settings store saves call-time snapshots in queue order', async () => {
   const persisted = [];
   let releaseFirst;
@@ -673,6 +684,23 @@ test('settings controller keeps plugin busy state in UI state and reapplies it a
   assert.match(source, /settingsStore\.setUi\(\{ pluginOperationInFlight: true \}\)/);
   assert.match(source, /settingsStore\.getUiState\(\)\.pluginOperationInFlight/);
   assert.match(source, /setPluginButtonsDisabled\(settingsStore\.getUiState\(\)\.pluginOperationInFlight\)/);
+});
+
+test('settings controller keeps remount-surviving UI state in the Store', async () => {
+  const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
+
+  for (const declaration of [
+    /\blet selectedColorState\b/,
+    /\blet currentSaveStatus\b/,
+    /\blet setupError\b/,
+    /\blet currentDisplayState\b/,
+    /\blet currentPluginStatus\b/,
+  ]) {
+    assert.doesNotMatch(source, declaration);
+  }
+  for (const key of ['selectedColorState', 'saveStatus', 'setupError', 'diagnosticsSnapshot', 'pluginStatus']) {
+    assert.match(source, new RegExp(`settingsStore\\.(?:getUiState\\(\\)\\.${key}|setUi\\(\\{[^}]*${key})`));
+  }
 });
 
 test('settings bridge returns successful command values', async () => {
@@ -1619,7 +1647,7 @@ test('settings color controls use one active editor and preserve the full color 
   const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
 
   assert.match(source, /settingsStore\.patchSetting\(key, normalized\)/);
-  assert.match(source, /function mountColorStateDetail\(state = selectedColorState\)/);
+  assert.match(source, /function mountColorStateDetail\(state = settingsStore\.getUiState\(\)\.selectedColorState\)/);
   assert.doesNotMatch(source, /function mountColorState\(/);
   assert.match(source, /panel\.replaceChildren\(\)/);
   assert.match(source, /if \(!isHexColor\(value\)\)/);
@@ -1654,8 +1682,8 @@ test('settings exposes a content-free local diagnostic download', async () => {
   assert.match(html, /id="export-diagnostics"/);
   assert.match(source, /new Blob\(/);
   assert.match(source, /codex-halo-diagnostics\.json/);
-  assert.match(source, /state: currentDisplayState\.state/);
-  assert.match(source, /updated_at_ms: currentDisplayState\.updated_at_ms/);
+  assert.match(source, /state: diagnosticsSnapshot\.state/);
+  assert.match(source, /updated_at_ms: diagnosticsSnapshot\.updated_at_ms/);
   assert.doesNotMatch(source, /prompt|transcript|tool_input|tool_response|model|cwd/);
 });
 

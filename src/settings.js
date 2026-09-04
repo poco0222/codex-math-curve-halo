@@ -9,7 +9,6 @@ import {
   STATE_COLOR_KEYS,
 } from './colors.js';
 import {
-  DEFAULT_LANGUAGE,
   getStateLabel,
   getText,
   localeForLanguage,
@@ -123,12 +122,6 @@ const SETTINGS_VIEWS = {
   },
 };
 let settingsViewController;
-let selectedColorState = 'idle';
-let currentLanguage = DEFAULT_LANGUAGE;
-let currentPluginStatus = 'settings.pluginReady';
-let currentSaveStatus = 'ready';
-let setupError = null;
-let currentDisplayState = { state: 'idle', updated_at_ms: 0 };
 let initialSettingsReady = false;
 let pendingInitialSave = false;
 let initialSettingsLoadPromise = Promise.resolve();
@@ -163,8 +156,21 @@ const saveStatusKeys = {
   error: 'settings.saveStatus.error',
 };
 
+settingsStore.setUi({
+  activeView: 'appearance',
+  selectedColorState: 'idle',
+  saveStatus: 'ready',
+  setupError: null,
+  diagnosticsSnapshot: { state: 'idle', updated_at_ms: 0 },
+  pluginStatus: 'settings.pluginReady',
+});
+
+function getCurrentLanguage() {
+  return normalizeLanguage(settingsStore.getSettings().language);
+}
+
 function showSetupError(command, error) {
-  setupError = { command, error };
+  settingsStore.setUi({ setupError: { command, error } });
   renderDiagnostics();
   console.warn(`Codex Halo: ${formatSetupError(command, error)}`);
 }
@@ -174,7 +180,7 @@ function invokeCommand(command, args) {
 }
 
 function clearSetupError() {
-  setupError = null;
+  settingsStore.setUi({ setupError: null });
 }
 
 function control(key) {
@@ -217,6 +223,7 @@ function syncSettingsModelFromControls() {
 
 function syncControlsFromSettings(excluded) {
   const settings = settingsStore.getSettings();
+  const { selectedColorState } = settingsStore.getUiState();
   const fields = [
     document.getElementById('language'),
     document.getElementById('enabled'),
@@ -264,12 +271,13 @@ function renderColorPresets() {
   const colorPresets = document.getElementById('color-presets');
   if (!colorPresets || typeof document.createElement !== 'function') return;
   colorPresets.replaceChildren();
-  const state = selectedColorState;
+  const state = settingsStore.getUiState().selectedColorState;
+  const language = getCurrentLanguage();
   for (const group of COLOR_PRESET_GROUPS) {
     const section = document.createElement('section');
     section.className = 'color-preset-group';
     const heading = document.createElement('h3');
-    heading.textContent = getText(currentLanguage, group.labelKey);
+    heading.textContent = getText(language, group.labelKey);
     const grid = document.createElement('div');
     grid.className = 'color-preset-grid';
     for (const color of group.colors) {
@@ -299,6 +307,8 @@ function renderColorStateList() {
   const tabs = document.getElementById('color-state-tabs');
   if (!tabs) return;
   const settings = settingsStore.getSettings();
+  const { selectedColorState } = settingsStore.getUiState();
+  const language = getCurrentLanguage();
   tabs.replaceChildren();
   for (const { state, key } of colorFields) {
     const tab = document.createElement('button');
@@ -318,7 +328,7 @@ function renderColorStateList() {
     copy.className = 'color-state-row-copy';
     const label = document.createElement('strong');
     label.className = 'color-state-row-label';
-    label.textContent = getStateLabel(currentLanguage, state);
+    label.textContent = getStateLabel(language, state);
     const value = document.createElement('span');
     value.className = 'color-state-row-hex';
     value.textContent = normalizeHexColor(settings[key], DEFAULT_APP_SETTINGS[key]);
@@ -344,10 +354,11 @@ function renderColorStateList() {
   }
 }
 
-function mountColorStateDetail(state = selectedColorState) {
+function mountColorStateDetail(state = settingsStore.getUiState().selectedColorState) {
   const panel = document.getElementById('color-state-panel');
   const key = STATE_COLOR_KEYS[state];
   if (!panel || !key) return;
+  const language = getCurrentLanguage();
   panel.replaceChildren();
   panel.setAttribute('aria-labelledby', `color-tab-${state}`);
 
@@ -359,7 +370,7 @@ function mountColorStateDetail(state = selectedColorState) {
   preview.setAttribute('aria-hidden', 'true');
   const label = document.createElement('strong');
   label.dataset.colorStateLabel = state;
-  label.textContent = getStateLabel(currentLanguage, state);
+  label.textContent = getStateLabel(language, state);
   summary.append(preview, label);
 
   const editor = document.createElement('div');
@@ -381,7 +392,7 @@ function mountColorStateDetail(state = selectedColorState) {
   reset.type = 'button';
   reset.dataset.colorReset = state;
   reset.dataset.i18n = 'settings.resetColor';
-  reset.textContent = getText(currentLanguage, 'settings.resetColor');
+  reset.textContent = getText(language, 'settings.resetColor');
   editor.append(picker, hex, reset);
   panel.append(summary, editor);
 
@@ -392,7 +403,7 @@ function mountColorStateDetail(state = selectedColorState) {
 function selectColorState(state, focus = false) {
   if (!STATE_COLOR_KEYS[state]) return;
   syncSettingsModelFromControls();
-  selectedColorState = state;
+  settingsStore.setUi({ selectedColorState: state });
   renderColorStateList();
   mountColorStateDetail(state);
   renderColorPresets();
@@ -414,42 +425,50 @@ function renderOpacity() {
 }
 
 function setSaveStatus(status) {
-  currentSaveStatus = saveStatusKeys[status] ? status : 'ready';
+  const saveStatus = saveStatusKeys[status] ? status : 'ready';
+  settingsStore.setUi({ saveStatus });
+  const language = getCurrentLanguage();
   for (const element of saveStatusElements) {
-    element.dataset.status = currentSaveStatus;
-    element.textContent = getText(currentLanguage, saveStatusKeys[currentSaveStatus]);
+    element.dataset.status = saveStatus;
+    element.textContent = getText(language, saveStatusKeys[saveStatus]);
   }
 }
 
-function renderPluginStatus(status = currentPluginStatus) {
-  currentPluginStatus = status;
+function renderPluginStatus(status) {
+  const currentStatus = settingsStore.getUiState().pluginStatus;
+  const nextStatus = status ?? currentStatus;
+  if (status !== undefined) settingsStore.setUi({ pluginStatus: nextStatus });
+  const language = getCurrentLanguage();
   const pluginStatus = document.getElementById('plugin-status');
-  if (pluginStatus) pluginStatus.textContent = getText(currentLanguage, status);
+  if (pluginStatus) pluginStatus.textContent = getText(language, nextStatus);
 }
 
 function renderDiagnostics(displayState = {}) {
-  currentDisplayState = {
-    state: displayState.state ?? currentDisplayState.state,
-    updated_at_ms: displayState.updated_at_ms ?? currentDisplayState.updated_at_ms,
+  const { diagnosticsSnapshot = { state: 'idle', updated_at_ms: 0 }, setupError } = settingsStore.getUiState();
+  const nextSnapshot = {
+    state: displayState.state ?? diagnosticsSnapshot.state,
+    updated_at_ms: displayState.updated_at_ms ?? diagnosticsSnapshot.updated_at_ms,
   };
-  const state = getStateLabel(currentLanguage, currentDisplayState.state);
-  const updatedAt = Number(currentDisplayState.updated_at_ms);
+  settingsStore.setUi({ diagnosticsSnapshot: nextSnapshot });
+  const language = getCurrentLanguage();
+  const state = getStateLabel(language, nextSnapshot.state);
+  const updatedAt = Number(nextSnapshot.updated_at_ms);
   const timestamp = Number.isFinite(updatedAt) && updatedAt > 0
-    ? new Date(updatedAt).toLocaleString(localeForLanguage(currentLanguage))
-    : getText(currentLanguage, 'settings.diagnosticsNever');
-  const detail = `${getText(currentLanguage, 'settings.diagnosticsState')}: ${state} | ${getText(currentLanguage, 'settings.diagnosticsLastEvent')}: ${timestamp}`;
+    ? new Date(updatedAt).toLocaleString(localeForLanguage(language))
+    : getText(language, 'settings.diagnosticsNever');
+  const detail = `${getText(language, 'settings.diagnosticsState')}: ${state} | ${getText(language, 'settings.diagnosticsLastEvent')}: ${timestamp}`;
   const diagnostics = document.getElementById('diagnostics');
   if (!diagnostics) return;
   if (!setupError) {
     diagnostics.textContent = detail;
     return;
   }
-  const formattedError = formatSetupError(setupError.command, setupError.error, currentLanguage);
-  diagnostics.textContent = `${detail} | ${getText(currentLanguage, 'settings.diagnosticsSetupError')}: ${formattedError}`;
+  const formattedError = formatSetupError(setupError.command, setupError.error, language);
+  diagnostics.textContent = `${detail} | ${getText(language, 'settings.diagnosticsSetupError')}: ${formattedError}`;
 }
 
-function renderLanguage(language) {
-  currentLanguage = normalizeLanguage(language);
+function renderLanguage(language = settingsStore.getSettings().language) {
+  const currentLanguage = normalizeLanguage(language);
   document.documentElement.lang = currentLanguage;
   document.title = getText(currentLanguage, 'settings.title');
   for (const element of document.querySelectorAll('[data-i18n]')) {
@@ -476,11 +495,11 @@ function renderLanguage(language) {
   if (settingsViewController?.getActiveView() === 'colors') {
     renderColorStateList();
     const label = document.querySelector?.('[data-color-state-label]');
-    if (label) label.textContent = getStateLabel(currentLanguage, selectedColorState);
+    if (label) label.textContent = getStateLabel(currentLanguage, settingsStore.getUiState().selectedColorState);
   }
   renderPluginStatus();
   renderDiagnostics();
-  setSaveStatus(currentSaveStatus);
+  setSaveStatus(settingsStore.getUiState().saveStatus);
   renderColorPresets();
 }
 
@@ -497,6 +516,7 @@ function applySettings(settings, { preserveLocalEdits = false } = {}) {
     for (const key of localSettingEdits) delete incoming[key];
   }
   const nextSettings = settingsStore.mergeSettings(incoming);
+  const { selectedColorState } = settingsStore.getUiState();
   syncControlsFromSettings(activeField);
   renderLanguage(nextSettings.language);
   renderOpacity();
@@ -585,10 +605,11 @@ function bindSettingsFields(root) {
 
 function bindColorEditor(state, picker, hex, reset) {
   const key = STATE_COLOR_KEYS[state];
-  const label = getStateLabel(currentLanguage, state);
-  picker.setAttribute('aria-label', `${label} ${getText(currentLanguage, 'settings.colorPicker')}`);
-  hex.setAttribute('aria-label', `${label} ${getText(currentLanguage, 'settings.colorHex')}`);
-  reset.setAttribute('aria-label', `${getText(currentLanguage, 'settings.resetColor')} ${label}`);
+  const language = getCurrentLanguage();
+  const label = getStateLabel(language, state);
+  picker.setAttribute('aria-label', `${label} ${getText(language, 'settings.colorPicker')}`);
+  hex.setAttribute('aria-label', `${label} ${getText(language, 'settings.colorHex')}`);
+  reset.setAttribute('aria-label', `${getText(language, 'settings.resetColor')} ${label}`);
   picker.addEventListener('input', () => {
     updateColorSetting(state, picker.value, true);
     void saveCurrentSettings();
@@ -597,7 +618,7 @@ function bindColorEditor(state, picker, hex, reset) {
   hex.addEventListener('change', () => {
     const value = hex.value.trim();
     if (!isHexColor(value)) {
-      hex.setCustomValidity(getText(currentLanguage, 'settings.invalidColor'));
+      hex.setCustomValidity(getText(getCurrentLanguage(), 'settings.invalidColor'));
       hex.reportValidity?.();
       return;
     }
@@ -616,9 +637,10 @@ function bindIntegrationActions() {
   document.getElementById('uninstall-plugin')?.addEventListener('click', () => runPluginAction('uninstall_plugin', 'settings.pluginUninstalled'));
   setPluginButtonsDisabled(settingsStore.getUiState().pluginOperationInFlight);
   document.getElementById('export-diagnostics')?.addEventListener('click', () => {
+    const { diagnosticsSnapshot } = settingsStore.getUiState();
     const payload = {
-      state: currentDisplayState.state,
-      updated_at_ms: currentDisplayState.updated_at_ms,
+      state: diagnosticsSnapshot.state,
+      updated_at_ms: diagnosticsSnapshot.updated_at_ms,
     };
     const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -672,7 +694,7 @@ settingsViewController = createSettingsViewController({
   afterMount: (viewId) => {
     settingsStore.setUi({ activeView: viewId });
     syncControlsFromSettings();
-    renderLanguage(currentLanguage);
+    renderLanguage();
     renderOpacity();
     renderFormula();
     renderPluginStatus();
