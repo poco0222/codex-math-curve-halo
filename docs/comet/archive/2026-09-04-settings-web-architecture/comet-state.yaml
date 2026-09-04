@@ -1,0 +1,405 @@
+schema: comet.native.v4
+name: settings-web-architecture
+language: zh-CN
+phase: archive
+status: done
+state_version: 17
+brief: brief.md
+spec_changes:
+  - capability: settings-workbench
+    operation: create
+    source: specs/settings-workbench/spec.md
+workspace:
+  isolation: current
+  change_branch: main
+  target_branch: main
+  finish: null
+loop:
+  stage: done
+  goal_cycle: 3
+  iteration: 1
+  attempt: 1
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: null
+acceptance:
+  - id: A1
+    source: brief.md
+    text: "A1: 设置页使用单窗口 App Shell，默认打开 `Appearance`，并同时展示全局 Overlay、语言和保存状态控件。"
+    result: passed
+    reason:
+      text: App Shell、默认 Appearance、全局控件和保存状态通过。
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: "A2: 顶层 View 只有 `Appearance`、`State
+      colors`、`Integration`、`Test`，且同一时刻只挂载当前 View。"
+    result: passed
+    reason:
+      text: 四个 View 和 strict mount 通过。
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: "A3: `Appearance` 同时提供当前 Display 与 Renderer 设置，并保留公式反馈。"
+    result: passed
+    reason:
+      text: Appearance 的 Display、Renderer 和公式反馈通过。
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: "A4: `State colors` 使用 Master-Detail，六个状态列表展示色块和 Hex，详情只编辑当前状态。"
+    result: passed
+    reason:
+      text: 六状态 Master-Detail 颜色编辑通过。
+      truncated: false
+  - id: A5
+    source: brief.md
+    text: "A5: 颜色选择器、Hex、恢复默认和预置色继续走自动保存，切换 View 或状态不丢值。"
+    result: passed
+    reason:
+      text: 颜色编辑、预置、重置、自动保存和切换保值通过。
+      truncated: false
+  - id: A6
+    source: brief.md
+    text: "A6: 共享设置状态、UI 状态和 Tauri Bridge 分离；未来新增 View 或状态级字段不复制保存、错误和事件同步逻辑。"
+    result: passed
+    reason:
+      text: settingsStore、UI state、Tauri Bridge 分离通过。
+      truncated: false
+  - id: A7
+    source: brief.md
+    text: "A7: 桌面、窄窗口和 `en`/`zh-CN` 下无页面级横向溢出、文字遮挡、焦点丢失或未处理控制台错误。"
+    result: passed
+    reason:
+      text: 桌面/窄窗口、双语、溢出、重叠和焦点证据通过。
+      truncated: false
+  - id: A8
+    source: specs/settings-workbench/spec.md
+    text: Open settings - **WHEN** the settings page opens - **THEN** the App Shell
+      shows the Codex Halo identity, the global Overlay toggle, language
+      selector, and save status - **AND** the default View is `Appearance` -
+      **AND** only the active View is mounted in the content host
+    result: passed
+    reason:
+      text: 打开设置页的 shell、默认 View 和单挂载通过。
+      truncated: false
+  - id: A9
+    source: specs/settings-workbench/spec.md
+    text: Navigate between Views - **WHEN** the user selects `Appearance`, `State
+      colors`, `Integration`, or `Test` - **THEN** the selected View replaces
+      the previous View in the content host - **AND** the active navigation item
+      exposes the selected state - **AND** focus and keyboard navigation remain
+      available
+    result: passed
+    reason:
+      text: View 切换、选中态和键盘导航通过。
+      truncated: false
+  - id: A10
+    source: specs/settings-workbench/spec.md
+    text: Configure appearance - **WHEN** the `Appearance` View is active - **THEN**
+      the user can see and edit curve profile, opacity, offsets, particle count,
+      trail span, loop timing, pulse timing, rotation timing, and stroke width -
+      **AND** the active formula remains visible as feedback for renderer
+      settings - **AND** existing control IDs, names, and setting keys remain
+      usable by the controller
+    result: passed
+    reason:
+      text: Appearance 字段、公式反馈和既有控件契约通过。
+      truncated: false
+  - id: A11
+    source: specs/settings-workbench/spec.md
+    text: Scan color states - **WHEN** the `State colors` View is active - **THEN**
+      the state list shows `idle`, `thinking`, `executing`, `input_needed`,
+      `completed`, and `compacting` - **AND** each row shows the localized state
+      label, current color swatch, and current Hex value - **AND** exactly one
+      row is selected
+    result: passed
+    reason:
+      text: 六状态列表、标签、色块、Hex 和单选中态通过。
+      truncated: false
+  - id: A12
+    source: specs/settings-workbench/spec.md
+    text: Edit selected state - **WHEN** the user selects a state row - **THEN** the
+      detail panel shows that state's preview, native color picker, Hex input,
+      reset action, and preset palette disclosure - **AND** changing the picker,
+      valid Hex input, preset, or reset action updates only the selected state's
+      color - **AND** the change uses the existing automatic save path
+    result: passed
+    reason:
+      text: 详情编辑器、reset、preset 和自动保存通过。
+      truncated: false
+  - id: A13
+    source: specs/settings-workbench/spec.md
+    text: Extend state details - **WHEN** a future state-level setting such as audio
+      linkage or state-specific animation is added - **THEN** it can be added to
+      the selected state's detail context without changing the state list
+      interaction - **AND** the current six-state color contract remains intact
+    result: passed
+    reason:
+      text: 状态详情具备未来音频/动效扩展边界。
+      truncated: false
+  - id: A14
+    source: specs/settings-workbench/spec.md
+    text: Use colors on a narrow viewport - **WHEN** the available width is below
+      the desktop layout threshold - **THEN** the state list and detail panel
+      stack vertically - **AND** the page does not require document-level
+      horizontal scrolling - **AND** the selected state, editor controls, and
+      validation message remain visible
+    result: passed
+    reason:
+      text: 窄视口单列布局和无页面横向滚动通过。
+      truncated: false
+  - id: A15
+    source: specs/settings-workbench/spec.md
+    text: Load settings - **WHEN** the page loads - **THEN** the Tauri Bridge
+      requests the complete `AppSettings` value - **AND** the shared settings
+      state becomes the source of truth for mounted and unmounted controls -
+      **AND** the active View renders from that state
+    result: passed
+    reason:
+      text: 完整 AppSettings 经 Bridge 进入共享 Store，通过 hydration 回归。
+      truncated: false
+  - id: A16
+    source: specs/settings-workbench/spec.md
+    text: Save a setting - **WHEN** the user changes a setting - **THEN** the shared
+      settings state is updated - **AND** save requests remain serialized
+      through the existing queue - **AND** the UI exposes ready, saving, saved,
+      and error feedback
+    result: passed
+    reason:
+      text: 共享 Store、串行保存队列和状态反馈通过。
+      truncated: false
+  - id: A17
+    source: specs/settings-workbench/spec.md
+    text: Receive an external settings update - **WHEN** a `settings-changed` event
+      contains a complete or partial payload - **THEN** the payload merges into
+      the shared settings state - **AND** unmounted values and inactive state
+      colors are not erased - **AND** the active control is not unexpectedly
+      overwritten while it is being edited
+    result: passed
+    reason:
+      text: settings-changed 合并、未挂载值保留和编辑保护通过。
+      truncated: false
+  - id: A18
+    source: specs/settings-workbench/spec.md
+    text: Add a future settings View - **WHEN** a future domain such as default
+      position or audio is introduced - **THEN** the frontend can register a new
+      View and its field bindings without duplicating save, error, localization,
+      or event synchronization logic - **AND** native fields, commands, or
+      events are added only by a separate capability change
+    result: passed
+    reason:
+      text: 未来 View 可复用保存、错误、本地化和事件同步边界。
+      truncated: false
+  - id: A19
+    source: specs/settings-workbench/spec.md
+    text: Localize the settings page - **WHEN** the user switches between `en` and
+      `zh-CN` - **THEN** shell labels, View labels, form labels, state labels,
+      preset labels, status text, and diagnostics are localized - **AND**
+      localized text wraps without overlap or loss of focus
+    result: passed
+    reason:
+      text: en/zh-CN 页面本地化和文本布局通过。
+      truncated: false
+  - id: A20
+    source: specs/settings-workbench/spec.md
+    text: Use keyboard controls - **WHEN** the user navigates the shell, View
+      navigation, state list, and form controls with a keyboard - **THEN** focus
+      order follows the DOM order - **AND** active navigation and selected state
+      are announced through appropriate ARIA state - **AND** visible focus
+      remains clear
+    result: passed
+    reason:
+      text: View/状态列表键盘、ARIA 和可见焦点通过。
+      truncated: false
+builder_handoff:
+  candidate_id: 02b0b753-1b4a-4cfe-8424-2db070747f21
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:cd8dea52-19a7-41c0-8659-0fd2284157de
+  iteration: 1
+  summary:
+    text: 按更新后的 20 项验收范围提交当前候选：设置页 Web 工作台、View Registry、settingsStore、Tauri
+      Bridge、六状态 Master-Detail、静态浏览器和 Node/结构/Renderer 验证；真实
+      Tauri、Plugin、Windows native runtime 不属于本 change。实现代码无新增变化，正式 brief/spec
+      已移除对应 native 验收场景。
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A2
+    - A3
+    - A4
+    - A5
+    - A6
+    - A7
+    - A8
+    - A9
+    - A10
+    - A11
+    - A12
+    - A13
+    - A14
+    - A15
+    - A16
+    - A17
+    - A18
+    - A19
+    - A20
+  checks:
+    - name:
+        text: node --check src/settings.js src/settings-store.js src/settings-bridge.js
+          src/i18n.js
+        truncated: false
+      result: passed
+      note:
+        text: Syntax checks passed.
+        truncated: false
+    - name:
+        text: node --test src/app.test.mjs scripts/*.test.mjs
+        truncated: false
+      result: passed
+      note:
+        text: 73 passed, 0 failed, 0 skipped.
+        truncated: false
+    - name:
+        text: npm run check:settings-tabs
+        truncated: false
+      result: passed
+      note:
+        text: "settings tabs structure: PASS."
+        truncated: false
+    - name:
+        text: node scripts/check-renderer.mjs
+        truncated: false
+      result: passed
+      note:
+        text: "renderer self-check: PASS (4 profiles)."
+        truncated: false
+    - name:
+        text: git diff --check
+        truncated: false
+      result: passed
+      note:
+        text: No whitespace errors.
+        truncated: false
+    - name:
+        text: Chrome + CUA static settings smoke
+        truncated: false
+      result: passed
+      note:
+        text: Desktop smoke passed for App Shell, four Views, six color states, one
+          detail editor, color persistence, View switching, invalid Hex
+          retention, and no horizontal overflow.
+        truncated: false
+  checks_truncated: false
+  known_limits:
+    - text: 真实 Tauri WebView、invoke/listen、原生持久化、Plugin filesystem effects 和 Windows
+        runtime 不属于本 change 验收范围。
+      truncated: false
+    - text: 静态页面缺少 Tauri bridge，因此保留一次初始化 get_settings warning；诊断轮询跳过。
+      truncated: false
+  known_limits_truncated: false
+  review:
+    status: passed
+    summary:
+      text: 最终只读复核确认正式验收已收敛为 20 项；实现、测试、静态证据与新 brief/spec 一致，未发现阻断问题。
+      truncated: false
+    reviewer_execution_ref: 01a06b8b-4387-78d1-9c01-aa6c91dda307
+  submitted_at: 2026-09-04T08:33:12.091Z
+blockers: []
+verification:
+  candidate_id: 02b0b753-1b4a-4cfe-8424-2db070747f21
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:768da443-6ab2-405f-add0-4fa7550e345c
+  iteration: 1
+  attempt: 1
+  assurance: skill-coordinated
+  verdict: pass
+  checks: []
+  summary:
+    text: 最终独立 verifier 判定 A1-A20 全部通过，无 failed 或 blocked。
+    truncated: false
+  risks:
+    - text: 真实 Tauri WebView、Plugin filesystem effects、Windows runtime 未运行；这些内容已明确移出本
+        change 验收范围。
+      truncated: false
+  risks_truncated: false
+  completed_at: 2026-09-04T08:41:27.698Z
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: blocked
+    unresolved_ids:
+      - A7
+      - A20
+    summary:
+      text: 功能实现和静态/Node 验证通过；A7 与 A20 需要真实 native runtime 才能完成，当前 verifier 将其标记为
+        blocked。
+      truncated: false
+    completed_at: 2026-09-04T08:11:29.935Z
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: recovery
+    unresolved_ids: []
+    summary:
+      text: 继续验证：接受真实 Tauri、Plugin、Windows runtime 未运行这一已记录限制，保留当前实现和自动检查，重新进入验证流程。
+      truncated: false
+    completed_at: 2026-09-04T08:13:05.304Z
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 2
+    outcome: blocked
+    unresolved_ids:
+      - A7
+      - A20
+    summary:
+      text: 当前代码级、Node、结构、Renderer、静态浏览器范围无 failed；A7/A20 在缺少真实 native runtime
+        时无法完成验证。
+      truncated: false
+    completed_at: 2026-09-04T08:20:14.095Z
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 2
+    outcome: recovery
+    unresolved_ids: []
+    summary:
+      text: 用户确认：将 A7、A20 的真实 Tauri、Plugin、Windows native runtime 验收移出本次 change
+        范围；保留现有 command wiring、mocked result handling、静态浏览器和 Node 验证，随后按新范围验收归档。
+      truncated: false
+    completed_at: 2026-09-04T08:23:47.710Z
+  - goal_cycle: 2
+    iteration: 1
+    attempt: 0
+    outcome: recovery
+    unresolved_ids: []
+    summary:
+      text: Native confirmed acceptance criteria changed
+      truncated: false
+    completed_at: 2026-09-04T08:30:39.115Z
+  - goal_cycle: 3
+    iteration: 1
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: 最终独立 verifier 判定 A1-A20 全部通过，无 failed 或 blocked。
+      truncated: false
+    completed_at: 2026-09-04T08:41:27.698Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: true
+created_at: 2026-09-04T00:49:00.121Z
