@@ -223,6 +223,7 @@ body {
 
 .diagnostics {
   min-height: 38px;
+  overflow-wrap: anywhere;
 }
 
 .settings-save-status {
