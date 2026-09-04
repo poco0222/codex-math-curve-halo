@@ -104,6 +104,33 @@ test('settings store keeps UI state separate and snapshots isolated', () => {
   assert.deepEqual(store.getUiState(), { activeView: 'integration' });
 });
 
+test('settings store initializes and transitions the complete UI state from uiDefaults', () => {
+  const uiDefaults = {
+    activeView: 'appearance',
+    selectedColorState: 'idle',
+    saveStatus: 'ready',
+    setupError: null,
+    diagnosticsSnapshot: { state: 'idle', updated_at_ms: 0 },
+    pluginStatus: 'settings.pluginReady',
+    pluginOperationInFlight: false,
+  };
+  const store = createSettingsStore({
+    defaults: {},
+    uiDefaults,
+    persist: () => {},
+  });
+
+  assert.deepEqual(store.getUiState(), uiDefaults);
+
+  store.setUi({ activeView: 'colors', selectedColorState: 'thinking' });
+
+  assert.deepEqual(store.getUiState(), {
+    ...uiDefaults,
+    activeView: 'colors',
+    selectedColorState: 'thinking',
+  });
+});
+
 test('settings store replaces from defaults and patches one setting', () => {
   const store = createSettingsStore({
     defaults: { opacity: 1, curve_id: 'rose-seven' },
@@ -664,6 +691,8 @@ test('settings controller uses the shared store for merge and save behavior', as
   const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
 
   assert.match(source, /import \{ createSettingsStore \} from '\.\/settings-store\.js';/);
+  assert.match(source, /createSettingsStore\(\{[\s\S]*?defaults: DEFAULT_APP_SETTINGS,[\s\S]*?uiDefaults:/);
+  assert.doesNotMatch(source, /settingsStore\.setUi\(\{\s*activeView:\s*'appearance'/);
   assert.match(source, /settingsStore\.mergeSettings/);
   assert.match(source, /settingsStore\.save\(\)/);
 });
@@ -1383,7 +1412,7 @@ test('settings page exposes a master-detail state color editor', async () => {
   assert.match(css, /\.settings-shell\s*\{[\s\S]*align-content:\s*start/);
 });
 
-test('settings color list preserves inactive edits across state switches', async () => {
+test('settings color list preserves inactive edits and focused rows across redraws', async () => {
   class FakeNode {
     constructor({ tagName = 'div', id = '', type = '', value = '', checked = false, dataset = {}, children = [] } = {}) {
       this.tagName = tagName;
@@ -1429,6 +1458,7 @@ test('settings color list preserves inactive edits across state switches', async
     }
 
     replaceChildren(...children) {
+      if (this.children.includes(fakeDocument.activeElement)) fakeDocument.activeElement = null;
       this.children = children.flatMap((child) => child.tagName === '#fragment' ? child.children : [child]);
     }
 
@@ -1636,6 +1666,10 @@ test('settings color list preserves inactive edits across state switches', async
     stateRow('thinking').dispatch('click');
     assert.equal(findById('thinking-color-hex').value, '#C0FFEE');
     assert.equal(mountedEditors().length, 1);
+
+    stateRow('thinking').focus();
+    await listeners.get('settings-changed')({ payload: { language: 'zh-CN' } });
+    assert.equal(fakeDocument.activeElement.id, 'color-tab-thinking');
     assert.equal(typeof settingsModule.createSettingsViewController, 'function');
   } finally {
     globalThis.document = originalDocument;

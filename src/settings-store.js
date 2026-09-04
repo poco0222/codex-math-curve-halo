@@ -1,8 +1,8 @@
 import { createSerialTaskQueue } from './app.js';
 
-export function createSettingsStore({ defaults, persist, enqueue = createSerialTaskQueue() }) {
+export function createSettingsStore({ defaults, uiDefaults = {}, persist, enqueue = createSerialTaskQueue() }) {
   let settings = { ...defaults };
-  let uiState = {};
+  let uiState = { ...uiDefaults };
   const enqueueTask = enqueue;
 
   const getSettings = () => ({ ...settings });

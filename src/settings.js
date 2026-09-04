@@ -135,6 +135,15 @@ const settingsBridge = createSettingsBridge({
 });
 const settingsStore = createSettingsStore({
   defaults: DEFAULT_APP_SETTINGS,
+  uiDefaults: {
+    activeView: 'appearance',
+    selectedColorState: 'idle',
+    saveStatus: 'ready',
+    setupError: null,
+    diagnosticsSnapshot: { state: 'idle', updated_at_ms: 0 },
+    pluginStatus: 'settings.pluginReady',
+    pluginOperationInFlight: false,
+  },
   persist: async (settings) => {
     setSaveStatus('saving');
     const result = await settingsBridge.command('save_settings', { settings });
@@ -155,15 +164,6 @@ const saveStatusKeys = {
   saved: 'settings.saveStatus.saved',
   error: 'settings.saveStatus.error',
 };
-
-settingsStore.setUi({
-  activeView: 'appearance',
-  selectedColorState: 'idle',
-  saveStatus: 'ready',
-  setupError: null,
-  diagnosticsSnapshot: { state: 'idle', updated_at_ms: 0 },
-  pluginStatus: 'settings.pluginReady',
-});
 
 function getCurrentLanguage() {
   return normalizeLanguage(settingsStore.getSettings().language);
@@ -309,6 +309,8 @@ function renderColorStateList() {
   const settings = settingsStore.getSettings();
   const { selectedColorState } = settingsStore.getUiState();
   const language = getCurrentLanguage();
+  const focusedState = [...(tabs.children ?? [])]
+    .find((row) => row === document.activeElement)?.dataset?.colorState;
   tabs.replaceChildren();
   for (const { state, key } of colorFields) {
     const tab = document.createElement('button');
@@ -352,6 +354,7 @@ function renderColorStateList() {
     });
     tabs.append(tab);
   }
+  if (focusedState) document.getElementById(`color-tab-${focusedState}`)?.focus();
 }
 
 function mountColorStateDetail(state = settingsStore.getUiState().selectedColorState) {
