@@ -105,6 +105,69 @@ test('settings store replaces from defaults and patches one setting', () => {
   assert.deepEqual(store.getSettings(), { opacity: 0.6, curve_id: 'rose-seven' });
 });
 
+test('partial settings-changed payload keeps unmounted fields', () => {
+  const store = createSettingsStore({
+    defaults: { opacity: 1, idle_color: '#A7ADB5', thinking_color: '#FF8A3D' },
+    persist: () => {},
+  });
+
+  store.replaceSettings({ opacity: 0.8, idle_color: '#111111', thinking_color: '#222222' });
+  store.mergeSettings({ idle_color: '#333333' });
+
+  assert.equal(store.getSettings().opacity, 0.8);
+  assert.equal(store.getSettings().thinking_color, '#222222');
+  assert.equal(store.getSettings().idle_color, '#333333');
+});
+
+test('plugin in-flight state survives a View change', () => {
+  const store = createSettingsStore({ defaults: {}, persist: () => {} });
+
+  store.setUi({ activeView: 'integration', pluginOperationInFlight: true });
+  store.setUi({ activeView: 'appearance' });
+
+  assert.equal(store.getUiState().activeView, 'appearance');
+  assert.equal(store.getUiState().pluginOperationInFlight, true);
+});
+
+test('a settings merge does not change the locally patched active setting', () => {
+  const store = createSettingsStore({
+    defaults: { opacity: 1, curve_id: 'rose-seven' },
+    persist: () => {},
+  });
+
+  store.patchSetting('opacity', 0.6);
+  store.mergeSettings({ curve_id: 'spiral-search' });
+
+  assert.equal(store.getSettings().opacity, 0.6);
+  assert.equal(store.getSettings().curve_id, 'spiral-search');
+});
+
+test('settings controller uses the shared store for merge and save behavior', async () => {
+  const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
+
+  assert.match(source, /import \{ createSettingsStore \} from '\.\/settings-store\.js';/);
+  assert.match(source, /settingsStore\.mergeSettings/);
+  assert.match(source, /settingsStore\.save\(\)/);
+});
+
+test('settings controller routes commands and events through the bridge', async () => {
+  const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
+
+  assert.match(source, /import \{ createSettingsBridge \} from '\.\/settings-bridge\.js';/);
+  assert.match(source, /const settingsBridge = createSettingsBridge/);
+  assert.match(source, /settingsBridge\.command/);
+  assert.match(source, /settingsBridge\.subscribe/);
+  assert.doesNotMatch(source, /await invoke\(command, args\)/);
+});
+
+test('settings controller keeps plugin busy state in UI state and reapplies it after remount', async () => {
+  const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
+
+  assert.match(source, /settingsStore\.setUi\(\{ pluginOperationInFlight: true \}\)/);
+  assert.match(source, /settingsStore\.getUiState\(\)\.pluginOperationInFlight/);
+  assert.match(source, /setPluginButtonsDisabled\(settingsStore\.getUiState\(\)\.pluginOperationInFlight\)/);
+});
+
 test('settings bridge returns successful command values', async () => {
   const calls = [];
   const bridge = createSettingsBridge({
@@ -286,9 +349,9 @@ test('settings page exposes a persisted language selector', async () => {
   assert.match(html, /data-i18n="settings\.display"/);
   assert.match(html, /id="follow-codex-lifecycle"/);
   assert.match(html, /data-i18n="settings\.followCodexLifecycle"/);
-  assert.match(source, /let settingsModel = \{ \.\.\.DEFAULT_APP_SETTINGS \}/);
-  assert.match(source, /language: normalizeLanguage\(settings\.language \?\? settingsModel\.language\)/);
-  assert.match(source, /settingsModel\[settingKey\(field\)\]/);
+  assert.match(source, /const settingsStore = createSettingsStore/);
+  assert.match(source, /language: normalizeLanguage\(settings\.language \?\? settingsStore\.getSettings\(\)\.language\)/);
+  assert.match(source, /const settings = settingsStore\.getSettings\(\)[\s\S]*settings\[settingKey\(field\)\]/);
   assert.match(source, /document\.documentElement\.lang/);
   assert.match(i18n, /settings\.followCodexLifecycle/);
 });
@@ -335,7 +398,7 @@ test('settings page uses the Halo Control Room workbench layout', async () => {
   assert.match(source, /setSaveStatus\('saving'\)/);
   assert.match(source, /setSaveStatus\('saved'\)/);
   assert.match(source, /setSaveStatus\('error'\)/);
-  assert.match(source, /saveSettings\(async \(\) => \{[\s\S]*setSaveStatus\('saving'\)/);
+  assert.match(source, /settingsStore\.save\(\)/);
   assert.match(source, /const SETTINGS_VIEWS = \{/);
   assert.match(source, /function mountSettingsView\(viewId\)/);
   assert.match(source, /host\.replaceChildren\(/);
@@ -683,7 +746,7 @@ test('renderer startup uses exact frontend defaults after get_settings fails', a
   assert.equal(DEFAULT_APP_SETTINGS.language, 'en');
   assert.match(appSource, /const settings = await invokeCommand\('get_settings'\) \?\? DEFAULT_APP_SETTINGS/);
   assert.match(appSource, /window\.setInterval\(displayBridge\.pollDisplayState, POLL_INTERVAL_MS\)/);
-  assert.match(settingsSource, /applySettings\(settings\.ok \? settings\.value : DEFAULT_APP_SETTINGS\)/);
+  assert.match(settingsSource, /applySettings\(settings\.ok \? settings\.value : DEFAULT_APP_SETTINGS, true\)/);
   assert.match(mainSource, /settings_transaction: Mutex<\(\)>/);
   assert.match(mainSource, /settings_transaction[\s\S]*?\.lock\(\)/);
 });
@@ -736,7 +799,7 @@ test('settings page exposes state color tabs and one active editor', async () =>
   assert.match(source, /COLOR_PRESET_GROUPS/);
   assert.match(source, /selectedColorState/);
   assert.match(source, /function mountColorState\(/);
-  assert.match(source, /settingsModel/);
+  assert.match(source, /settingsStore\.getSettings\(\)/);
   assert.match(source, /saveCurrentSettings/);
   assert.match(css, /\.color-state-tabs\s*\{/);
   assert.match(css, /\.color-state-tab\[aria-selected="true"\]/);
@@ -1004,7 +1067,7 @@ test('settings color list preserves inactive edits across state switches', async
 test('settings color controls use one active editor and preserve the full color model', async () => {
   const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
 
-  assert.match(source, /settingsModel\[key\] = normalized/);
+  assert.match(source, /settingsStore\.patchSetting\(key, normalized\)/);
   assert.match(source, /function mountColorState\(state = selectedColorState\)/);
   assert.match(source, /panel\.replaceChildren\(\)/);
   assert.match(source, /if \(!isHexColor\(value\)\)/);
@@ -1017,7 +1080,7 @@ test('settings changes reach both overlay and settings windows', async () => {
 
   assert.match(mainSource, /for target in \["main", "settings"\]/);
   assert.match(mainSource, /app\.emit_to\(target, "settings-changed", settings\.clone\(\)\)/);
-  assert.match(settingsSource, /listen\('settings-changed', \(\{ payload \}\) => applySettings\(payload\)\)/);
+  assert.match(settingsSource, /settingsBridge\.subscribe\('settings-changed', \(\{ payload \}\) => applySettings\(payload\)\)/);
 });
 
 test('macOS private API is target-scoped for cross-target checks', async () => {

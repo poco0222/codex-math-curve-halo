@@ -1,5 +1,7 @@
 import { formatFormula, getCurveProfile } from './curves.js';
 import { createSerialTaskQueue, DEFAULT_APP_SETTINGS, formatSetupError } from './app.js';
+import { createSettingsBridge } from './settings-bridge.js';
+import { createSettingsStore } from './settings-store.js';
 import {
   COLOR_PRESET_GROUPS,
   isHexColor,
@@ -79,6 +81,7 @@ export function createSettingsViewController({
 }
 
 const invoke = window.__TAURI__?.core?.invoke ?? window.__TAURI__?.invoke;
+const listen = window.__TAURI__?.event?.listen;
 const settingsPanelHost = document.getElementById('settings-panel-host');
 const viewTabs = [...document.querySelectorAll('[data-view-target]')];
 const pluginOperationStatuses = {
@@ -120,14 +123,34 @@ const SETTINGS_VIEWS = {
 };
 let settingsViewController;
 let selectedColorState = 'idle';
-let settingsModel = { ...DEFAULT_APP_SETTINGS };
 let currentLanguage = DEFAULT_LANGUAGE;
 let currentPluginStatus = 'settings.pluginReady';
-let pluginOperationInFlight = false;
 let currentSaveStatus = 'ready';
 let setupError = null;
 let currentDisplayState = { state: 'idle', updated_at_ms: 0 };
-const saveSettings = createSerialTaskQueue();
+const commandQueue = createSerialTaskQueue();
+
+const settingsBridge = createSettingsBridge({
+  invoke,
+  listen,
+  warn: () => {},
+  onFailure: (command, error) => showSetupError(command, error),
+});
+const settingsStore = createSettingsStore({
+  defaults: DEFAULT_APP_SETTINGS,
+  persist: async (settings) => {
+    setSaveStatus('saving');
+    const result = await settingsBridge.command('save_settings', { settings });
+    if (result.ok) {
+      clearSetupError();
+      setSaveStatus('saved');
+      renderFormula();
+    } else {
+      setSaveStatus('error');
+    }
+    return result;
+  },
+});
 
 const saveStatusKeys = {
   ready: 'settings.saveStatus.ready',
@@ -142,15 +165,8 @@ function showSetupError(command, error) {
   console.warn(`Codex Halo: ${formatSetupError(command, error)}`);
 }
 
-async function invokeCommand(command, args) {
-  if (typeof invoke !== 'function') return { ok: false, value: null };
-  try {
-    const value = await invoke(command, args);
-    return { ok: true, value };
-  } catch (error) {
-    showSetupError(command, error);
-    return { ok: false, value: null };
-  }
+function invokeCommand(command, args) {
+  return settingsBridge.command(command, args);
 }
 
 function clearSetupError() {
@@ -162,17 +178,19 @@ function control(key) {
 }
 
 function settingKey(field) {
-  return field.name || field.id.replaceAll('-', '_');
+  return field.dataset?.colorHex
+    ? STATE_COLOR_KEYS[field.dataset.colorHex]
+    : field.name || field.id.replaceAll('-', '_');
 }
 
 function updateSettingsModel(field) {
   const key = settingKey(field);
-  if (!key || !Object.hasOwn(settingsModel, key)) return;
-  settingsModel[key] = field.type === 'checkbox'
+  if (!key || !Object.hasOwn(settingsStore.getSettings(), key)) return;
+  settingsStore.patchSetting(key, field.type === 'checkbox'
     ? field.checked
     : field.type === 'number' || field.type === 'range'
       ? Number(field.value)
-      : field.value;
+      : field.value);
 }
 
 function syncSettingsModelFromControls() {
@@ -185,7 +203,7 @@ function syncSettingsModelFromControls() {
     if (!field) continue;
     if (field.dataset.colorHex) {
       const key = STATE_COLOR_KEYS[field.dataset.colorHex];
-      if (key && isHexColor(field.value)) settingsModel[key] = field.value.toUpperCase();
+      if (key && isHexColor(field.value)) settingsStore.patchSetting(key, field.value.toUpperCase());
       continue;
     }
     updateSettingsModel(field);
@@ -193,6 +211,7 @@ function syncSettingsModelFromControls() {
 }
 
 function syncControlsFromSettings(excluded) {
+  const settings = settingsStore.getSettings();
   const fields = [
     document.getElementById('language'),
     document.getElementById('enabled'),
@@ -200,12 +219,12 @@ function syncControlsFromSettings(excluded) {
   ];
   for (const field of fields) {
     if (!field || field === excluded || field.dataset.colorHex) continue;
-    const value = settingsModel[settingKey(field)];
+    const value = settings[settingKey(field)];
     if (value === undefined) continue;
     if (field.type === 'checkbox') field.checked = Boolean(value);
     else field.value = String(value);
   }
-  syncColorField(selectedColorState, settingsModel[STATE_COLOR_KEYS[selectedColorState]]);
+  syncColorField(selectedColorState, settings[STATE_COLOR_KEYS[selectedColorState]]);
 }
 
 function syncColorField(state, value) {
@@ -223,14 +242,14 @@ function syncColorField(state, value) {
 function updateColorSetting(state, value) {
   const key = STATE_COLOR_KEYS[state];
   const normalized = normalizeHexColor(value, DEFAULT_APP_SETTINGS[key]);
-  settingsModel[key] = normalized;
+  settingsStore.patchSetting(key, normalized);
   renderColorStateList();
   syncColorField(state, normalized);
 }
 
 function readSettings() {
   syncSettingsModelFromControls();
-  return { ...settingsModel };
+  return settingsStore.getSettings();
 }
 
 function renderColorPresets() {
@@ -271,6 +290,7 @@ function renderColorPresets() {
 function renderColorStateList() {
   const tabs = document.getElementById('color-state-tabs');
   if (!tabs) return;
+  const settings = settingsStore.getSettings();
   tabs.replaceChildren();
   for (const { state, key } of colorFields) {
     const tab = document.createElement('button');
@@ -284,7 +304,7 @@ function renderColorStateList() {
     tab.tabIndex = state === selectedColorState ? 0 : -1;
     const swatch = document.createElement('span');
     swatch.className = 'color-state-row-swatch';
-    swatch.style.backgroundColor = settingsModel[key];
+    swatch.style.backgroundColor = settings[key];
     swatch.setAttribute('aria-hidden', 'true');
     const copy = document.createElement('span');
     copy.className = 'color-state-row-copy';
@@ -293,7 +313,7 @@ function renderColorStateList() {
     label.textContent = getStateLabel(currentLanguage, state);
     const value = document.createElement('span');
     value.className = 'color-state-row-hex';
-    value.textContent = normalizeHexColor(settingsModel[key], DEFAULT_APP_SETTINGS[key]);
+    value.textContent = normalizeHexColor(settings[key], DEFAULT_APP_SETTINGS[key]);
     copy.append(label, value);
     tab.append(swatch, copy);
     tab.addEventListener('click', () => selectColorState(state, true));
@@ -358,7 +378,7 @@ function mountColorStateDetail(state = selectedColorState) {
   panel.append(summary, editor);
 
   bindColorEditor(state, picker, hex, reset);
-  syncColorField(state, settingsModel[key]);
+  syncColorField(state, settingsStore.getSettings()[key]);
 }
 
 function mountColorState(state = selectedColorState) {
@@ -375,7 +395,7 @@ function selectColorState(state, focus = false) {
   if (focus) document.getElementById(`color-tab-${state}`)?.focus();
 }
 
-function renderFormula(settings = settingsModel) {
+function renderFormula(settings = settingsStore.getSettings()) {
   const formula = document.getElementById('formula');
   if (!formula) return;
   const profile = getCurveProfile(settings.curve_id);
@@ -460,18 +480,23 @@ function renderLanguage(language) {
   renderColorPresets();
 }
 
-function applySettings(settings) {
+function applySettings(settings, replace = false) {
   if (!settings) return;
-  settingsModel = {
-    ...settingsModel,
+  const activeField = document.activeElement;
+  const activeKey = activeField && settingKey(activeField);
+  const incoming = {
     ...settings,
-    language: normalizeLanguage(settings.language ?? settingsModel.language),
+    language: normalizeLanguage(settings.language ?? settingsStore.getSettings().language),
   };
-  syncControlsFromSettings(document.activeElement);
-  renderLanguage(settingsModel.language);
+  if (activeKey && Object.hasOwn(settingsStore.getSettings(), activeKey)) delete incoming[activeKey];
+  const nextSettings = replace
+    ? settingsStore.replaceSettings(incoming)
+    : settingsStore.mergeSettings(incoming);
+  syncControlsFromSettings(activeField);
+  renderLanguage(nextSettings.language);
   renderOpacity();
-  renderFormula(settingsModel);
-  syncColorField(selectedColorState, settingsModel[STATE_COLOR_KEYS[selectedColorState]]);
+  renderFormula(nextSettings);
+  syncColorField(selectedColorState, nextSettings[STATE_COLOR_KEYS[selectedColorState]]);
 }
 
 async function refreshDiagnostics() {
@@ -481,37 +506,26 @@ async function refreshDiagnostics() {
 
 async function loadSettings() {
   const settings = await invokeCommand('get_settings');
-  applySettings(settings.ok ? settings.value : DEFAULT_APP_SETTINGS);
+  applySettings(settings.ok ? settings.value : DEFAULT_APP_SETTINGS, true);
   await refreshDiagnostics();
 }
 
-const listen = window.__TAURI__?.event?.listen;
-if (typeof listen === 'function') {
-  listen('settings-changed', ({ payload }) => applySettings(payload)).catch(() => {});
-  listen('plugin-operation', ({ payload }) => {
-    const status = pluginOperationStatuses[payload];
-    if (status) renderPluginStatus(status);
-  }).catch(() => {});
-}
+const settingsChangedSubscription = settingsBridge.subscribe('settings-changed', ({ payload }) => applySettings(payload));
+settingsChangedSubscription?.catch?.(() => {});
+const pluginOperationSubscription = settingsBridge.subscribe('plugin-operation', ({ payload }) => {
+  const status = pluginOperationStatuses[payload];
+  if (status) renderPluginStatus(status);
+});
+pluginOperationSubscription?.catch?.(() => {});
 
-async function saveCurrentSettings() {
-  const settings = readSettings();
-  return saveSettings(async () => {
-    setSaveStatus('saving');
-    const result = await invokeCommand('save_settings', { settings });
-    if (result.ok) {
-      clearSetupError();
-      setSaveStatus('saved');
-      renderFormula();
-      return;
-    }
-    setSaveStatus('error');
-  });
+function saveCurrentSettings() {
+  readSettings();
+  return settingsStore.save();
 }
 
 async function runPluginAction(command, successStatus) {
-  if (pluginOperationInFlight) return;
-  pluginOperationInFlight = true;
+  if (settingsStore.getUiState().pluginOperationInFlight) return;
+  settingsStore.setUi({ pluginOperationInFlight: true });
   setPluginButtonsDisabled(true);
   renderPluginStatus('settings.pluginWorking');
   try {
@@ -523,7 +537,7 @@ async function runPluginAction(command, successStatus) {
       renderPluginStatus('settings.pluginOperationFailed');
     }
   } finally {
-    pluginOperationInFlight = false;
+    settingsStore.setUi({ pluginOperationInFlight: false });
     setPluginButtonsDisabled(false);
   }
 }
@@ -539,7 +553,7 @@ function bindSettingsFields(root) {
     const event = field.type === 'number' || field.type === 'range' ? 'input' : 'change';
     field.addEventListener(event, () => {
       updateSettingsModel(field);
-      if (field.id === 'curve-id') renderFormula(settingsModel);
+      if (field.id === 'curve-id') renderFormula();
       if (field.id === 'opacity') renderOpacity();
       if (field.id === 'language') renderLanguage(field.value);
       void saveCurrentSettings();
@@ -578,7 +592,7 @@ function bindColorEditor(state, picker, hex, reset) {
 function bindIntegrationActions() {
   document.getElementById('install-plugin')?.addEventListener('click', () => runPluginAction('install_plugin', 'settings.pluginInstalled'));
   document.getElementById('uninstall-plugin')?.addEventListener('click', () => runPluginAction('uninstall_plugin', 'settings.pluginUninstalled'));
-  setPluginButtonsDisabled(pluginOperationInFlight);
+  setPluginButtonsDisabled(settingsStore.getUiState().pluginOperationInFlight);
   document.getElementById('export-diagnostics')?.addEventListener('click', () => {
     const payload = {
       state: currentDisplayState.state,
@@ -593,7 +607,7 @@ function bindIntegrationActions() {
     URL.revokeObjectURL(url);
   });
   document.getElementById('reset-position')?.addEventListener('click', async () => {
-    const result = await saveSettings(() => invokeCommand('reset_position'));
+    const result = await commandQueue(() => invokeCommand('reset_position'));
     if (result.ok) {
       clearSetupError();
       applySettings(result.value);
@@ -629,13 +643,15 @@ settingsViewController = createSettingsViewController({
   tabs: viewTabs,
   getTemplate: (view) => document.querySelector?.(`[data-view-template="${view.template}"]`),
   beforeMount: syncSettingsModelFromControls,
-  afterMount: () => {
+  afterMount: (viewId) => {
+    settingsStore.setUi({ activeView: viewId });
     syncControlsFromSettings();
     renderLanguage(currentLanguage);
     renderOpacity();
-    renderFormula(settingsModel);
+    renderFormula();
     renderPluginStatus();
     renderDiagnostics();
+    setPluginButtonsDisabled(settingsStore.getUiState().pluginOperationInFlight);
   },
 });
 settingsViewController.bind();
