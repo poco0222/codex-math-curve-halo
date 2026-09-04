@@ -26,14 +26,13 @@
 - A4: `State colors` 使用 Master-Detail，六个状态列表展示色块和 Hex，详情只编辑当前状态。
 - A5: 颜色选择器、Hex、恢复默认和预置色继续走自动保存，切换 View 或状态不丢值。
 - A6: 共享设置状态、UI 状态和 Tauri Bridge 分离；未来新增 View 或状态级字段不复制保存、错误和事件同步逻辑。
-- A7: Plugin、诊断、位置重置、状态模拟、双语、键盘操作和现有控件契约保持可用。
-- A8: 桌面、窄窗口和 `en`/`zh-CN` 下无页面级横向溢出、文字遮挡、焦点丢失或未处理控制台错误。
+- A7: 桌面、窄窗口和 `en`/`zh-CN` 下无页面级横向溢出、文字遮挡、焦点丢失或未处理控制台错误。
 
 # Constraints and invariants
 
 - 当前六个状态和现有颜色字段保持不变。
 - `settingsStore` 作为完整设置和 UI 状态的单一前端来源。
-- 真实 Tauri IPC、Plugin 和 Windows 行为不由静态浏览器检查推断。
+- 真实 Tauri IPC、Plugin 和 Windows 行为不属于本 change 的验收范围。
 
 # Decisions
 
@@ -50,7 +49,7 @@
 
 # Open questions
 
-- [blocking] CONFIRM: 确认按当前 Outcome、Scope、Non-goals、A1-A8 和 Decisions 进入实现阶段。
+- [blocking] CONFIRM: 确认按当前 Outcome、Scope、Non-goals、A1-A7 和 Decisions 进入实现阶段。
 
 # Verification expectations
 

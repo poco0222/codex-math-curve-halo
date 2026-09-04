@@ -91,14 +91,9 @@ The frontend SHALL keep settings data, UI state, and Tauri communication as sepa
 - **THEN** the frontend can register a new View and its field bindings without duplicating save, error, localization, or event synchronization logic
 - **AND** native fields, commands, or events are added only by a separate capability change
 
-## Requirement: Behavior and accessibility preservation
+## Requirement: Accessibility and localization preservation
 
 The redesign SHALL preserve current behavior and provide accessible, localized controls.
-
-### Scenario: Preserve existing actions
-
-- **WHEN** the user installs or uninstalls the Plugin, exports diagnostics, resets position, or simulates a state
-- **THEN** the existing Tauri commands and result handling remain unchanged
 
 ### Scenario: Localize the settings page
 
