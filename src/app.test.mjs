@@ -46,6 +46,87 @@ test('settings bridge returns safe failure results when invoke rejects', async (
   assert.deepEqual(await bridge.command('save_settings'), { ok: false, value: null });
 });
 
+test('settings bridge warns when invoke is unavailable', async () => {
+  const warnings = [];
+  const bridge = createSettingsBridge({
+    warn: (...args) => warnings.push(args),
+  });
+
+  assert.deepEqual(await bridge.command('save_settings'), { ok: false, value: null });
+  assert.deepEqual(warnings, [['Codex Halo: save_settings failed']]);
+});
+
+test('settings store saves call-time snapshots in queue order', async () => {
+  const persisted = [];
+  let releaseFirst;
+  const store = createSettingsStore({
+    defaults: { opacity: 1 },
+    persist: async (settings) => {
+      persisted.push(settings);
+      if (persisted.length === 1) {
+        await new Promise((resolve) => { releaseFirst = resolve; });
+      }
+    },
+  });
+
+  store.patchSetting('opacity', 0.2);
+  const first = store.save();
+  store.patchSetting('opacity', 0.8);
+  const second = store.save();
+
+  await new Promise((resolve) => setImmediate(resolve));
+  releaseFirst();
+  await Promise.all([first, second]);
+
+  assert.deepEqual(persisted, [{ opacity: 0.2 }, { opacity: 0.8 }]);
+});
+
+test('settings store keeps UI state separate and snapshots isolated', () => {
+  const store = createSettingsStore({ defaults: { opacity: 1 }, persist: () => {} });
+
+  const settings = store.getSettings();
+  settings.opacity = 0;
+  const uiState = store.setUi({ activeView: 'integration' });
+  uiState.activeView = 'appearance';
+
+  assert.deepEqual(store.getSettings(), { opacity: 1 });
+  assert.deepEqual(store.getUiState(), { activeView: 'integration' });
+});
+
+test('settings store replaces from defaults and patches one setting', () => {
+  const store = createSettingsStore({
+    defaults: { opacity: 1, curve_id: 'rose-seven' },
+    persist: () => {},
+  });
+
+  store.replaceSettings({ opacity: 0.8 });
+  store.patchSetting('opacity', 0.6);
+
+  assert.deepEqual(store.getSettings(), { opacity: 0.6, curve_id: 'rose-seven' });
+});
+
+test('settings bridge returns successful command values', async () => {
+  const calls = [];
+  const bridge = createSettingsBridge({
+    invoke: async (name, args) => {
+      calls.push([name, args]);
+      return { saved: true };
+    },
+  });
+
+  assert.deepEqual(await bridge.command('save_settings', { settings: { opacity: 0.8 } }), {
+    ok: true,
+    value: { saved: true },
+  });
+  assert.deepEqual(calls, [['save_settings', { settings: { opacity: 0.8 } }]]);
+});
+
+test('settings bridge no-ops when listen is unavailable', () => {
+  const bridge = createSettingsBridge({ invoke: () => null, warn: () => {} });
+
+  assert.equal(bridge.subscribe('settings-changed', () => {}), undefined);
+});
+
 test('an in-flight poll cannot overwrite a newer simulated display event', async () => {
   let releasePoll;
   const applied = [];

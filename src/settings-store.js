@@ -28,7 +28,8 @@ export function createSettingsStore({ defaults, persist }) {
       return getUiState();
     },
     save() {
-      return enqueueSave(() => persist(getSettings()));
+      const snapshot = getSettings();
+      return enqueueSave(() => persist(snapshot));
     },
   };
 }

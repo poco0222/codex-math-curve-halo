@@ -3,13 +3,18 @@ export function createSettingsBridge({
   listen,
   warn = console.warn.bind(console),
 }) {
+  const warnFailure = (name) => warn(`Codex Halo: ${name} failed`);
+
   return {
     async command(name, args) {
-      if (typeof invoke !== 'function') return { ok: false, value: null };
+      if (typeof invoke !== 'function') {
+        warnFailure(name);
+        return { ok: false, value: null };
+      }
       try {
         return { ok: true, value: await invoke(name, args) };
       } catch (error) {
-        warn(`Codex Halo: ${name} failed`);
+        warnFailure(name);
         return { ok: false, value: null };
       }
     },
