@@ -142,6 +142,148 @@ test('a settings merge does not change the locally patched active setting', () =
   assert.equal(store.getSettings().curve_id, 'spiral-search');
 });
 
+test('shared settings queue runs reset after a blocked save', async () => {
+  const calls = [];
+  let releaseSave;
+  const queue = createSerialTaskQueue();
+  const store = createSettingsStore({
+    defaults: { opacity: 1 },
+    enqueue: queue,
+    persist: async (settings) => {
+      calls.push(['save-start', settings.opacity]);
+      await new Promise((resolve) => { releaseSave = resolve; });
+      calls.push(['save-end', settings.opacity]);
+    },
+  });
+
+  store.patchSetting('opacity', 0.6);
+  const save = store.save();
+  await new Promise((resolve) => setImmediate(resolve));
+  const reset = store.enqueue(() => {
+    calls.push(['reset']);
+  });
+
+  assert.deepEqual(calls, [['save-start', 0.6]]);
+  releaseSave();
+  await Promise.all([save, reset]);
+  assert.deepEqual(calls, [['save-start', 0.6], ['save-end', 0.6], ['reset']]);
+});
+
+test('initial settings load does not replace a focused local field', async () => {
+  class FakeField {
+    constructor({ id, type, value }) {
+      this.id = id;
+      this.type = type;
+      this.value = value;
+      this.checked = false;
+      this.name = '';
+      this.dataset = {};
+      this.listeners = new Map();
+    }
+
+    addEventListener(type, listener) {
+      const listeners = this.listeners.get(type) ?? [];
+      listeners.push(listener);
+      this.listeners.set(type, listeners);
+    }
+
+    dispatch(type) {
+      for (const listener of this.listeners.get(type) ?? []) {
+        listener({ target: this, currentTarget: this });
+      }
+    }
+  }
+
+  const opacity = new FakeField({ id: 'opacity', type: 'range', value: '1' });
+  const settingsPanelHost = {
+    querySelectorAll: (selector) => selector === 'input, select' ? [opacity] : [],
+  };
+  const listeners = new Map();
+  let resolveSettings;
+  const invoke = async (command) => {
+    if (command === 'get_settings') {
+      return new Promise((resolve) => { resolveSettings = resolve; });
+    }
+    if (command === 'get_display_state') return { state: 'idle', updated_at_ms: 0 };
+    return null;
+  };
+  const fakeDocument = {
+    activeElement: null,
+    documentElement: { lang: 'en' },
+    title: 'Codex Halo Settings',
+    getElementById: (id) => id === 'settings-panel-host' ? settingsPanelHost : id === 'opacity' ? opacity : null,
+    querySelectorAll: (selector) => selector === 'input, select' ? [opacity] : [],
+  };
+  const fakeWindow = {
+    __TAURI__: {
+      core: { invoke },
+      event: {
+        listen: (event, handler) => {
+          listeners.set(event, handler);
+          return Promise.resolve();
+        },
+      },
+    },
+    setInterval: () => 1,
+  };
+  const originalDocument = globalThis.document;
+  const originalWindow = globalThis.window;
+  globalThis.document = fakeDocument;
+  globalThis.window = fakeWindow;
+
+  try {
+    await import(`./settings.js?initial-load-protection=${Date.now()}`);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    fakeDocument.activeElement = opacity;
+    opacity.value = '0.6';
+    opacity.dispatch('input');
+    resolveSettings({ ...DEFAULT_APP_SETTINGS, opacity: 0.8 });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    fakeDocument.activeElement = null;
+    await listeners.get('settings-changed')({ payload: { curve_id: 'spiral-search' } });
+    assert.equal(opacity.value, '0.6');
+  } finally {
+    globalThis.document = originalDocument;
+    globalThis.window = originalWindow;
+  }
+});
+
+test('settings-changed waits behind a queued local save', async () => {
+  const calls = [];
+  let releaseSave;
+  const queue = createSerialTaskQueue();
+  const store = createSettingsStore({
+    defaults: { opacity: 1, curve_id: 'rose-seven' },
+    enqueue: queue,
+    persist: async () => {
+      calls.push('save-start');
+      await new Promise((resolve) => { releaseSave = resolve; });
+      calls.push('save-end');
+    },
+  });
+
+  store.patchSetting('opacity', 0.6);
+  const save = store.save();
+  await new Promise((resolve) => setImmediate(resolve));
+  const payload = { curve_id: 'spiral-search' };
+  const event = store.enqueue(() => {
+    calls.push('event');
+    store.mergeSettings(payload);
+  });
+
+  assert.deepEqual(calls, ['save-start']);
+  assert.equal(store.getSettings().curve_id, 'rose-seven');
+  releaseSave();
+  await Promise.all([save, event]);
+  assert.deepEqual(calls, ['save-start', 'save-end', 'event']);
+  assert.equal(store.getSettings().curve_id, 'spiral-search');
+
+  const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
+  assert.match(source, /settingsStore\.enqueue\(\(\) => applySettings\(payload\)\)/);
+});
+
 test('settings controller uses the shared store for merge and save behavior', async () => {
   const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
 
@@ -746,7 +888,7 @@ test('renderer startup uses exact frontend defaults after get_settings fails', a
   assert.equal(DEFAULT_APP_SETTINGS.language, 'en');
   assert.match(appSource, /const settings = await invokeCommand\('get_settings'\) \?\? DEFAULT_APP_SETTINGS/);
   assert.match(appSource, /window\.setInterval\(displayBridge\.pollDisplayState, POLL_INTERVAL_MS\)/);
-  assert.match(settingsSource, /applySettings\(settings\.ok \? settings\.value : DEFAULT_APP_SETTINGS, true\)/);
+  assert.match(settingsSource, /applySettings\(settings\.ok \? settings\.value : DEFAULT_APP_SETTINGS\)/);
   assert.match(mainSource, /settings_transaction: Mutex<\(\)>/);
   assert.match(mainSource, /settings_transaction[\s\S]*?\.lock\(\)/);
 });
@@ -1080,7 +1222,7 @@ test('settings changes reach both overlay and settings windows', async () => {
 
   assert.match(mainSource, /for target in \["main", "settings"\]/);
   assert.match(mainSource, /app\.emit_to\(target, "settings-changed", settings\.clone\(\)\)/);
-  assert.match(settingsSource, /settingsBridge\.subscribe\('settings-changed', \(\{ payload \}\) => applySettings\(payload\)\)/);
+  assert.match(settingsSource, /settingsBridge\.subscribe\(\s*'settings-changed',\s*\(\{ payload \}\) => settingsStore\.enqueue\(\(\) => applySettings\(payload\)\)/);
 });
 
 test('macOS private API is target-scoped for cross-target checks', async () => {

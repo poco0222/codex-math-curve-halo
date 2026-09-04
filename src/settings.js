@@ -480,7 +480,7 @@ function renderLanguage(language) {
   renderColorPresets();
 }
 
-function applySettings(settings, replace = false) {
+function applySettings(settings) {
   if (!settings) return;
   const activeField = document.activeElement;
   const activeKey = activeField && settingKey(activeField);
@@ -489,9 +489,7 @@ function applySettings(settings, replace = false) {
     language: normalizeLanguage(settings.language ?? settingsStore.getSettings().language),
   };
   if (activeKey && Object.hasOwn(settingsStore.getSettings(), activeKey)) delete incoming[activeKey];
-  const nextSettings = replace
-    ? settingsStore.replaceSettings(incoming)
-    : settingsStore.mergeSettings(incoming);
+  const nextSettings = settingsStore.mergeSettings(incoming);
   syncControlsFromSettings(activeField);
   renderLanguage(nextSettings.language);
   renderOpacity();
@@ -506,11 +504,14 @@ async function refreshDiagnostics() {
 
 async function loadSettings() {
   const settings = await invokeCommand('get_settings');
-  applySettings(settings.ok ? settings.value : DEFAULT_APP_SETTINGS, true);
+  applySettings(settings.ok ? settings.value : DEFAULT_APP_SETTINGS);
   await refreshDiagnostics();
 }
 
-const settingsChangedSubscription = settingsBridge.subscribe('settings-changed', ({ payload }) => applySettings(payload));
+const settingsChangedSubscription = settingsBridge.subscribe(
+  'settings-changed',
+  ({ payload }) => settingsStore.enqueue(() => applySettings(payload)),
+);
 settingsChangedSubscription?.catch?.(() => {});
 const pluginOperationSubscription = settingsBridge.subscribe('plugin-operation', ({ payload }) => {
   const status = pluginOperationStatuses[payload];
@@ -607,7 +608,7 @@ function bindIntegrationActions() {
     URL.revokeObjectURL(url);
   });
   document.getElementById('reset-position')?.addEventListener('click', async () => {
-    const result = await commandQueue(() => invokeCommand('reset_position'));
+    const result = await settingsStore.enqueue(() => invokeCommand('reset_position'));
     if (result.ok) {
       clearSetupError();
       applySettings(result.value);
