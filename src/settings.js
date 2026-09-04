@@ -24,8 +24,8 @@ export function createSettingsViewController({
   afterMount = () => {},
 }) {
   const viewIds = Object.keys(views);
-  let activeView = viewIds[0];
   const tabFor = (viewId) => tabs.find((tab) => tab.dataset.viewTarget === viewId);
+  const getActiveView = () => tabs.find((tab) => tab.tabIndex === 0)?.dataset.viewTarget ?? viewIds[0];
 
   function mountSettingsView(viewId) {
     const view = views[viewId];
@@ -35,7 +35,6 @@ export function createSettingsViewController({
     host.replaceChildren(template.content.cloneNode(true));
     const tab = tabFor(viewId);
     host.setAttribute?.('aria-labelledby', tab?.id ?? `settings-tab-${viewId}`);
-    activeView = viewId;
     view.bind();
     afterMount(viewId);
     return true;
@@ -73,10 +72,10 @@ export function createSettingsViewController({
         selectSettingsView(viewIds[next], true);
       });
     }
-    return mountSettingsView(activeView);
+    return selectSettingsView(viewIds[0]);
   }
 
-  return { bind, getActiveView: () => activeView, mountSettingsView, selectSettingsView };
+  return { bind, getActiveView, mountSettingsView, selectSettingsView };
 }
 
 const invoke = window.__TAURI__?.core?.invoke ?? window.__TAURI__?.invoke;
@@ -141,6 +140,7 @@ const settingsStore = createSettingsStore({
     saveStatus: 'ready',
     setupError: null,
     diagnosticsSnapshot: { state: 'idle', updated_at_ms: 0 },
+    invalidColorDrafts: {},
     pluginStatus: 'settings.pluginReady',
     pluginOperationInFlight: false,
   },
@@ -245,18 +245,39 @@ function syncColorField(state, value) {
   const hex = control(`${key}_hex`);
   const preview = control(`${key}_preview`);
   const normalized = normalizeHexColor(value, DEFAULT_APP_SETTINGS[key]);
+  const { invalidColorDrafts = {} } = settingsStore.getUiState();
+  const invalidDraft = Object.hasOwn(invalidColorDrafts, state) ? invalidColorDrafts[state] : undefined;
   if (picker && document.activeElement !== picker) picker.value = normalized;
   if (hex && document.activeElement !== hex) {
-    hex.value = normalized;
-    hex.setCustomValidity?.('');
+    if (invalidDraft !== undefined) {
+      hex.value = invalidDraft;
+      hex.setCustomValidity?.(getText(getCurrentLanguage(), 'settings.invalidColor'));
+    } else {
+      hex.value = normalized;
+      hex.setCustomValidity?.('');
+    }
   }
   if (preview) preview.style.backgroundColor = normalized;
+}
+
+function clearInvalidColorDraft(state) {
+  const { invalidColorDrafts = {} } = settingsStore.getUiState();
+  if (!Object.hasOwn(invalidColorDrafts, state)) return;
+  const nextDrafts = { ...invalidColorDrafts };
+  delete nextDrafts[state];
+  settingsStore.setUi({ invalidColorDrafts: nextDrafts });
+}
+
+function setInvalidColorDraft(state, value) {
+  const { invalidColorDrafts = {} } = settingsStore.getUiState();
+  settingsStore.setUi({ invalidColorDrafts: { ...invalidColorDrafts, [state]: value } });
 }
 
 function updateColorSetting(state, value, local = false) {
   const key = STATE_COLOR_KEYS[state];
   const normalized = normalizeHexColor(value, DEFAULT_APP_SETTINGS[key]);
   settingsStore.patchSetting(key, normalized);
+  clearInvalidColorDraft(state);
   if (local && !initialSettingsReady) localSettingEdits.add(key);
   renderColorStateList();
   syncColorField(state, normalized);
@@ -495,7 +516,7 @@ function renderLanguage(language = settingsStore.getSettings().language) {
     const tab = viewTabs.find((candidate) => candidate.dataset.viewTarget === viewId);
     if (tab) tab.textContent = getText(currentLanguage, view.labelKey);
   }
-  if (settingsViewController?.getActiveView() === 'colors') {
+  if (settingsStore.getUiState().activeView === 'colors') {
     renderColorStateList();
     const label = document.querySelector?.('[data-color-state-label]');
     if (label) label.textContent = getStateLabel(currentLanguage, settingsStore.getUiState().selectedColorState);
@@ -515,7 +536,7 @@ function applySettings(settings, { preserveLocalEdits = false } = {}) {
     language: normalizeLanguage(settings.language ?? settingsStore.getSettings().language),
   };
   if (activeKey && Object.hasOwn(settingsStore.getSettings(), activeKey)) delete incoming[activeKey];
-  if (preserveLocalEdits) {
+  if (preserveLocalEdits || localSettingEdits.size > 0) {
     for (const key of localSettingEdits) delete incoming[key];
   }
   const nextSettings = settingsStore.mergeSettings(incoming);
@@ -537,12 +558,15 @@ async function loadSettings() {
     const settings = await invokeCommand('get_settings');
     applySettings(settings.ok ? settings.value : DEFAULT_APP_SETTINGS, { preserveLocalEdits: true });
     initialSettingsReady = true;
-    localSettingEdits.clear();
     return settings;
   });
-  if (pendingInitialSave) {
-    pendingInitialSave = false;
-    await settingsStore.saveLatest();
+  try {
+    if (pendingInitialSave) {
+      pendingInitialSave = false;
+      await settingsStore.saveLatest();
+    }
+  } finally {
+    localSettingEdits.clear();
   }
   await refreshDiagnostics();
   return result;
@@ -617,10 +641,16 @@ function bindColorEditor(state, picker, hex, reset) {
     updateColorSetting(state, picker.value, true);
     void saveCurrentSettings();
   });
-  hex.addEventListener('input', () => hex.setCustomValidity(''));
+  hex.addEventListener('input', () => {
+    const value = hex.value.trim();
+    if (isHexColor(value)) clearInvalidColorDraft(state);
+    else setInvalidColorDraft(state, hex.value);
+    hex.setCustomValidity('');
+  });
   hex.addEventListener('change', () => {
     const value = hex.value.trim();
     if (!isHexColor(value)) {
+      setInvalidColorDraft(state, hex.value);
       hex.setCustomValidity(getText(getCurrentLanguage(), 'settings.invalidColor'));
       hex.reportValidity?.();
       return;

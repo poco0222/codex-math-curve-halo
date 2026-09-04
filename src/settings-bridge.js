@@ -25,7 +25,19 @@ export function createSettingsBridge({
     },
     subscribe(event, handler) {
       if (typeof listen !== 'function') return undefined;
-      return listen(event, handler);
+      try {
+        const subscription = listen(event, handler);
+        if (subscription && typeof subscription.then === 'function') {
+          return subscription.catch((error) => {
+            reportFailure(event, error);
+            return undefined;
+          });
+        }
+        return subscription;
+      } catch (error) {
+        reportFailure(event, error);
+        return undefined;
+      }
     },
   };
 }

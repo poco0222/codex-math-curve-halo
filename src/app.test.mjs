@@ -104,6 +104,32 @@ test('settings store keeps UI state separate and snapshots isolated', () => {
   assert.deepEqual(store.getUiState(), { activeView: 'integration' });
 });
 
+test('settings store isolates nested UI snapshots from defaults, patches, and reads', () => {
+  const uiDefaults = {
+    diagnosticsSnapshot: { state: 'idle', updated_at_ms: 0 },
+    invalidColorDrafts: { thinking: '#12345' },
+  };
+  const store = createSettingsStore({ defaults: {}, uiDefaults, persist: () => {} });
+
+  const initial = store.getUiState();
+  initial.diagnosticsSnapshot.state = 'completed';
+  initial.invalidColorDrafts.thinking = '#65432';
+  assert.deepEqual(store.getUiState(), uiDefaults);
+
+  const diagnosticsSnapshot = { state: 'thinking', updated_at_ms: 1 };
+  const invalidColorDrafts = { completed: '#ABCDE' };
+  const updated = store.setUi({ diagnosticsSnapshot, invalidColorDrafts });
+  diagnosticsSnapshot.state = 'idle';
+  invalidColorDrafts.completed = '#00000';
+  updated.diagnosticsSnapshot.state = 'executing';
+  updated.invalidColorDrafts.completed = '#FFFFF';
+
+  assert.deepEqual(store.getUiState(), {
+    diagnosticsSnapshot: { state: 'thinking', updated_at_ms: 1 },
+    invalidColorDrafts: { completed: '#ABCDE' },
+  });
+});
+
 test('settings store initializes and transitions the complete UI state from uiDefaults', () => {
   const uiDefaults = {
     activeView: 'appearance',
@@ -292,6 +318,123 @@ test('initial settings load does not replace a focused local field', async () =>
     assert.equal(saveCalls.length, 1);
     assert.equal(saveCalls[0].settings.opacity, 0.6);
     assert.equal(saveCalls[0].settings.curve_id, 'spiral-search');
+  } finally {
+    globalThis.document = originalDocument;
+    globalThis.window = originalWindow;
+  }
+});
+
+test('blurred local edit survives queued View and settings event before initial save flushes', async () => {
+  class FakeField {
+    constructor({ id, type, value }) {
+      this.id = id;
+      this.type = type;
+      this.value = value;
+      this.checked = false;
+      this.name = '';
+      this.dataset = {};
+      this.listeners = new Map();
+      this.classList = { toggle() {} };
+      this.tabIndex = -1;
+    }
+
+    addEventListener(type, listener) {
+      const listeners = this.listeners.get(type) ?? [];
+      listeners.push(listener);
+      this.listeners.set(type, listeners);
+    }
+
+    dispatch(type, event = {}) {
+      for (const listener of this.listeners.get(type) ?? []) {
+        listener({ target: this, currentTarget: this, ...event });
+      }
+    }
+
+    setAttribute() {}
+
+    focus() {
+      fakeDocument.activeElement = this;
+    }
+  }
+
+  const opacity = new FakeField({ id: 'opacity', type: 'range', value: '1' });
+  const viewTabs = ['appearance', 'colors'].map((viewId) => new FakeField({
+    id: `settings-tab-${viewId}`,
+    type: 'button',
+    value: viewId,
+  }));
+  for (const [index, tab] of viewTabs.entries()) tab.dataset.viewTarget = ['appearance', 'colors'][index];
+  const settingsPanelHost = {
+    querySelectorAll: (selector) => selector === 'input, select' ? [opacity] : [],
+    replaceChildren() {},
+    setAttribute() {},
+  };
+  const listeners = new Map();
+  const saveCalls = [];
+  let resolveSettings;
+  const invoke = async (command, args) => {
+    if (command === 'get_settings') {
+      return new Promise((resolve) => { resolveSettings = resolve; });
+    }
+    if (command === 'get_display_state') return { state: 'idle', updated_at_ms: 0 };
+    if (command === 'save_settings') {
+      saveCalls.push(args);
+      return { saved: true };
+    }
+    return null;
+  };
+  const templates = new Map(['appearance', 'colors'].map((viewId) => [viewId, {
+    content: { cloneNode: () => ({ tagName: '#fragment', children: [] }) },
+  }]));
+  const fakeDocument = {
+    activeElement: null,
+    documentElement: { lang: 'en' },
+    title: 'Codex Halo Settings',
+    getElementById: (id) => id === 'settings-panel-host' ? settingsPanelHost : id === 'opacity' ? opacity : null,
+    querySelectorAll: (selector) => {
+      if (selector === '[data-view-target]') return viewTabs;
+      if (selector === 'input, select') return [opacity];
+      return [];
+    },
+    querySelector: (selector) => {
+      const match = selector.match(/^\[data-view-template="(.+)"\]$/);
+      return match ? templates.get(match[1]) ?? null : null;
+    },
+  };
+  const fakeWindow = {
+    __TAURI__: {
+      core: { invoke },
+      event: {
+        listen: (event, handler) => {
+          listeners.set(event, handler);
+          return Promise.resolve();
+        },
+      },
+    },
+    setInterval: () => 1,
+  };
+  const originalDocument = globalThis.document;
+  const originalWindow = globalThis.window;
+  globalThis.document = fakeDocument;
+  globalThis.window = fakeWindow;
+
+  try {
+    await import(`./settings.js?initial-load-blur-queue=${Date.now()}`);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    fakeDocument.activeElement = opacity;
+    opacity.value = '0.6';
+    opacity.dispatch('input');
+    fakeDocument.activeElement = null;
+    viewTabs[1].dispatch('click');
+    const event = listeners.get('settings-changed')({ payload: { opacity: 0.8 } });
+
+    resolveSettings({ ...DEFAULT_APP_SETTINGS, opacity: 0.8 });
+    await event;
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(saveCalls.length, 1);
+    assert.equal(saveCalls[0].settings.opacity, 0.6);
   } finally {
     globalThis.document = originalDocument;
     globalThis.window = originalWindow;
@@ -692,7 +835,10 @@ test('settings controller uses the shared store for merge and save behavior', as
 
   assert.match(source, /import \{ createSettingsStore \} from '\.\/settings-store\.js';/);
   assert.match(source, /createSettingsStore\(\{[\s\S]*?defaults: DEFAULT_APP_SETTINGS,[\s\S]*?uiDefaults:/);
+  assert.match(source, /invalidColorDrafts: \{\}/);
   assert.doesNotMatch(source, /settingsStore\.setUi\(\{\s*activeView:\s*'appearance'/);
+  assert.doesNotMatch(source, /let activeView = viewIds\[0\]/);
+  assert.match(source, /settingsStore\.getUiState\(\)\.activeView/);
   assert.match(source, /settingsStore\.mergeSettings/);
   assert.match(source, /settingsStore\.save\(\)/);
 });
@@ -752,6 +898,36 @@ test('settings bridge no-ops when listen is unavailable', () => {
   const bridge = createSettingsBridge({ invoke: () => null, warn: () => {} });
 
   assert.equal(bridge.subscribe('settings-changed', () => {}), undefined);
+});
+
+test('settings bridge reports synchronous listen failures through the safe failure path', () => {
+  const rawError = new Error('raw listen detail');
+  const warnings = [];
+  const failures = [];
+  const bridge = createSettingsBridge({
+    listen: () => { throw rawError; },
+    warn: (...args) => warnings.push(args),
+    onFailure: (...args) => failures.push(args),
+  });
+
+  assert.doesNotThrow(() => bridge.subscribe('settings-changed', () => {}));
+  assert.deepEqual(warnings, [['Codex Halo: settings-changed failed']]);
+  assert.deepEqual(failures, [['settings-changed', rawError]]);
+});
+
+test('settings bridge reports rejected listen failures without leaking raw errors', async () => {
+  const rawError = new Error('raw listen detail');
+  const warnings = [];
+  const failures = [];
+  const bridge = createSettingsBridge({
+    listen: async () => { throw rawError; },
+    warn: (...args) => warnings.push(args),
+    onFailure: (...args) => failures.push(args),
+  });
+
+  await assert.doesNotReject(bridge.subscribe('settings-changed', () => {}));
+  assert.deepEqual(warnings, [['Codex Halo: settings-changed failed']]);
+  assert.deepEqual(failures, [['settings-changed', rawError]]);
 });
 
 test('an in-flight poll cannot overwrite a newer simulated display event', async () => {
@@ -1412,7 +1588,7 @@ test('settings page exposes a master-detail state color editor', async () => {
   assert.match(css, /\.settings-shell\s*\{[\s\S]*align-content:\s*start/);
 });
 
-test('settings color list preserves inactive edits and focused rows across redraws', async () => {
+test('settings color list preserves invalid Hex drafts after blur and refresh', async () => {
   class FakeNode {
     constructor({ tagName = 'div', id = '', type = '', value = '', checked = false, dataset = {}, children = [] } = {}) {
       this.tagName = tagName;
@@ -1657,6 +1833,7 @@ test('settings color list preserves inactive edits and focused rows across redra
     assert.equal(completedHex.value, '#12345');
     assert.equal(completedHex.validationMessage, 'Use #RRGGBB');
     assert.equal(saveCalls.length, 5);
+    fakeDocument.activeElement = null;
     await listeners.get('settings-changed')({ payload: { completed_color: '#35C878' } });
     assert.equal(completedHex.value, '#12345');
     assert.equal(completedHex.validationMessage, 'Use #RRGGBB');

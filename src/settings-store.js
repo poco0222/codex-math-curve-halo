@@ -1,12 +1,23 @@
 import { createSerialTaskQueue } from './app.js';
 
+function cloneUiState(value) {
+  const snapshot = { ...value };
+  if (value.diagnosticsSnapshot && typeof value.diagnosticsSnapshot === 'object') {
+    snapshot.diagnosticsSnapshot = { ...value.diagnosticsSnapshot };
+  }
+  if (value.invalidColorDrafts && typeof value.invalidColorDrafts === 'object') {
+    snapshot.invalidColorDrafts = { ...value.invalidColorDrafts };
+  }
+  return snapshot;
+}
+
 export function createSettingsStore({ defaults, uiDefaults = {}, persist, enqueue = createSerialTaskQueue() }) {
   let settings = { ...defaults };
-  let uiState = { ...uiDefaults };
+  let uiState = cloneUiState(uiDefaults);
   const enqueueTask = enqueue;
 
   const getSettings = () => ({ ...settings });
-  const getUiState = () => ({ ...uiState });
+  const getUiState = () => cloneUiState(uiState);
 
   return {
     getSettings,
@@ -24,7 +35,7 @@ export function createSettingsStore({ defaults, uiDefaults = {}, persist, enqueu
       return getSettings();
     },
     setUi(patch) {
-      uiState = { ...uiState, ...patch };
+      uiState = cloneUiState({ ...uiState, ...patch });
       return getUiState();
     },
     enqueue(task) {
