@@ -260,6 +260,103 @@ test('initial settings load does not replace a focused local field', async () =>
   }
 });
 
+test('rejected initial settings load releases the save gate and keeps later edits saving', async () => {
+  class FakeField {
+    constructor({ id, type, value }) {
+      this.id = id;
+      this.type = type;
+      this.value = value;
+      this.checked = false;
+      this.name = '';
+      this.dataset = {};
+      this.listeners = new Map();
+    }
+
+    addEventListener(type, listener) {
+      const listeners = this.listeners.get(type) ?? [];
+      listeners.push(listener);
+      this.listeners.set(type, listeners);
+    }
+
+    dispatch(type) {
+      for (const listener of this.listeners.get(type) ?? []) {
+        listener({ target: this, currentTarget: this });
+      }
+    }
+  }
+
+  const opacity = new FakeField({ id: 'opacity', type: 'range', value: '1' });
+  const settingsPanelHost = {
+    querySelectorAll: (selector) => selector === 'input, select' ? [opacity] : [],
+  };
+  const listeners = new Map();
+  const saveCalls = [];
+  let rejectSettings;
+  const invoke = async (command, args) => {
+    if (command === 'get_settings') {
+      return new Promise((resolve, reject) => {
+        rejectSettings = reject;
+      });
+    }
+    if (command === 'get_display_state') return { state: 'idle', updated_at_ms: 0 };
+    if (command === 'save_settings') {
+      saveCalls.push(args);
+      return { saved: true };
+    }
+    return null;
+  };
+  const fakeDocument = {
+    activeElement: null,
+    documentElement: { lang: 'en' },
+    title: 'Codex Halo Settings',
+    getElementById: (id) => id === 'settings-panel-host' ? settingsPanelHost : id === 'opacity' ? opacity : null,
+    querySelectorAll: (selector) => selector === 'input, select' ? [opacity] : [],
+  };
+  const fakeWindow = {
+    __TAURI__: {
+      core: { invoke },
+      event: {
+        listen: (event, handler) => {
+          listeners.set(event, handler);
+          return Promise.resolve();
+        },
+      },
+    },
+    setInterval: () => 1,
+  };
+  const originalDocument = globalThis.document;
+  const originalWindow = globalThis.window;
+  const originalWarn = console.warn;
+  globalThis.document = fakeDocument;
+  globalThis.window = fakeWindow;
+  console.warn = () => {};
+
+  try {
+    await import(`./settings.js?rejected-initial-load=${Date.now()}`);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    opacity.value = '0.6';
+    opacity.dispatch('input');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(saveCalls, []);
+
+    rejectSettings(new Error('bridge unavailable'));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(saveCalls.length, 1);
+    assert.equal(saveCalls[0].settings.opacity, 0.6);
+
+    opacity.value = '0.8';
+    opacity.dispatch('input');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(saveCalls.length, 2);
+    assert.equal(saveCalls[1].settings.opacity, 0.8);
+  } finally {
+    console.warn = originalWarn;
+    globalThis.document = originalDocument;
+    globalThis.window = originalWindow;
+  }
+});
+
 test('settings event received before initial load wins over stale response', async () => {
   class FakeField {
     constructor({ id, type, value }) {
@@ -837,6 +934,21 @@ test('settings navigation mounts one strict section at a time', async () => {
   assert.doesNotMatch(css, /scroll-margin-top/);
   assert.match(css, /@media\s*\(max-width:\s*880px\)[\s\S]*\.settings-header\s*\{[\s\S]*position:\s*static/);
   assert.match(css, /@media\s*\(max-width:\s*640px\)[\s\S]*button,[\s\S]*input:not\(\[type="checkbox"\]\),[\s\S]*select,[\s\S]*\.settings-nav-link[\s\S]*min-height:\s*40px/);
+});
+
+test('settings preserves the legacy animation tab as a hidden Appearance compatibility control', async () => {
+  const html = await readFile(new URL('./settings.html', import.meta.url), 'utf8');
+  const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
+
+  assert.equal((html.match(/id="settings-tab-animation"/g) ?? []).length, 1);
+  assert.match(html, /<button id="settings-tab-animation"[^>]*hidden[^>]*data-settings-compat-target="appearance"/);
+  assert.doesNotMatch(html, /id="settings-tab-animation"[^>]*role="tab"/);
+  assert.deepEqual(
+    [...html.matchAll(/<button[^>]*data-view-target="([^"]+)"/g)].map((match) => match[1]),
+    ['appearance', 'colors', 'integration', 'test'],
+  );
+  assert.match(source, /document\.getElementById\('settings-tab-animation'\)/);
+  assert.match(source, /settingsTabAnimation\?\.addEventListener\('click', \(\) => selectSettingsView\('appearance', true\)\)/);
 });
 
 test('settings View controller mounts one View and roves focus through navigation', async () => {

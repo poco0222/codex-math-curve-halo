@@ -84,6 +84,7 @@ const invoke = window.__TAURI__?.core?.invoke ?? window.__TAURI__?.invoke;
 const listen = window.__TAURI__?.event?.listen;
 const settingsPanelHost = document.getElementById('settings-panel-host');
 const viewTabs = [...document.querySelectorAll('[data-view-target]')];
+const settingsTabAnimation = document.getElementById('settings-tab-animation');
 const pluginOperationStatuses = {
   installed: 'settings.pluginInstalled',
   uninstalled: 'settings.pluginUninstalled',
@@ -512,13 +513,11 @@ async function loadSettings() {
   const result = await settingsStore.enqueue(async () => {
     const settings = await invokeCommand('get_settings');
     applySettings(settings.ok ? settings.value : DEFAULT_APP_SETTINGS, { preserveLocalEdits: true });
-    if (settings.ok) {
-      initialSettingsReady = true;
-      localSettingEdits.clear();
-    }
+    initialSettingsReady = true;
+    localSettingEdits.clear();
     return settings;
   });
-  if (result.ok && pendingInitialSave) {
+  if (pendingInitialSave) {
     pendingInitialSave = false;
     await settingsStore.saveLatest();
   }
@@ -660,6 +659,8 @@ function mountSettingsView(viewId) {
 function selectSettingsView(viewId, focus = false) {
   return settingsViewController?.selectSettingsView(viewId, focus) ?? false;
 }
+
+settingsTabAnimation?.addEventListener('click', () => selectSettingsView('appearance', true));
 
 bindSettingsFields(document);
 settingsViewController = createSettingsViewController({
