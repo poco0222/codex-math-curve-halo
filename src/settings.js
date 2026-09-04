@@ -99,8 +99,8 @@ const SETTINGS_VIEWS = {
     template: 'colors',
     labelKey: 'settings.colors',
     bind: () => {
-      renderColorStateTabs();
-      mountColorState();
+      renderColorStateList();
+      mountColorStateDetail();
       bindSettingsFields(settingsPanelHost);
     },
   },
@@ -267,20 +267,34 @@ function renderColorPresets() {
   }
 }
 
-function renderColorStateTabs() {
+function renderColorStateList() {
   const tabs = document.getElementById('color-state-tabs');
   if (!tabs) return;
   tabs.replaceChildren();
-  for (const { state } of colorFields) {
+  for (const { state, key } of colorFields) {
     const tab = document.createElement('button');
     tab.id = `color-tab-${state}`;
     tab.type = 'button';
-    tab.className = 'color-state-tab';
+    tab.className = 'color-state-tab color-state-row';
     tab.setAttribute('role', 'tab');
     tab.setAttribute('aria-selected', String(state === selectedColorState));
     tab.setAttribute('aria-controls', 'color-state-panel');
+    tab.dataset.colorState = state;
     tab.tabIndex = state === selectedColorState ? 0 : -1;
-    tab.textContent = getStateLabel(currentLanguage, state);
+    const swatch = document.createElement('span');
+    swatch.className = 'color-state-row-swatch';
+    swatch.style.backgroundColor = settingsModel[key];
+    swatch.setAttribute('aria-hidden', 'true');
+    const copy = document.createElement('span');
+    copy.className = 'color-state-row-copy';
+    const label = document.createElement('strong');
+    label.className = 'color-state-row-label';
+    label.textContent = getStateLabel(currentLanguage, state);
+    const value = document.createElement('span');
+    value.className = 'color-state-row-hex';
+    value.textContent = normalizeHexColor(settingsModel[key], DEFAULT_APP_SETTINGS[key]);
+    copy.append(label, value);
+    tab.append(swatch, copy);
     tab.addEventListener('click', () => selectColorState(state, true));
     tab.addEventListener('keydown', (event) => {
       const index = colorFields.findIndex((item) => item.state === state);
@@ -301,7 +315,7 @@ function renderColorStateTabs() {
   }
 }
 
-function mountColorState(state = selectedColorState) {
+function mountColorStateDetail(state = selectedColorState) {
   const panel = document.getElementById('color-state-panel');
   const key = STATE_COLOR_KEYS[state];
   if (!panel || !key) return;
@@ -346,12 +360,16 @@ function mountColorState(state = selectedColorState) {
   syncColorField(state, settingsModel[key]);
 }
 
+function mountColorState(state = selectedColorState) {
+  return mountColorStateDetail(state);
+}
+
 function selectColorState(state, focus = false) {
   if (!STATE_COLOR_KEYS[state]) return;
   syncSettingsModelFromControls();
   selectedColorState = state;
-  renderColorStateTabs();
-  mountColorState(state);
+  renderColorStateList();
+  mountColorStateDetail(state);
   renderColorPresets();
   if (focus) document.getElementById(`color-tab-${state}`)?.focus();
 }
@@ -431,7 +449,7 @@ function renderLanguage(language) {
     if (tab) tab.textContent = getText(currentLanguage, view.labelKey);
   }
   if (settingsViewController?.getActiveView() === 'colors') {
-    renderColorStateTabs();
+    renderColorStateList();
     const label = document.querySelector?.('[data-color-state-label]');
     if (label) label.textContent = getStateLabel(currentLanguage, selectedColorState);
   }

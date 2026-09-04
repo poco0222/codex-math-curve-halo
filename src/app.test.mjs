@@ -742,6 +742,208 @@ test('settings page exposes state color tabs and one active editor', async () =>
   assert.match(css, /\.color-state-tab\[aria-selected="true"\]/);
 });
 
+test('settings page exposes a master-detail state color editor', async () => {
+  const html = await readFile(new URL('./settings.html', import.meta.url), 'utf8');
+  const settingsSource = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
+  const css = await readFile(new URL('./styles.css', import.meta.url), 'utf8');
+
+  assert.match(html, /id="color-state-list"/);
+  assert.match(settingsSource, /renderColorStateList/);
+  assert.match(settingsSource, /mountColorStateDetail/);
+  assert.match(settingsSource, /STATE_COLOR_KEYS/);
+  assert.match(css, /\.color-master-detail\s*\{/);
+  assert.match(css, /@media\s*\(max-width:\s*640px\)[\s\S]*\.color-master-detail\s*\{[\s\S]*grid-template-columns:\s*1fr/);
+  assert.match(css, /\.settings-shell\s*\{[\s\S]*align-content:\s*start/);
+});
+
+test('settings color list preserves inactive edits across state switches', async () => {
+  class FakeNode {
+    constructor({ tagName = 'div', id = '', type = '', value = '', checked = false, dataset = {}, children = [] } = {}) {
+      this.tagName = tagName;
+      this.id = id;
+      this.type = type;
+      this.value = value;
+      this.checked = checked;
+      this.dataset = { ...dataset };
+      this.children = [...children];
+      this.attributes = {};
+      this.listeners = new Map();
+      this.style = {};
+      this.classList = { toggle() {} };
+    }
+
+    addEventListener(type, listener) {
+      const listeners = this.listeners.get(type) ?? [];
+      listeners.push(listener);
+      this.listeners.set(type, listeners);
+    }
+
+    dispatch(type, event = {}) {
+      for (const listener of this.listeners.get(type) ?? []) {
+        listener({ target: this, currentTarget: this, ...event });
+      }
+    }
+
+    setAttribute(name, value) {
+      this.attributes[name] = String(value);
+    }
+
+    getAttribute(name) {
+      return this.attributes[name];
+    }
+
+    toggleAttribute(name, force) {
+      if (force === false) delete this.attributes[name];
+      else if (force === true || !Object.hasOwn(this.attributes, name)) this.attributes[name] = '';
+    }
+
+    append(...children) {
+      this.children.push(...children);
+    }
+
+    replaceChildren(...children) {
+      this.children = children.flatMap((child) => child.tagName === '#fragment' ? child.children : [child]);
+    }
+
+    querySelectorAll(selector) {
+      return collectNodes(this).filter((node) => matchesSelector(node, selector));
+    }
+
+    querySelector(selector) {
+      return this.querySelectorAll(selector)[0] ?? null;
+    }
+
+    focus() {
+      fakeDocument.activeElement = this;
+    }
+
+    setCustomValidity(message) {
+      this.validationMessage = message;
+    }
+
+    reportValidity() {}
+  }
+
+  const matchesSelector = (node, selector) => {
+    if (selector === 'input, select') return node.tagName === 'input' || node.tagName === 'select';
+    if (selector === '[data-state]') return node.dataset?.state !== undefined;
+    if (selector === '[data-i18n]') return node.dataset?.i18n !== undefined;
+    if (selector === '[data-i18n-aria-label]') return node.dataset?.i18nAriaLabel !== undefined;
+    if (selector === 'button[data-color-reset]') return node.tagName === 'button' && node.dataset?.colorReset !== undefined;
+    const stateLabelMatch = selector.match(/^\[data-color-state-label\]$/);
+    if (stateLabelMatch) return node.dataset?.colorStateLabel !== undefined;
+    return false;
+  };
+
+  const collectNodes = (root) => [
+    ...root.children.flatMap((child) => [child, ...collectNodes(child)]),
+  ];
+  const fakeDocument = {
+    activeElement: null,
+    documentElement: { lang: 'en' },
+    title: 'Codex Halo Settings',
+  };
+  const make = (options) => new FakeNode(options);
+  const settingsPanelHost = make({ id: 'settings-panel-host' });
+  const language = make({ tagName: 'select', id: 'language', value: 'en', dataset: { i18nAriaLabel: 'settings.language' } });
+  const enabled = make({ tagName: 'input', id: 'enabled', type: 'checkbox', checked: true });
+  const saveStatus = make({ id: 'settings-save-status', dataset: { i18n: 'settings.saveStatus.ready' } });
+  const viewTabs = ['appearance', 'colors', 'integration', 'test'].map((viewId) => make({
+    tagName: 'button',
+    id: `settings-tab-${viewId}`,
+    dataset: { viewTarget: viewId },
+  }));
+  const templates = new Map();
+  for (const viewId of ['appearance', 'colors', 'integration', 'test']) {
+    templates.set(viewId, {
+      content: {
+        cloneNode() {
+          if (viewId !== 'colors') return { tagName: 'fieldset', children: [] };
+          const list = make({ id: 'color-state-list' });
+          list.append(make({ id: 'color-state-tabs' }));
+          return {
+            tagName: '#fragment',
+            children: [
+              make({ tagName: 'fieldset', id: 'colors-section', children: [
+                list,
+                make({ id: 'color-state-panel' }),
+                make({ tagName: 'details', id: 'color-presets-details', children: [make({ id: 'color-presets' })] }),
+              ] }),
+            ],
+          };
+        },
+      },
+    });
+  }
+
+  const staticElements = new Map([
+    ['settings-panel-host', settingsPanelHost],
+    ['language', language],
+    ['enabled', enabled],
+    ['settings-save-status', saveStatus],
+  ]);
+  const findById = (id) => {
+    const staticElement = staticElements.get(id);
+    if (staticElement) return staticElement;
+    return collectNodes(settingsPanelHost).find((node) => node.id === id) ?? null;
+  };
+  fakeDocument.getElementById = (id) => findById(id);
+  fakeDocument.querySelectorAll = (selector) => {
+    if (selector === '[data-view-target]') return viewTabs;
+    return [language, enabled, saveStatus, ...collectNodes(settingsPanelHost)].filter((node) => matchesSelector(node, selector));
+  };
+  fakeDocument.querySelector = (selector) => {
+    const templateMatch = selector.match(/^\[data-view-template="(.+)"\]$/);
+    if (templateMatch) return templates.get(templateMatch[1]) ?? null;
+    return fakeDocument.querySelectorAll(selector)[0] ?? null;
+  };
+  fakeDocument.createElement = (tagName) => make({ tagName });
+
+  const saveCalls = [];
+  const invoke = async (command, args) => {
+    if (command === 'get_settings') return { ...DEFAULT_APP_SETTINGS };
+    if (command === 'get_display_state') return { state: 'idle', updated_at_ms: 0 };
+    if (command === 'save_settings') {
+      saveCalls.push(args.settings);
+      return null;
+    }
+    return null;
+  };
+  const originalDocument = globalThis.document;
+  const originalWindow = globalThis.window;
+  globalThis.document = fakeDocument;
+  globalThis.window = { __TAURI__: { core: { invoke } }, setInterval: () => 1 };
+
+  try {
+    const settingsModule = await import(`./settings.js?master-detail-test=${Date.now()}`);
+    await new Promise((resolve) => setImmediate(resolve));
+    viewTabs[1].dispatch('click');
+
+    const stateTabs = () => findById('color-state-tabs').children;
+    assert.equal(stateTabs().length, 6);
+    stateTabs().find((row) => row.dataset.colorState === 'thinking').dispatch('click');
+    const thinkingHex = findById('thinking-color-hex');
+    thinkingHex.value = '#C0FFEE';
+    thinkingHex.dispatch('change');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(saveCalls.at(-1).thinking_color, '#C0FFEE');
+
+    stateTabs().find((row) => row.dataset.colorState === 'completed').dispatch('click');
+    const completedHex = findById('completed-color-hex');
+    completedHex.value = '#12345';
+    completedHex.dispatch('change');
+    assert.equal(completedHex.value, '#35C878');
+    assert.equal(saveCalls.length, 1);
+
+    stateTabs().find((row) => row.dataset.colorState === 'thinking').dispatch('click');
+    assert.equal(findById('thinking-color-hex').value, '#C0FFEE');
+    assert.equal(typeof settingsModule.createSettingsViewController, 'function');
+  } finally {
+    globalThis.document = originalDocument;
+    globalThis.window = originalWindow;
+  }
+});
+
 test('settings color controls use one active editor and preserve the full color model', async () => {
   const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
 

@@ -120,14 +120,18 @@
               <span class="section-helper" data-i18n="settings.colorSelectionHint">Select a state to edit its color</span>
               <span class="state-color-count" data-i18n="settings.stateCount">6 states</span>
             </div>
-            <div id="color-state-list" class="color-state-list">
-              <div id="color-state-tabs" class="color-state-tabs" role="tablist" aria-label="Color states" data-i18n-aria-label="settings.colors"></div>
+            <div class="color-master-detail">
+              <div id="color-state-list" class="color-state-list">
+                <div id="color-state-tabs" class="color-state-tabs" role="tablist" aria-label="Color states" data-i18n-aria-label="settings.colors"></div>
+              </div>
+              <div class="color-detail-column">
+                <div id="color-state-panel" class="color-state-panel" role="tabpanel" aria-labelledby="color-tab-idle"></div>
+                <details id="color-presets-details" class="color-presets-disclosure">
+                  <summary data-i18n="settings.presetPalettes">Preset palettes</summary>
+                  <div id="color-presets" class="color-presets"></div>
+                </details>
+              </div>
             </div>
-            <div id="color-state-panel" class="color-state-panel" role="tabpanel" aria-labelledby="color-tab-idle"></div>
-            <details id="color-presets-details" class="color-presets-disclosure">
-              <summary data-i18n="settings.presetPalettes">Preset palettes</summary>
-              <div id="color-presets" class="color-presets"></div>
-            </details>
           </fieldset>
         </template>
 
