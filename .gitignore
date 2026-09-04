@@ -5,7 +5,7 @@ Thumbs.db
 state/
 settings-export*.json
 *.local.json
-src-tauri/binaries/codex-halo-hook-*
+src-tauri/binaries/*
 plugins/codex-halo/bin/codex-halo-hook*
 .worktrees/
 
