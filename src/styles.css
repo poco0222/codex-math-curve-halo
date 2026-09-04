@@ -713,7 +713,7 @@ input[type="color"] {
   }
 
   .color-state-tabs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
   }
 
   .settings-subsection + .settings-subsection {
@@ -757,7 +757,4 @@ input[type="color"] {
     grid-template-columns: 42px minmax(0, 1fr) auto;
   }
 
-  .color-state-tabs {
-    grid-template-columns: 1fr;
-  }
 }

@@ -224,6 +224,7 @@ function updateColorSetting(state, value) {
   const key = STATE_COLOR_KEYS[state];
   const normalized = normalizeHexColor(value, DEFAULT_APP_SETTINGS[key]);
   settingsModel[key] = normalized;
+  renderColorStateList();
   syncColorField(state, normalized);
 }
 
@@ -560,7 +561,6 @@ function bindColorEditor(state, picker, hex, reset) {
   hex.addEventListener('change', () => {
     const value = hex.value.trim();
     if (!isHexColor(value)) {
-      hex.value = settingsModel[key];
       hex.setCustomValidity(getText(currentLanguage, 'settings.invalidColor'));
       hex.reportValidity?.();
       return;

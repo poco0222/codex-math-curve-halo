@@ -753,6 +753,7 @@ test('settings page exposes a master-detail state color editor', async () => {
   assert.match(settingsSource, /STATE_COLOR_KEYS/);
   assert.match(css, /\.color-master-detail\s*\{/);
   assert.match(css, /@media\s*\(max-width:\s*640px\)[\s\S]*\.color-master-detail\s*\{[\s\S]*grid-template-columns:\s*1fr/);
+  assert.match(css, /@media\s*\(max-width:\s*640px\)[\s\S]*?\.color-state-tabs\s*\{\s*grid-template-columns:\s*1fr;\s*\}[\s\S]*?\.settings-subsection/);
   assert.match(css, /\.settings-shell\s*\{[\s\S]*align-content:\s*start/);
 });
 
@@ -920,23 +921,78 @@ test('settings color list preserves inactive edits across state switches', async
     viewTabs[1].dispatch('click');
 
     const stateTabs = () => findById('color-state-tabs').children;
+    const stateRow = (state) => stateTabs().find((row) => row.dataset.colorState === state);
+    const rowHex = (state) => stateRow(state).children[1].children[1].textContent;
+    const rowSwatch = (state) => stateRow(state).children[0].style.backgroundColor;
+    const mountedEditors = () => collectNodes(findById('color-state-panel'))
+      .filter((node) => node.className === 'color-editor');
     assert.equal(stateTabs().length, 6);
-    stateTabs().find((row) => row.dataset.colorState === 'thinking').dispatch('click');
+    assert.equal(stateTabs().filter((row) => row.getAttribute('aria-selected') === 'true').length, 1);
+    assert.deepEqual(stateTabs().map((row) => row.tabIndex), [0, -1, -1, -1, -1, -1]);
+
+    let prevented = false;
+    stateRow('idle').dispatch('keydown', {
+      key: 'ArrowDown',
+      preventDefault() {
+        prevented = true;
+      },
+    });
+    assert.equal(prevented, true);
+    assert.equal(stateRow('thinking').getAttribute('aria-selected'), 'true');
+    assert.deepEqual(stateTabs().map((row) => row.tabIndex), [-1, 0, -1, -1, -1, -1]);
+    assert.equal(fakeDocument.activeElement.id, 'color-tab-thinking');
+
+    stateRow('thinking').dispatch('keydown', { key: 'Home', preventDefault() {} });
+    assert.equal(stateRow('idle').getAttribute('aria-selected'), 'true');
+    stateRow('idle').dispatch('keydown', { key: 'End', preventDefault() {} });
+    assert.equal(stateRow('compacting').getAttribute('aria-selected'), 'true');
+    assert.equal(mountedEditors().length, 1);
+
+    stateRow('thinking').dispatch('click');
+    const thinkingPicker = findById('thinking-color');
+    thinkingPicker.value = '#112233';
+    thinkingPicker.dispatch('input');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(rowSwatch('thinking'), '#112233');
+    assert.equal(rowHex('thinking'), '#112233');
+    assert.equal(saveCalls.at(-1).thinking_color, '#112233');
+
     const thinkingHex = findById('thinking-color-hex');
     thinkingHex.value = '#C0FFEE';
     thinkingHex.dispatch('change');
     await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(rowSwatch('thinking'), '#C0FFEE');
+    assert.equal(rowHex('thinking'), '#C0FFEE');
     assert.equal(saveCalls.at(-1).thinking_color, '#C0FFEE');
 
-    stateTabs().find((row) => row.dataset.colorState === 'completed').dispatch('click');
+    const preset = collectNodes(findById('color-presets')).find((node) => node.className === 'color-swatch');
+    preset.dispatch('click');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(rowSwatch('thinking'), '#A4CAB6');
+    assert.equal(rowHex('thinking'), '#A4CAB6');
+
+    const reset = collectNodes(findById('color-state-panel'))
+      .find((node) => node.dataset?.colorReset === 'thinking');
+    reset.dispatch('click');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(rowSwatch('thinking'), '#FF8A3D');
+    assert.equal(rowHex('thinking'), '#FF8A3D');
+
+    thinkingHex.value = '#C0FFEE';
+    thinkingHex.dispatch('change');
+    await new Promise((resolve) => setImmediate(resolve));
+    stateRow('completed').dispatch('click');
     const completedHex = findById('completed-color-hex');
     completedHex.value = '#12345';
     completedHex.dispatch('change');
-    assert.equal(completedHex.value, '#35C878');
-    assert.equal(saveCalls.length, 1);
+    assert.equal(completedHex.value, '#12345');
+    assert.equal(completedHex.validationMessage, 'Use #RRGGBB');
+    assert.equal(saveCalls.length, 5);
+    assert.equal(mountedEditors().length, 1);
 
-    stateTabs().find((row) => row.dataset.colorState === 'thinking').dispatch('click');
+    stateRow('thinking').dispatch('click');
     assert.equal(findById('thinking-color-hex').value, '#C0FFEE');
+    assert.equal(mountedEditors().length, 1);
     assert.equal(typeof settingsModule.createSettingsViewController, 'function');
   } finally {
     globalThis.document = originalDocument;
