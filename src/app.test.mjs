@@ -16,6 +16,35 @@ import {
   getText,
   normalizeLanguage,
 } from './i18n.js';
+import { createSettingsBridge } from './settings-bridge.js';
+import { createSettingsStore } from './settings-store.js';
+
+test('settings store merges partial external updates without erasing inactive values', async () => {
+  const calls = [];
+  const store = createSettingsStore({
+    defaults: { opacity: 1, idle_color: '#A7ADB5', thinking_color: '#FF8A3D' },
+    persist: (settings) => calls.push(settings),
+  });
+
+  store.replaceSettings({ opacity: 0.8, idle_color: '#111111', thinking_color: '#222222' });
+  store.mergeSettings({ idle_color: '#333333' });
+
+  assert.deepEqual(store.getSettings(), {
+    opacity: 0.8,
+    idle_color: '#333333',
+    thinking_color: '#222222',
+  });
+  assert.deepEqual(calls, []);
+});
+
+test('settings bridge returns safe failure results when invoke rejects', async () => {
+  const bridge = createSettingsBridge({
+    invoke: async () => { throw new Error('raw detail'); },
+    warn: () => {},
+  });
+
+  assert.deepEqual(await bridge.command('save_settings'), { ok: false, value: null });
+});
 
 test('an in-flight poll cannot overwrite a newer simulated display event', async () => {
   let releasePoll;
