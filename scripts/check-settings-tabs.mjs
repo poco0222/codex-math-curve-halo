@@ -44,6 +44,26 @@ for (const view of ['appearance', 'colors', 'integration', 'test']) {
   assert.match(html, new RegExp(`data-view-template="${view}"`));
 }
 assert.match(html, /id="particle-count"/);
+const sliderSpecs = [
+  ['opacity', 'opacity', '0.1', '1', '0.01'],
+  ['offset-x', 'offset_x', '-2000', '2000', '1'],
+  ['offset-y', 'offset_y', '-2000', '2000', '1'],
+  ['particle-count', 'particle_count', '80', '140', '1'],
+  ['trail-span', 'trail_span', '0.12', '0.68', '0.01'],
+  ['duration-ms', 'duration_ms', '500', '1500', '1'],
+  ['pulse-duration-ms', 'pulse_duration_ms', '500', '2000', '1'],
+  ['rotation-duration-ms', 'rotation_duration_ms', '500', '3000', '1'],
+  ['stroke-width', 'stroke_width', '1.0', '5.0', '0.1'],
+];
+for (const [id, name, min, max, step] of sliderSpecs) {
+  assert.match(
+    html,
+    new RegExp(`id="${id}"[^>]*name="${name}"[^>]*type="range"[^>]*min="${min}"[^>]*max="${max}"[^>]*step="${step}"`),
+    `${id} must use the declared slider bounds`,
+  );
+  assert.match(html, new RegExp(`id="${id}-value"[^>]*for="${id}"`), `${id} needs an associated value output`);
+}
+assert.doesNotMatch(html, /id="(?:offset-x|offset-y|particle-count|trail-span|duration-ms|pulse-duration-ms|rotation-duration-ms|stroke-width)"[^>]*type="number"/);
 assert.match(html, /id="color-state-list"/);
 assert.match(html, /id="display-section"[^>]*>[\s\S]*?<\/fieldset>\s*<fieldset id="animation-section"/);
 assert.doesNotMatch(html, /data-section-target=/);
@@ -99,6 +119,7 @@ assert.match(settings, /settingsStore\.setUi\(/);
 assert.match(settings, /settingsStore\.getUiState\(\)\.pluginOperationInFlight/);
 assert.doesNotMatch(settings, /\bsettingsModel\b/);
 assert.match(settings, /function syncSettingsModelFromControls\(/);
+assert.match(settings, /key === 'duration_ms'/);
 assert.match(settings, /if \(key && isHexColor\(field\.value\)\)/);
 assert.match(settings, /event\.key === 'ArrowRight'/);
 assert.match(settings, /event\.key === 'ArrowLeft'/);

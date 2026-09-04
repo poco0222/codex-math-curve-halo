@@ -148,6 +148,9 @@ const settingsStore = createSettingsStore({
     setSaveStatus('saving');
     const result = await settingsBridge.command('save_settings', { settings });
     if (result.ok) {
+      for (const key of localSettingEdits) {
+        if (Object.is(settingsStore.getSettings()[key], settings[key])) localSettingEdits.delete(key);
+      }
       clearSetupError();
       setSaveStatus('saved');
       renderFormula();
@@ -201,7 +204,7 @@ function updateSettingsModel(field, local = false) {
     : field.type === 'number' || field.type === 'range'
       ? Number(field.value)
       : field.value);
-  if (local && !initialSettingsReady) localSettingEdits.add(key);
+  if (local && (!initialSettingsReady || document.activeElement === field)) localSettingEdits.add(key);
 }
 
 function syncSettingsModelFromControls() {
@@ -218,6 +221,28 @@ function syncSettingsModelFromControls() {
       continue;
     }
     updateSettingsModel(field);
+  }
+}
+
+function formatRangeValue(key, value) {
+  if (!Number.isFinite(value)) return '';
+  if (key === 'opacity') return `${Math.round(value * 100)}%`;
+  if (key === 'trail_span') return value.toFixed(2);
+  if (key === 'stroke_width') return value.toFixed(1);
+  if (key === 'duration_ms' || key.endsWith('_duration_ms')) return `${Math.round(value)} ms`;
+  return String(Math.round(value));
+}
+
+function renderRangeValue(field) {
+  if (!field || field.type !== 'range') return;
+  const output = document.getElementById(`${field.id}-value`);
+  if (!output) return;
+  output.textContent = formatRangeValue(settingKey(field), Number(field.value));
+}
+
+function renderRangeValues() {
+  for (const field of settingsPanelHost?.querySelectorAll?.('input[type="range"]') ?? []) {
+    renderRangeValue(field);
   }
 }
 
@@ -442,10 +467,7 @@ function renderFormula(settings = settingsStore.getSettings()) {
 }
 
 function renderOpacity() {
-  const opacityValue = document.getElementById('opacity-value');
-  if (!opacityValue) return;
-  const value = Number(control('opacity')?.value);
-  if (Number.isFinite(value)) opacityValue.textContent = `${Math.round(value * 100)}%`;
+  renderRangeValue(control('opacity'));
 }
 
 function setSaveStatus(status) {
@@ -533,7 +555,7 @@ function applySettings(settings, { preserveLocalEdits = false } = {}) {
   if (!settings) return;
   const activeField = document.activeElement;
   const activeKey = activeField && settingKey(activeField);
-  const preserveActiveField = initialSettingsReady || localSettingEdits.has(activeKey);
+  const preserveActiveField = localSettingEdits.has(activeKey);
   const incoming = {
     ...settings,
     language: normalizeLanguage(settings.language ?? settingsStore.getSettings().language),
@@ -548,7 +570,7 @@ function applySettings(settings, { preserveLocalEdits = false } = {}) {
   const { selectedColorState } = settingsStore.getUiState();
   syncControlsFromSettings(preserveActiveField ? activeField : undefined);
   renderLanguage(nextSettings.language);
-  renderOpacity();
+  renderRangeValues();
   renderFormula(nextSettings);
   syncColorField(selectedColorState, nextSettings[STATE_COLOR_KEYS[selectedColorState]]);
 }
@@ -629,7 +651,7 @@ function bindSettingsFields(root) {
     field.addEventListener(event, () => {
       updateSettingsModel(field, true);
       if (field.id === 'curve-id') renderFormula();
-      if (field.id === 'opacity') renderOpacity();
+      renderRangeValue(field);
       if (field.id === 'language') renderLanguage(field.value);
       void saveCurrentSettings();
     });
@@ -734,7 +756,7 @@ settingsViewController = createSettingsViewController({
     settingsStore.setUi({ activeView: viewId });
     syncControlsFromSettings();
     renderLanguage();
-    renderOpacity();
+    renderRangeValues();
     renderFormula();
     renderPluginStatus();
     renderDiagnostics();

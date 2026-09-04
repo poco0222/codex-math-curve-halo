@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { curveProfiles, formatFormula } from '../src/curves.js';
 import { createHaloRenderer } from '../src/halo.js';
 import { createCommandInvoker, createDisplayStatePoller } from '../src/app.js';
+
+const haloSource = await readFile(new URL('../src/halo.js', import.meta.url), 'utf8');
+assert.match(haloSource, /const loopDuration = clamp\(positive\(settings\.duration_ms, DEFAULT_SETTINGS\.duration_ms\), 500, 1500\)/);
+assert.match(haloSource, /const pulseDuration = clamp\(positive\(settings\.pulse_duration_ms, DEFAULT_SETTINGS\.pulse_duration_ms\), 500, 2000\)/);
+assert.match(haloSource, /const rotationDuration = clamp\(positive\(settings\.rotation_duration_ms, DEFAULT_SETTINGS\.rotation_duration_ms\), 500, 3000\)/);
+assert.match(haloSource, /const particleCount = clamp\(Math\.max\(2, Math\.floor\(Number\(settings\.particle_count\) \|\| DEFAULT_SETTINGS\.particle_count\)\), 80, 140\)/);
 
 assert.equal(curveProfiles.length, 4);
 
@@ -37,6 +44,8 @@ for (const profile of curveProfiles) {
 }
 
 const rendererCalls = [];
+const lineWidths = [];
+let particleArcs = 0;
 const context = {
   setTransform: () => {},
   clearRect: () => {},
@@ -44,9 +53,12 @@ const context = {
   moveTo: () => {},
   lineTo: () => {},
   stroke: () => {},
-  arc: () => {},
+  arc: () => { particleArcs += 1; },
   fill: () => {},
 };
+Object.defineProperty(context, 'lineWidth', {
+  set: (value) => lineWidths.push(value),
+});
 const canvas = {
   width: 0,
   height: 0,
@@ -56,7 +68,7 @@ const canvas = {
 };
 let nextFrame;
 const renderer = createHaloRenderer(canvas, {
-  settings: { opacity: 0.5, particle_count: 2, idle_color: '#123456' },
+  settings: { opacity: 0.5, particle_count: 2, stroke_width: 1, idle_color: '#123456' },
   now: () => 0,
   requestAnimationFrame: (callback) => { nextFrame = callback; return 1; },
   cancelAnimationFrame: () => {},
@@ -67,10 +79,54 @@ Object.defineProperty(context, 'strokeStyle', {
 renderer.start();
 nextFrame(0);
 assert.equal(canvas.style.opacity, '0.5');
+assert.equal(lineWidths.at(-1), 1);
+assert.equal(particleArcs, 81);
+particleArcs = 0;
+renderer.setSettings({ particle_count: 999 });
+nextFrame(100);
+assert.equal(particleArcs, 141);
 const coreAlpha = Number(rendererCalls.at(-1).match(/,([0-9.]+)\)$/)[1]);
 assert(Math.abs(coreAlpha - 0.2464) < 1e-10);
 assert.match(rendererCalls.at(-1), /^rgba\(18,52,86,/);
 renderer.stop();
+
+function renderAnchor(settings, sampleTime) {
+  let frame;
+  const anchors = [];
+  const anchorContext = {
+    setTransform: () => {},
+    clearRect: () => {},
+    beginPath: () => {},
+    moveTo: (x, y) => { if (anchors.length === 0) anchors.push([x, y]); },
+    lineTo: () => {},
+    stroke: () => {},
+    arc: () => {},
+    fill: () => {},
+  };
+  const anchorCanvas = {
+    width: 0,
+    height: 0,
+    style: {},
+    getContext: () => anchorContext,
+    getBoundingClientRect: () => ({ width: 112, height: 112 }),
+  };
+  const anchorRenderer = createHaloRenderer(anchorCanvas, {
+    settings: { particle_count: 80, ...settings },
+    now: () => 0,
+    requestAnimationFrame: (callback) => { frame = callback; return 1; },
+    cancelAnimationFrame: () => {},
+  });
+  anchorRenderer.start();
+  frame(0);
+  anchors.length = 0;
+  frame(sampleTime);
+  anchorRenderer.stop();
+  return anchors[0];
+}
+
+assert.deepEqual(renderAnchor({ duration_ms: 1 }, 500), renderAnchor({ duration_ms: 500 }, 500));
+assert.deepEqual(renderAnchor({ pulse_duration_ms: 1 }, 625), renderAnchor({ pulse_duration_ms: 500 }, 625));
+assert.deepEqual(renderAnchor({ rotation_duration_ms: 1 }, 500), renderAnchor({ rotation_duration_ms: 500 }, 500));
 
 const transitionCalls = [];
 const transitionContext = {

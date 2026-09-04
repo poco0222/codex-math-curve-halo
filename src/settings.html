@@ -72,42 +72,66 @@
               <input id="opacity" name="opacity" type="range" min="0.1" max="1" step="0.01" value="1" />
             </div>
             <div class="two-column">
-              <div class="field-stack">
-                <label for="offset-x" data-i18n="settings.offsetX">Offset X</label>
-                <input id="offset-x" name="offset_x" type="number" value="28" />
+              <div class="range-field">
+                <div class="field-label-row">
+                  <label for="offset-x" data-i18n="settings.offsetX">Offset X</label>
+                  <output id="offset-x-value" for="offset-x">28</output>
+                </div>
+                <input id="offset-x" name="offset_x" type="range" min="-2000" max="2000" step="1" value="28" />
               </div>
-              <div class="field-stack">
-                <label for="offset-y" data-i18n="settings.offsetY">Offset Y</label>
-                <input id="offset-y" name="offset_y" type="number" value="140" />
+              <div class="range-field">
+                <div class="field-label-row">
+                  <label for="offset-y" data-i18n="settings.offsetY">Offset Y</label>
+                  <output id="offset-y-value" for="offset-y">140</output>
+                </div>
+                <input id="offset-y" name="offset_y" type="range" min="-2000" max="2000" step="1" value="140" />
               </div>
             </div>
           </fieldset>
           <fieldset id="animation-section" class="settings-panel settings-panel-animation" data-section="animation">
             <legend data-i18n="settings.renderer">Renderer</legend>
             <div class="two-column">
-              <div class="field-stack">
-                <label for="particle-count" data-i18n="settings.particleCount">Particle count</label>
-                <input id="particle-count" name="particle_count" type="number" min="24" max="140" value="64" />
+              <div class="range-field">
+                <div class="field-label-row">
+                  <label for="particle-count" data-i18n="settings.particleCount">Particle count</label>
+                  <output id="particle-count-value" for="particle-count">80</output>
+                </div>
+                <input id="particle-count" name="particle_count" type="range" min="80" max="140" step="1" value="80" />
               </div>
-              <div class="field-stack">
-                <label for="trail-span" data-i18n="settings.trailSpan">Trail span</label>
-                <input id="trail-span" name="trail_span" type="number" min="0.12" max="0.68" step="0.01" value="0.4" />
+              <div class="range-field">
+                <div class="field-label-row">
+                  <label for="trail-span" data-i18n="settings.trailSpan">Trail span</label>
+                  <output id="trail-span-value" for="trail-span">0.40</output>
+                </div>
+                <input id="trail-span" name="trail_span" type="range" min="0.12" max="0.68" step="0.01" value="0.4" />
               </div>
-              <div class="field-stack">
-                <label for="duration-ms" data-i18n="settings.loopDuration">Loop duration (ms)</label>
-                <input id="duration-ms" name="duration_ms" type="number" min="1" value="420" />
+              <div class="range-field">
+                <div class="field-label-row">
+                  <label for="duration-ms" data-i18n="settings.loopDuration">Loop duration (ms)</label>
+                  <output id="duration-ms-value" for="duration-ms">500 ms</output>
+                </div>
+                <input id="duration-ms" name="duration_ms" type="range" min="500" max="1500" step="1" value="500" />
               </div>
-              <div class="field-stack">
-                <label for="pulse-duration-ms" data-i18n="settings.pulseDuration">Pulse duration (ms)</label>
-                <input id="pulse-duration-ms" name="pulse_duration_ms" type="number" min="1" value="1200" />
+              <div class="range-field">
+                <div class="field-label-row">
+                  <label for="pulse-duration-ms" data-i18n="settings.pulseDuration">Pulse duration (ms)</label>
+                  <output id="pulse-duration-ms-value" for="pulse-duration-ms">1200 ms</output>
+                </div>
+                <input id="pulse-duration-ms" name="pulse_duration_ms" type="range" min="500" max="2000" step="1" value="1200" />
               </div>
-              <div class="field-stack">
-                <label for="rotation-duration-ms" data-i18n="settings.rotationDuration">Rotation duration (ms)</label>
-                <input id="rotation-duration-ms" name="rotation_duration_ms" type="number" min="1" value="4200" />
+              <div class="range-field">
+                <div class="field-label-row">
+                  <label for="rotation-duration-ms" data-i18n="settings.rotationDuration">Rotation duration (ms)</label>
+                  <output id="rotation-duration-ms-value" for="rotation-duration-ms">3000 ms</output>
+                </div>
+                <input id="rotation-duration-ms" name="rotation_duration_ms" type="range" min="500" max="3000" step="1" value="3000" />
               </div>
-              <div class="field-stack">
-                <label for="stroke-width" data-i18n="settings.strokeWidth">Stroke width</label>
-                <input id="stroke-width" name="stroke_width" type="number" min="2.5" max="7.5" step="0.1" value="4" />
+              <div class="range-field">
+                <div class="field-label-row">
+                  <label for="stroke-width" data-i18n="settings.strokeWidth">Stroke width</label>
+                  <output id="stroke-width-value" for="stroke-width">4.0</output>
+                </div>
+                <input id="stroke-width" name="stroke_width" type="range" min="1.0" max="5.0" step="0.1" value="4" />
               </div>
             </div>
             <output id="formula" class="formula" aria-label="Active formula" data-i18n-aria-label="settings.activeFormula"></output>

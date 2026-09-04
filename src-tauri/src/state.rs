@@ -218,9 +218,12 @@ impl AppSettings {
         self.opacity = self.opacity.clamp(0.1, 1.0);
         self.offset_x = self.offset_x.clamp(-2_000, 2_000);
         self.offset_y = self.offset_y.clamp(-2_000, 2_000);
-        self.particle_count = self.particle_count.clamp(24, 140);
+        self.particle_count = self.particle_count.clamp(80, 140);
         self.trail_span = self.trail_span.clamp(0.12, 0.68);
-        self.stroke_width = self.stroke_width.clamp(2.5, 7.5);
+        self.duration_ms = self.duration_ms.clamp(500.0, 1_500.0);
+        self.pulse_duration_ms = self.pulse_duration_ms.clamp(500.0, 2_000.0);
+        self.rotation_duration_ms = self.rotation_duration_ms.clamp(500.0, 3_000.0);
+        self.stroke_width = self.stroke_width.clamp(1.0, 5.0);
         self.idle_color = normalize_color(self.idle_color)?;
         self.thinking_color = normalize_color(self.thinking_color)?;
         self.executing_color = normalize_color(self.executing_color)?;
@@ -251,11 +254,11 @@ impl Default for AppSettings {
             offset_x: 28,
             offset_y: 140,
             curve_id: "rose-seven".to_owned(),
-            particle_count: 64,
+            particle_count: 80,
             trail_span: 0.4,
-            duration_ms: 420.0,
+            duration_ms: 500.0,
             pulse_duration_ms: 1_200.0,
-            rotation_duration_ms: 4_200.0,
+            rotation_duration_ms: 3_000.0,
             stroke_width: 4.0,
             idle_color: DEFAULT_IDLE_COLOR.to_owned(),
             thinking_color: DEFAULT_THINKING_COLOR.to_owned(),
@@ -484,6 +487,9 @@ mod tests {
         settings.offset_y = i32::MIN;
         settings.particle_count = 1;
         settings.trail_span = 1.0;
+        settings.duration_ms = 1.0;
+        settings.pulse_duration_ms = 2_001.0;
+        settings.rotation_duration_ms = 499.0;
         settings.stroke_width = 10.0;
 
         let normalized = settings.normalize().unwrap();
@@ -491,9 +497,12 @@ mod tests {
         assert_eq!(normalized.opacity, 0.1);
         assert_eq!(normalized.offset_x, 2_000);
         assert_eq!(normalized.offset_y, -2_000);
-        assert_eq!(normalized.particle_count, 24);
+        assert_eq!(normalized.particle_count, 80);
         assert_eq!(normalized.trail_span, 0.68);
-        assert_eq!(normalized.stroke_width, 7.5);
+        assert_eq!(normalized.duration_ms, 500.0);
+        assert_eq!(normalized.pulse_duration_ms, 2_000.0);
+        assert_eq!(normalized.rotation_duration_ms, 500.0);
+        assert_eq!(normalized.stroke_width, 5.0);
     }
 
     #[test]

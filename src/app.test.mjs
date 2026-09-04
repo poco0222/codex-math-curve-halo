@@ -383,6 +383,79 @@ test('initial settings load updates a focused but untouched field', async () => 
   }
 });
 
+test('external settings update replaces a focused but untouched field after initial load', async () => {
+  class FakeField {
+    constructor({ id, type, value }) {
+      this.id = id;
+      this.type = type;
+      this.value = value;
+      this.checked = false;
+      this.name = '';
+      this.dataset = {};
+      this.listeners = new Map();
+    }
+
+    addEventListener(type, listener) {
+      const listeners = this.listeners.get(type) ?? [];
+      listeners.push(listener);
+      this.listeners.set(type, listeners);
+    }
+  }
+
+  const opacity = new FakeField({ id: 'opacity', type: 'range', value: '1' });
+  const settingsPanelHost = {
+    querySelectorAll: (selector) => selector === 'input, select' ? [opacity] : [],
+  };
+  const listeners = new Map();
+  let resolveSettings;
+  const invoke = async (command) => {
+    if (command === 'get_settings') {
+      return new Promise((resolve) => { resolveSettings = resolve; });
+    }
+    if (command === 'get_display_state') return { state: 'idle', updated_at_ms: 0 };
+    return null;
+  };
+  const fakeDocument = {
+    activeElement: null,
+    documentElement: { lang: 'en' },
+    title: 'Codex Halo Settings',
+    getElementById: (id) => id === 'settings-panel-host' ? settingsPanelHost : id === 'opacity' ? opacity : null,
+    querySelectorAll: (selector) => selector === 'input, select' ? [opacity] : [],
+  };
+  const fakeWindow = {
+    __TAURI__: {
+      core: { invoke },
+      event: {
+        listen: (event, handler) => {
+          listeners.set(event, handler);
+          return Promise.resolve();
+        },
+      },
+    },
+    setInterval: () => 1,
+  };
+  const originalDocument = globalThis.document;
+  const originalWindow = globalThis.window;
+  globalThis.document = fakeDocument;
+  globalThis.window = fakeWindow;
+
+  try {
+    await import(`./settings.js?external-focus-sync=${Date.now()}`);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    resolveSettings({ ...DEFAULT_APP_SETTINGS, opacity: 0.8 });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    fakeDocument.activeElement = opacity;
+    await listeners.get('settings-changed')({ payload: { opacity: 0.6 } });
+
+    assert.equal(opacity.value, '0.6');
+  } finally {
+    globalThis.document = originalDocument;
+    globalThis.window = originalWindow;
+  }
+});
+
 test('blurred local edit survives queued View and settings event before initial save flushes', async () => {
   class FakeField {
     constructor({ id, type, value }) {
@@ -1572,11 +1645,11 @@ test('renderer startup uses exact frontend defaults after get_settings fails', a
     offset_x: 28,
     offset_y: 140,
     curve_id: 'rose-seven',
-    particle_count: 64,
+    particle_count: 80,
     trail_span: 0.4,
-    duration_ms: 420,
+    duration_ms: 500,
     pulse_duration_ms: 1200,
-    rotation_duration_ms: 4200,
+    rotation_duration_ms: 3000,
     stroke_width: 4,
     idle_color: '#A7ADB5',
     thinking_color: '#FF8A3D',

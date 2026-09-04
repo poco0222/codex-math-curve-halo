@@ -7,11 +7,11 @@ const TAU = Math.PI * 2;
 const DEFAULT_SETTINGS = {
   enabled: true,
   opacity: 1,
-  particle_count: 64,
+  particle_count: 80,
   trail_span: 0.4,
-  duration_ms: 420,
+  duration_ms: 500,
   pulse_duration_ms: 1200,
-  rotation_duration_ms: 4200,
+  rotation_duration_ms: 3000,
   stroke_width: 4,
 };
 
@@ -153,16 +153,16 @@ export function createHaloRenderer(canvas, options = {}) {
 
     const style = styleAt(time);
     const elapsed = time - (animationStartedAt ?? time);
-    const loopDuration = positive(settings.duration_ms, DEFAULT_SETTINGS.duration_ms);
-    const pulseDuration = positive(settings.pulse_duration_ms, DEFAULT_SETTINGS.pulse_duration_ms);
-    const rotationDuration = positive(settings.rotation_duration_ms, DEFAULT_SETTINGS.rotation_duration_ms);
+    const loopDuration = clamp(positive(settings.duration_ms, DEFAULT_SETTINGS.duration_ms), 500, 1500);
+    const pulseDuration = clamp(positive(settings.pulse_duration_ms, DEFAULT_SETTINGS.pulse_duration_ms), 500, 2000);
+    const rotationDuration = clamp(positive(settings.rotation_duration_ms, DEFAULT_SETTINGS.rotation_duration_ms), 500, 3000);
     const pulse = 0.5 + 0.5 * Math.sin(TAU * elapsed / pulseDuration);
     const detailScale = clamp(pulse, 0, 1);
     const progress = normalize(elapsed * style.speed / loopDuration);
     const rotationProgress = normalize(elapsed * style.speed / rotationDuration);
     const angle = curve.rotate(rotationProgress, settings) * style.rotation;
     const points = sampleCurve(curve, progress, detailScale, settings, 72);
-    const strokeWidth = clamp(positive(settings.stroke_width, DEFAULT_SETTINGS.stroke_width), 2.5, 7.5);
+    const strokeWidth = clamp(positive(settings.stroke_width, DEFAULT_SETTINGS.stroke_width), 1, 5);
     const color = style.color;
     const alpha = style.alpha;
 
@@ -170,7 +170,7 @@ export function createHaloRenderer(canvas, options = {}) {
     drawPath(points, angle, color, strokeWidth * 1.8, alpha * 0.34, 4);
     drawPath(points, angle, color, strokeWidth, alpha * 0.88);
 
-    const particleCount = Math.max(2, Math.floor(Number(settings.particle_count) || DEFAULT_SETTINGS.particle_count));
+    const particleCount = clamp(Math.max(2, Math.floor(Number(settings.particle_count) || DEFAULT_SETTINGS.particle_count)), 80, 140);
     const trailSpan = clamp(Number(settings.trail_span) || DEFAULT_SETTINGS.trail_span, 0.12, 0.68);
     const headRadius = style.radius * (1 + style.pulse * (pulse * 2 - 1)) / 5;
     for (let index = particleCount - 1; index >= 0; index -= 1) {
