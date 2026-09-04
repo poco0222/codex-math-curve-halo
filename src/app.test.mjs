@@ -324,6 +324,65 @@ test('initial settings load does not replace a focused local field', async () =>
   }
 });
 
+test('initial settings load updates a focused but untouched field', async () => {
+  class FakeField {
+    constructor({ id, type, value }) {
+      this.id = id;
+      this.type = type;
+      this.value = value;
+      this.checked = false;
+      this.name = '';
+      this.dataset = {};
+      this.listeners = new Map();
+    }
+
+    addEventListener(type, listener) {
+      const listeners = this.listeners.get(type) ?? [];
+      listeners.push(listener);
+      this.listeners.set(type, listeners);
+    }
+  }
+
+  const opacity = new FakeField({ id: 'opacity', type: 'range', value: '1' });
+  const settingsPanelHost = {
+    querySelectorAll: (selector) => selector === 'input, select' ? [opacity] : [],
+  };
+  let resolveSettings;
+  const invoke = async (command) => {
+    if (command === 'get_settings') {
+      return new Promise((resolve) => { resolveSettings = resolve; });
+    }
+    if (command === 'get_display_state') return { state: 'idle', updated_at_ms: 0 };
+    return null;
+  };
+  const fakeDocument = {
+    activeElement: null,
+    documentElement: { lang: 'en' },
+    title: 'Codex Halo Settings',
+    getElementById: (id) => id === 'settings-panel-host' ? settingsPanelHost : id === 'opacity' ? opacity : null,
+    querySelectorAll: (selector) => selector === 'input, select' ? [opacity] : [],
+  };
+  const fakeWindow = { __TAURI__: { core: { invoke } }, setInterval: () => 1 };
+  const originalDocument = globalThis.document;
+  const originalWindow = globalThis.window;
+  globalThis.document = fakeDocument;
+  globalThis.window = fakeWindow;
+
+  try {
+    await import(`./settings.js?initial-load-focus-only=${Date.now()}`);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    fakeDocument.activeElement = opacity;
+    resolveSettings({ ...DEFAULT_APP_SETTINGS, opacity: 0.8 });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(opacity.value, '0.8');
+  } finally {
+    globalThis.document = originalDocument;
+    globalThis.window = originalWindow;
+  }
+});
+
 test('blurred local edit survives queued View and settings event before initial save flushes', async () => {
   class FakeField {
     constructor({ id, type, value }) {

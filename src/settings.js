@@ -533,17 +533,20 @@ function applySettings(settings, { preserveLocalEdits = false } = {}) {
   if (!settings) return;
   const activeField = document.activeElement;
   const activeKey = activeField && settingKey(activeField);
+  const preserveActiveField = initialSettingsReady || localSettingEdits.has(activeKey);
   const incoming = {
     ...settings,
     language: normalizeLanguage(settings.language ?? settingsStore.getSettings().language),
   };
-  if (activeKey && Object.hasOwn(settingsStore.getSettings(), activeKey)) delete incoming[activeKey];
+  if (preserveActiveField && activeKey && Object.hasOwn(settingsStore.getSettings(), activeKey)) {
+    delete incoming[activeKey];
+  }
   if (preserveLocalEdits || localSettingEdits.size > 0) {
     for (const key of localSettingEdits) delete incoming[key];
   }
   const nextSettings = settingsStore.mergeSettings(incoming);
   const { selectedColorState } = settingsStore.getUiState();
-  syncControlsFromSettings(activeField);
+  syncControlsFromSettings(preserveActiveField ? activeField : undefined);
   renderLanguage(nextSettings.language);
   renderOpacity();
   renderFormula(nextSettings);
@@ -551,6 +554,7 @@ function applySettings(settings, { preserveLocalEdits = false } = {}) {
 }
 
 async function refreshDiagnostics() {
+  if (typeof invoke !== 'function') return;
   const result = await invokeCommand('get_display_state');
   if (result.ok) renderDiagnostics(result.value);
 }
