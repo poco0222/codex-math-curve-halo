@@ -301,17 +301,17 @@ function renderColorPresets() {
     heading.textContent = getText(language, group.labelKey);
     const grid = document.createElement('div');
     grid.className = 'color-preset-grid';
-    for (const color of group.colors) {
+    for (const { name, value: color } of group.colors) {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'color-swatch';
-      button.title = color;
-      button.setAttribute('aria-label', color);
+      button.setAttribute('title', name);
+      button.setAttribute('aria-label', name);
       const chip = document.createElement('span');
       chip.className = 'color-swatch-chip';
       chip.style.backgroundColor = color;
       const label = document.createElement('span');
-      label.textContent = color;
+      label.textContent = name;
       button.append(chip, label);
       button.addEventListener('click', () => {
         updateColorSetting(state, color, true);

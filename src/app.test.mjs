@@ -1098,6 +1098,7 @@ test('settings navigation uses a localized Test label', async () => {
 
 test('state color presets preserve all supplied hexadecimal values', async () => {
   const {
+    COLOR_PRESET_GROUPS,
     COLOR_PRESETS,
     DEFAULT_STATE_COLORS,
     isHexColor,
@@ -1111,19 +1112,36 @@ test('state color presets preserve all supplied hexadecimal values', async () =>
     compacting: '#A56BFF',
   };
   const expectedPresets = [
+    '#FED71A', '#F9D770', '#ECCB16', '#FCCC07', '#FEBA07', '#F9A633', '#DAA45A',
     '#A4CAB6', '#69A794', '#5DBE8A', '#41B349', '#2C9678', '#428675', '#248067',
-    '#BACCD9', '#8FB2C9', '#8ABCD1', '#10AEC2', '#158BB8', '#4E7CA1', '#2775B6',
-    '#F03752', '#EE2746', '#C21F30', '#EE3F4D', '#BF3553', '#A7535A', '#82111F',
-    '#FED71A', '#F9D770', '#ECCB16', '#FCC307', '#FEBA07', '#F9A633', '#DAA45A',
-    '#F0C9CF', '#F0A1A8', '#E77C8E', '#EC8AA4', '#EC7696', '#EA517F', '#DE3F7C',
     '#E9CCD3', '#C08EAF', '#C06F98', '#806D9E', '#815C94', '#813C85', '#4D1018',
-    '#F18F60', '#EE781F', '#E97040', '#EA5532', '#DC541B', '#EA5514', '#B55336',
+    '#F0C9CF', '#F0A1A8', '#E77C8E', '#EC8AA4', '#EC7696', '#EA517F', '#DE3F7C',
+    '#E4DFD7', '#CFCCC9', '#D4C4B7', '#BDAEAD', '#B6A476', '#9FA39A', '#847C74',
     '#E7A23F', '#DE7622', '#673424', '#5C1E19', '#652B1C', '#592620', '#482522',
     '#3E3B31', '#31322C', '#39363F', '#353538', '#2D2D30', '#2E282E', '#000013',
-    '#E4DFD7', '#CFCCC9', '#D4C4B7', '#BDAEAD', '#B6A476', '#9FA39A', '#847C74',
+    '#F18F60', '#EE781F', '#E97040', '#EA5532', '#DC541B', '#EA5514', '#B55336',
+    '#F03752', '#EE2746', '#C21F30', '#EE3F4D', '#BF3553', '#A7535A', '#82111F',
+    '#BACCD9', '#8FB2C9', '#8ABCD1', '#10AEC2', '#158BB8', '#4E7CA1', '#2775B6',
+  ];
+  const expectedNames = [
+    ['佛手', '淡茧', '素馨', '金盏', '琥珀', '榴莺', '珐琅'],
+    ['玉簪', '梧枝', '蔻梢', '玉髓', '青矾', '亚丁', '海王'],
+    ['芝兰', '萝兰', '樱草', '槿紫', '蕈紫', '桔梗', '酱紫'],
+    ['石蕊', '合欢', '淡茜', '报春', '淡绛', '莲瓣', '嫩菱'],
+    ['珍珠', '玛瑙', '晓灰', '芦穗', '月灰', '镍灰', '夜灰'],
+    ['凋叶', '鹿棕', '淡栗', '栗棕', '可可', '暗驼', '火山'],
+    ['茶青', '京元', '鹰背', '烟墨', '朱墨', '石青', '青骊'],
+    ['赪霞', '金红', '凌霄', '骅衣', '朱柿', '黄丹', '橘红'],
+    ['海棠', '淡曙', '枫叶', '茶花', '锦葵', '满江', '殷红'],
+    ['云水', '晴山', '秋波', '甸子', '鸢尾', '蝶翅', '景泰'],
   ];
 
   assert.deepEqual(DEFAULT_STATE_COLORS, expectedDefaults);
+  assert.deepEqual(
+    COLOR_PRESET_GROUPS.map(({ labelKey }) => getText('zh-CN', labelKey)),
+    ['黄色系', '青绿色系', '紫色系', '粉色系', '浅中性色系', '棕色系', '黑灰色系', '橙色系', '红色系', '蓝色系'],
+  );
+  assert.deepEqual(COLOR_PRESET_GROUPS.map(({ colors }) => colors.map(({ name }) => name)), expectedNames);
   assert.deepEqual(COLOR_PRESETS, expectedPresets);
   assert.equal(new Set(COLOR_PRESETS).size, 70);
   assert(COLOR_PRESETS.every((color) => isHexColor(color)));
@@ -1871,8 +1889,11 @@ test('settings color list preserves invalid Hex drafts after blur and refresh', 
     const preset = collectNodes(findById('color-presets')).find((node) => node.className === 'color-swatch');
     preset.dispatch('click');
     await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(rowSwatch('thinking'), '#A4CAB6');
-    assert.equal(rowHex('thinking'), '#A4CAB6');
+    assert.equal(preset.children.at(-1).textContent, '佛手');
+    assert.equal(preset.getAttribute('title'), '佛手');
+    assert.equal(preset.getAttribute('aria-label'), '佛手');
+    assert.equal(rowSwatch('thinking'), '#FED71A');
+    assert.equal(rowHex('thinking'), '#FED71A');
 
     const reset = collectNodes(findById('color-state-panel'))
       .find((node) => node.dataset?.colorReset === 'thinking');
