@@ -748,6 +748,7 @@ test('settings page exposes a master-detail state color editor', async () => {
   const css = await readFile(new URL('./styles.css', import.meta.url), 'utf8');
 
   assert.match(html, /id="color-state-list"/);
+  assert.match(html, /id="color-state-tabs"[^>]*role="tablist"[^>]*aria-orientation="vertical"/);
   assert.match(settingsSource, /renderColorStateList/);
   assert.match(settingsSource, /mountColorStateDetail/);
   assert.match(settingsSource, /STATE_COLOR_KEYS/);
