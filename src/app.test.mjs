@@ -284,6 +284,181 @@ test('settings-changed waits behind a queued local save', async () => {
   assert.match(source, /settingsStore\.enqueue\(\(\) => applySettings\(payload\)\)/);
 });
 
+test('settings controller serializes reset after a blocked save and applies its response', async () => {
+  class FakeNode {
+    constructor({ tagName = 'div', id = '', type = '', value = '', checked = false, dataset = {}, children = [] } = {}) {
+      this.tagName = tagName;
+      this.id = id;
+      this.type = type;
+      this.value = value;
+      this.checked = checked;
+      this.name = '';
+      this.dataset = { ...dataset };
+      this.children = [...children];
+      this.attributes = {};
+      this.listeners = new Map();
+      this.classList = { toggle() {} };
+    }
+
+    addEventListener(type, listener) {
+      const listeners = this.listeners.get(type) ?? [];
+      listeners.push(listener);
+      this.listeners.set(type, listeners);
+    }
+
+    dispatch(type, event = {}) {
+      return Promise.all(
+        (this.listeners.get(type) ?? []).map((listener) => listener({ target: this, currentTarget: this, ...event })),
+      );
+    }
+
+    setAttribute(name, value) {
+      this.attributes[name] = String(value);
+    }
+
+    toggleAttribute(name, force) {
+      if (force === false) delete this.attributes[name];
+      else if (force === true || !Object.hasOwn(this.attributes, name)) this.attributes[name] = '';
+      this.disabled = force;
+    }
+
+    append(...children) {
+      this.children.push(...children);
+    }
+
+    replaceChildren(...children) {
+      this.children = children.flatMap((child) => child.tagName === '#fragment' ? child.children : [child]);
+    }
+
+    querySelectorAll(selector) {
+      if (selector === 'input, select') {
+        return collectNodes(this).filter((node) => node.tagName === 'input' || node.tagName === 'select');
+      }
+      return [];
+    }
+
+    focus() {
+      fakeDocument.activeElement = this;
+    }
+  }
+
+  const collectNodes = (root) => [
+    ...root.children.flatMap((child) => [child, ...collectNodes(child)]),
+  ];
+  const make = (options) => new FakeNode(options);
+  const settingsPanelHost = make({ id: 'settings-panel-host' });
+  const saveStatus = make({ id: 'settings-save-status' });
+  const viewTabs = ['appearance', 'colors', 'integration', 'test'].map((viewId) => make({
+    tagName: 'button',
+    id: `settings-tab-${viewId}`,
+    dataset: { viewTarget: viewId },
+  }));
+  const templates = new Map();
+  for (const viewId of ['appearance', 'colors', 'integration', 'test']) {
+    templates.set(viewId, {
+      content: {
+        cloneNode() {
+          if (viewId !== 'integration') {
+            return { tagName: '#fragment', children: [make({ tagName: 'fieldset' })] };
+          }
+          const startAtLogin = make({
+            tagName: 'input',
+            id: 'start-at-login',
+            type: 'checkbox',
+            checked: true,
+          });
+          startAtLogin.name = 'start_at_login';
+          const resetPosition = make({ tagName: 'button', id: 'reset-position', type: 'button' });
+          return {
+            tagName: '#fragment',
+            children: [make({
+              tagName: 'fieldset',
+              id: 'integration-section',
+              children: [startAtLogin, resetPosition],
+            })],
+          };
+        },
+      },
+    });
+  }
+
+  const findById = (id) => {
+    if (id === 'settings-panel-host') return settingsPanelHost;
+    if (id === 'settings-save-status') return saveStatus;
+    return collectNodes(settingsPanelHost).find((node) => node.id === id) ?? null;
+  };
+  const listeners = new Map();
+  const commands = [];
+  let releaseSave;
+  const invoke = async (command) => {
+    commands.push(command);
+    if (command === 'get_settings') return { ...DEFAULT_APP_SETTINGS, start_at_login: true };
+    if (command === 'get_display_state') return { state: 'idle', updated_at_ms: 0 };
+    if (command === 'save_settings') {
+      return new Promise((resolve) => { releaseSave = resolve; });
+    }
+    if (command === 'reset_position') return { ...DEFAULT_APP_SETTINGS, start_at_login: true };
+    return null;
+  };
+  const fakeDocument = {
+    activeElement: null,
+    documentElement: { lang: 'en' },
+    title: 'Codex Halo Settings',
+    getElementById: findById,
+    querySelectorAll: (selector) => selector === '[data-view-target]' ? viewTabs : [],
+    querySelector: (selector) => {
+      const templateMatch = selector.match(/^\[data-view-template="(.+)"\]$/);
+      return templateMatch ? templates.get(templateMatch[1]) ?? null : null;
+    },
+  };
+  const fakeWindow = {
+    __TAURI__: {
+      core: { invoke },
+      event: {
+        listen: (event, handler) => {
+          listeners.set(event, handler);
+          return Promise.resolve();
+        },
+      },
+    },
+    setInterval: () => 1,
+  };
+  const originalDocument = globalThis.document;
+  const originalWindow = globalThis.window;
+  globalThis.document = fakeDocument;
+  globalThis.window = fakeWindow;
+
+  try {
+    await import(`./settings.js?controller-reset-queue=${Date.now()}`);
+    await new Promise((resolve) => setImmediate(resolve));
+    await viewTabs[2].dispatch('click');
+
+    const startAtLogin = findById('start-at-login');
+    const resetPosition = findById('reset-position');
+    fakeDocument.activeElement = startAtLogin;
+    startAtLogin.checked = false;
+    await startAtLogin.dispatch('change');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(commands.filter((command) => command === 'save_settings' || command === 'reset_position'), ['save_settings']);
+
+    fakeDocument.activeElement = resetPosition;
+    const reset = resetPosition.dispatch('click');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(commands.filter((command) => command === 'save_settings' || command === 'reset_position'), ['save_settings']);
+
+    releaseSave();
+    await reset;
+    assert.deepEqual(commands.filter((command) => command === 'save_settings' || command === 'reset_position'), ['save_settings', 'reset_position']);
+    assert.equal(startAtLogin.checked, true);
+  } finally {
+    globalThis.document = originalDocument;
+    globalThis.window = originalWindow;
+  }
+
+  const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
+  assert.match(source, /settingsStore\.enqueue\(async \(\) => \{[\s\S]*?applySettings\(result\.value\);[\s\S]*?return result;/);
+});
+
 test('settings controller uses the shared store for merge and save behavior', async () => {
   const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
 

@@ -1,5 +1,5 @@
 import { formatFormula, getCurveProfile } from './curves.js';
-import { createSerialTaskQueue, DEFAULT_APP_SETTINGS, formatSetupError } from './app.js';
+import { DEFAULT_APP_SETTINGS, formatSetupError } from './app.js';
 import { createSettingsBridge } from './settings-bridge.js';
 import { createSettingsStore } from './settings-store.js';
 import {
@@ -128,7 +128,6 @@ let currentPluginStatus = 'settings.pluginReady';
 let currentSaveStatus = 'ready';
 let setupError = null;
 let currentDisplayState = { state: 'idle', updated_at_ms: 0 };
-const commandQueue = createSerialTaskQueue();
 
 const settingsBridge = createSettingsBridge({
   invoke,
@@ -608,11 +607,13 @@ function bindIntegrationActions() {
     URL.revokeObjectURL(url);
   });
   document.getElementById('reset-position')?.addEventListener('click', async () => {
-    const result = await settingsStore.enqueue(() => invokeCommand('reset_position'));
-    if (result.ok) {
+    await settingsStore.enqueue(async () => {
+      const result = await invokeCommand('reset_position');
+      if (!result.ok) return result;
       clearSetupError();
       applySettings(result.value);
-    }
+      return result;
+    });
   });
 }
 
