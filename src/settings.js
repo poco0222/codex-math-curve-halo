@@ -16,8 +16,7 @@ import {
 
 const invoke = window.__TAURI__?.core?.invoke ?? window.__TAURI__?.invoke;
 const settingsPanelHost = document.getElementById('settings-panel-host');
-const sectionTabs = [...document.querySelectorAll('[data-section-target]')];
-const sectionNames = ['display', 'animation', 'colors', 'integration', 'test'];
+const viewTabs = [...document.querySelectorAll('[data-view-target]')];
 const pluginOperationStatuses = {
   installed: 'settings.pluginInstalled',
   uninstalled: 'settings.pluginUninstalled',
@@ -26,7 +25,36 @@ const pluginOperationStatuses = {
 const saveStatus = document.getElementById('settings-save-status');
 const saveStatusElements = saveStatus ? [saveStatus] : [];
 const colorFields = Object.entries(STATE_COLOR_KEYS).map(([state, key]) => ({ state, key }));
-let activeSection = 'display';
+const SETTINGS_VIEWS = {
+  appearance: {
+    template: 'appearance',
+    labelKey: 'settings.appearance',
+    bind: () => bindSettingsFields(settingsPanelHost),
+  },
+  colors: {
+    template: 'colors',
+    labelKey: 'settings.colors',
+    bind: () => {
+      renderColorStateTabs();
+      mountColorState();
+      bindSettingsFields(settingsPanelHost);
+    },
+  },
+  integration: {
+    template: 'integration',
+    labelKey: 'settings.integration',
+    bind: () => {
+      bindSettingsFields(settingsPanelHost);
+      bindIntegrationActions();
+    },
+  },
+  test: {
+    template: 'test',
+    labelKey: 'settings.simulateState',
+    bind: () => bindTestActions(),
+  },
+};
+let activeView = 'appearance';
 let selectedColorState = 'idle';
 let settingsModel = { ...DEFAULT_APP_SETTINGS };
 let currentLanguage = DEFAULT_LANGUAGE;
@@ -334,7 +362,11 @@ function renderLanguage(language) {
     control(key)?.setAttribute('aria-label', `${label} ${getText(currentLanguage, 'settings.colorPicker')}`);
     control(`${key}_hex`)?.setAttribute('aria-label', `${label} ${getText(currentLanguage, 'settings.colorHex')}`);
   }
-  if (activeSection === 'colors') {
+  for (const [viewId, view] of Object.entries(SETTINGS_VIEWS)) {
+    const tab = viewTabs.find((candidate) => candidate.dataset.viewTarget === viewId);
+    if (tab) tab.textContent = getText(currentLanguage, view.labelKey);
+  }
+  if (activeView === 'colors') {
     renderColorStateTabs();
     const label = document.querySelector?.('[data-color-state-label]');
     if (label) label.textContent = getStateLabel(currentLanguage, selectedColorState);
@@ -500,20 +532,17 @@ function bindTestActions() {
   }
 }
 
-function mountSettingsSection(section) {
-  const template = document.querySelector?.(`[data-section-template="${section}"]`);
+function mountSettingsView(viewId) {
+  const view = SETTINGS_VIEWS[viewId];
+  if (!view || !settingsPanelHost) return;
+  const template = document.querySelector?.(`[data-view-template="${view.template}"]`);
   if (!template || !settingsPanelHost) return;
   syncSettingsModelFromControls();
   settingsPanelHost.replaceChildren(template.content.cloneNode(true));
-  settingsPanelHost.setAttribute('aria-labelledby', `settings-tab-${section}`);
-  activeSection = section;
-  if (section === 'colors') {
-    renderColorStateTabs();
-    mountColorState();
-  }
-  bindSettingsFields(settingsPanelHost);
-  if (section === 'integration') bindIntegrationActions();
-  if (section === 'test') bindTestActions();
+  const tab = viewTabs.find((candidate) => candidate.dataset.viewTarget === viewId);
+  settingsPanelHost.setAttribute('aria-labelledby', tab?.id ?? `settings-tab-${viewId}`);
+  activeView = viewId;
+  view.bind();
   syncControlsFromSettings();
   renderLanguage(currentLanguage);
   renderOpacity();
@@ -522,38 +551,39 @@ function mountSettingsSection(section) {
   renderDiagnostics();
 }
 
-function selectSettingsSection(section, focus = false) {
-  if (!sectionNames.includes(section)) return;
-  for (const tab of sectionTabs) {
-    const selected = tab.dataset.sectionTarget === section;
+function selectSettingsView(viewId, focus = false) {
+  if (!SETTINGS_VIEWS[viewId]) return;
+  for (const tab of viewTabs) {
+    const selected = tab.dataset.viewTarget === viewId;
     tab.classList.toggle('is-active', selected);
     tab.setAttribute('aria-selected', String(selected));
     tab.tabIndex = selected ? 0 : -1;
   }
-  mountSettingsSection(section);
-  if (focus) document.getElementById(`settings-tab-${section}`)?.focus();
+  mountSettingsView(viewId);
+  if (focus) viewTabs.find((tab) => tab.dataset.viewTarget === viewId)?.focus();
 }
 
 bindSettingsFields(document);
-for (const tab of sectionTabs) {
-  tab.addEventListener('click', () => selectSettingsSection(tab.dataset.sectionTarget, true));
+const viewIds = Object.keys(SETTINGS_VIEWS);
+for (const tab of viewTabs) {
+  tab.addEventListener('click', () => selectSettingsView(tab.dataset.viewTarget, true));
   tab.addEventListener('keydown', (event) => {
-    const index = sectionNames.indexOf(tab.dataset.sectionTarget);
+    const index = viewIds.indexOf(tab.dataset.viewTarget);
     const next = event.key === 'ArrowRight' || event.key === 'ArrowDown'
-      ? (index + 1) % sectionNames.length
+      ? (index + 1) % viewIds.length
       : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
-        ? (index - 1 + sectionNames.length) % sectionNames.length
+        ? (index - 1 + viewIds.length) % viewIds.length
         : event.key === 'Home'
           ? 0
           : event.key === 'End'
-            ? sectionNames.length - 1
+            ? viewIds.length - 1
             : -1;
     if (next < 0) return;
     event.preventDefault();
-    selectSettingsSection(sectionNames[next], true);
+    selectSettingsView(viewIds[next], true);
   });
 }
 
-mountSettingsSection(activeSection);
+mountSettingsView(activeView);
 loadSettings();
 window.setInterval(refreshDiagnostics, 500);

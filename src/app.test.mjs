@@ -319,6 +319,13 @@ test('settings page uses the Halo Control Room workbench layout', async () => {
   assert.match(html, /data-section="display"/);
   assert.match(html, /data-section="animation"/);
   assert.match(html, /data-section="colors"/);
+  assert.match(html, /data-view-target="appearance"/);
+  assert.match(html, /data-view-target="colors"/);
+  assert.match(html, /data-view-target="integration"/);
+  assert.match(html, /data-view-target="test"/);
+  assert.match(html, /data-view-template="appearance"/);
+  assert.match(html, /id="particle-count"/);
+  assert.match(html, /id="color-state-list"/);
   assert.match(html, /<details[^>]+id="color-presets-details"/);
   assert.match(css, /\.settings-workbench\s*\{/);
   assert.match(css, /\.settings-sidebar\s*\{/);
@@ -327,6 +334,10 @@ test('settings page uses the Halo Control Room workbench layout', async () => {
   assert.match(source, /setSaveStatus\('saved'\)/);
   assert.match(source, /setSaveStatus\('error'\)/);
   assert.match(source, /saveSettings\(async \(\) => \{[\s\S]*setSaveStatus\('saving'\)/);
+  assert.match(source, /const SETTINGS_VIEWS = \{/);
+  assert.match(source, /function mountSettingsView\(viewId\)/);
+  assert.match(source, /settingsPanelHost\.replaceChildren\(/);
+  assert.doesNotMatch(source, /const sectionNames = \[/);
   assert.match(mainSource, /\.inner_size\(960\.0, 760\.0\)/);
 });
 
@@ -336,7 +347,7 @@ test('settings navigation mounts one strict section at a time', async () => {
 
   assert.match(html, /data-section-nav[^>]*role="tablist"/);
   assert.match(html, /id="settings-panel-host"[^>]*role="tabpanel"/);
-  assert.equal((html.match(/data-section-template=/g) ?? []).length, 5);
+  assert.equal((html.match(/data-view-template=/g) ?? []).length, 4);
   assert.doesNotMatch(css, /scroll-margin-top/);
   assert.match(css, /@media\s*\(max-width:\s*880px\)[\s\S]*\.settings-header\s*\{[\s\S]*position:\s*static/);
   assert.match(css, /@media\s*\(max-width:\s*640px\)[\s\S]*button,[\s\S]*input:not\(\[type="checkbox"\]\),[\s\S]*select,[\s\S]*\.settings-nav-link[\s\S]*min-height:\s*40px/);

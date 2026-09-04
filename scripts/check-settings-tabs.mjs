@@ -7,22 +7,28 @@ const colors = await readFile(new URL('../src/colors.js', import.meta.url), 'utf
 const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
 assert.match(html, /id="settings-panel-host"/);
-for (const section of ['display', 'animation', 'colors', 'integration', 'test']) {
-  assert.match(html, new RegExp(`data-section-template="${section}"`));
+for (const view of ['appearance', 'colors', 'integration', 'test']) {
+  assert.match(html, new RegExp(`data-view-target="${view}"`));
+  assert.match(html, new RegExp(`data-view-template="${view}"`));
 }
+assert.match(html, /id="particle-count"/);
+assert.match(html, /id="color-state-list"/);
 assert.match(html, /data-section-nav[^>]*role="tablist"/);
 assert.match(html, /id="color-state-tabs"[^>]*role="tablist"/);
 assert.match(html, /id="color-state-panel"[^>]*role="tabpanel"(?![^>]*tabindex)/);
 assert.match(html, /settings-tab-display[^>]*aria-selected="true"[^>]*tabindex="0"/);
-assert.equal((html.match(/role="tab"/g) ?? []).length, 5);
-assert.equal((html.match(/role="tab"[^>]*tabindex="-1"/g) ?? []).length, 4);
+assert.equal((html.match(/role="tab"/g) ?? []).length, 4);
+assert.equal((html.match(/role="tab"[^>]*tabindex="-1"/g) ?? []).length, 3);
 assert.match(html, /id="settings-panel-host"[^>]*role="tabpanel"(?![^>]*tabindex)/);
 for (const state of ['idle', 'thinking', 'executing', 'input_needed', 'completed', 'compacting']) {
   assert.match(colors, new RegExp(`${state}: '.*_color'`));
 }
 assert.equal((colors.match(/id: 'palette-/g) ?? []).length, 10);
 assert.equal((colors.match(/#[0-9A-Fa-f]{6}/g) ?? []).length, 76);
-assert.match(settings, /function mountSettingsSection\(/);
+assert.match(settings, /const SETTINGS_VIEWS = \{/);
+assert.match(settings, /function mountSettingsView\(/);
+assert.match(settings, /settingsPanelHost\.replaceChildren\(/);
+assert.doesNotMatch(settings, /const sectionNames = \[/);
 assert.match(settings, /function mountColorState\(/);
 assert.match(settings, /settingsModel/);
 assert.match(settings, /function syncSettingsModelFromControls\(/);
