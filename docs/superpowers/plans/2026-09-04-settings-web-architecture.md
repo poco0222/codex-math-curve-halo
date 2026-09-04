@@ -75,7 +75,7 @@ Expected: FAIL because `src/settings-store.js` and `src/settings-bridge.js` do n
 
 - [ ] **Step 3: Implement the minimum store and bridge**
 
-Use a plain object store and the existing `createSerialTaskQueue` pattern. Keep `settingsModel` complete. `mergeSettings` must shallow-merge patches. `save()` must pass a copied full settings object to `persist`. The bridge must return `{ ok: true, value }` for successful commands and `{ ok: false, value: null }` after warning on rejection. `subscribe` must no-op when `listen` is unavailable.
+Use a plain object store and the existing `createSerialTaskQueue` pattern. Keep `settingsStore` complete. `mergeSettings` must shallow-merge patches. `save()` must pass a copied full settings object to `persist`. The bridge must return `{ ok: true, value }` for successful commands and `{ ok: false, value: null }` after warning on rejection. `subscribe` must no-op when `listen` is unavailable.
 
 - [ ] **Step 4: Run the focused tests and verify they pass**
 

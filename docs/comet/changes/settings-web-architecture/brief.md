@@ -10,7 +10,7 @@
 - 顶层设置区按用户任务组织，当前至少覆盖外观、状态配置、集成和测试。
 - 设置 View 只渲染当前选中的内容，保留 strict mount 行为。
 - 颜色区重新设计为更易扫描、可扩展到状态级属性的交互。
-- 保留现有 `settingsModel`、控件 ID、`name`、`data-i18n`、Tauri command、事件和自动保存行为。
+- 保留现有设置字段、控件 ID、`name`、`data-i18n`、Tauri command、事件和自动保存行为；完整设置由 `settingsStore` 持有。
 
 # Non-goals
 
@@ -32,7 +32,7 @@
 # Constraints and invariants
 
 - 当前六个状态和现有颜色字段保持不变。
-- `settingsModel` 继续作为完整设置的单一前端来源。
+- `settingsStore` 作为完整设置和 UI 状态的单一前端来源。
 - 真实 Tauri IPC、Plugin 和 Windows 行为不由静态浏览器检查推断。
 
 # Decisions
@@ -41,7 +41,7 @@
 - 当前状态详情作为状态级设置扩展边界，后续可加入音频联动、状态专属动效和提示等字段。
 - 顶层 View 收敛为 `Appearance`、`State colors`、`Integration`、`Test`。
 - `Appearance` 合并 Display 与 Renderer，减少常用设置之间的跳转。
-- 继续使用原生 HTML/CSS/JS、模板挂载和共享 `settingsModel`，不引入 React、Vue 或 Router。
+- 继续使用原生 HTML/CSS/JS、模板挂载和共享 `settingsStore`，不引入 React、Vue 或 Router。
 - 未来新增设置域只增加 View 和字段映射，不改变保存协议、IPC command 或事件名称。
 - 颜色区使用纵向状态列表 + 详情面板：列表展示状态名、色块和当前 Hex，详情展示当前状态的预览、颜色编辑、恢复默认和预置色。
 - 状态详情预留可组合的扩展区，未来音频联动、状态专属动效和提示等状态级设置进入同一详情上下文。

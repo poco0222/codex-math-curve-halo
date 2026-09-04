@@ -10,7 +10,7 @@ This is an operational Tauri desktop settings tool for frequent users. The desig
 
 ## Context
 
-The current page already runs in a Tauri WebView with native HTML, CSS, and JavaScript. It has strict section mounting, a shared `settingsModel`, automatic saving, localized text, and six state colors. The current color interaction exposes one active editor through horizontal state tabs. That preserves data safely, but makes comparison and future state-level settings awkward.
+The current page already runs in a Tauri WebView with native HTML, CSS, and JavaScript. It has strict section mounting, a shared settings model, automatic saving, localized text, and six state colors. The current color interaction exposes one active editor through horizontal state tabs. That preserves data safely, but makes comparison and future state-level settings awkward.
 
 Future work will add default display position and audio linkage. The settings architecture therefore needs an explicit extension boundary without forcing a framework migration or changing the native settings contract in this change.
 
@@ -73,7 +73,7 @@ No generic schema engine. Field bindings stay explicit and readable.
 
 Separate two concerns:
 
-- `settingsModel`: complete `AppSettings` values, including unmounted fields and inactive state colors.
+- `settingsStore`: complete `AppSettings` values, including unmounted fields and inactive state colors.
 - `uiState`: active View, selected state, save status, setup error, diagnostics snapshot, and in-flight Plugin operation.
 
 The store exposes small operations: replace settings, merge settings, patch one setting, select View, select state, and enqueue save. It does not know DOM details.
@@ -127,7 +127,7 @@ Tauri invoke/event
      Renderer
 ```
 
-External settings payloads merge into `settingsModel`. The active field remains protected while the user edits it. Unmounted fields never disappear from a save payload.
+External settings payloads merge into `settingsStore`. The active field remains protected while the user edits it. Unmounted fields never disappear from a save payload.
 
 ## Visual system
 
