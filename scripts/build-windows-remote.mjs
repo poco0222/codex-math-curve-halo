@@ -61,7 +61,8 @@ function sshArgs(port, key) {
 }
 
 function scpArgs(port, key) {
-  const args = ['-o', 'AddKeysToAgent=yes', '-o', 'UseKeychain=yes', '-P', String(port)];
+  // The Windows build host requires legacy SCP instead of the default SFTP transport.
+  const args = ['-O', '-o', 'AddKeysToAgent=yes', '-o', 'UseKeychain=yes', '-P', String(port)];
   if (key) args.push('-i', key, '-o', 'IdentitiesOnly=yes');
   return args;
 }
