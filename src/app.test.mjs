@@ -104,6 +104,24 @@ test('settings store keeps UI state separate and snapshots isolated', () => {
   assert.deepEqual(store.getUiState(), { activeView: 'integration' });
 });
 
+test('geometry settings and queued saves keep independent value snapshots', async () => {
+  const defaults = { curve_parameters: { baseRadius: 7 } };
+  const saved = [];
+  const store = createSettingsStore({ defaults, persist: (value) => saved.push(value) });
+  defaults.curve_parameters.baseRadius = 99;
+  assert.equal(store.getSettings().curve_parameters.baseRadius, 7);
+  const parameters = { baseRadius: 8 };
+  store.patchSetting('curve_parameters', parameters);
+  const first = store.save();
+  parameters.baseRadius = 10;
+  store.getSettings().curve_parameters.baseRadius = 9;
+  assert.equal(store.getSettings().curve_parameters.baseRadius, 8);
+  store.mergeSettings({ curve_parameters: { baseRadius: 6 } });
+  await first;
+  assert.equal(saved[0].curve_parameters.baseRadius, 8);
+  assert.equal(store.getSettings().curve_parameters.baseRadius, 6);
+});
+
 test('settings store isolates nested UI snapshots from defaults, patches, and reads', () => {
   const uiDefaults = {
     diagnosticsSnapshot: { state: 'idle', updated_at_ms: 0 },
@@ -1684,6 +1702,7 @@ test('renderer startup uses exact frontend defaults after get_settings fails', a
     offset_y: 140,
     overlay_position: null,
     curve_id: 'original-thinking',
+    curve_parameters: {},
     particle_count: 64,
     trail_span: 0.38,
     duration_ms: 5000,

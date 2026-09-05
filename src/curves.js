@@ -1,5 +1,8 @@
+import curveControls from './curve-controls.js';
+
 const TAU = Math.PI * 2;
 const DEFAULT_STEPS = 481;
+const RESOLVED_GEOMETRY = Symbol('resolvedCurveGeometry');
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const detailValue = (value) => clamp(Number.isFinite(Number(value)) ? Number(value) : 0, 0, 1);
 const tOf = (progress) => progress * TAU;
@@ -29,19 +32,25 @@ const REFERENCE_ANIMATION = Object.freeze({
 });
 
 function profile(id, label, defaults, point, formula, rotate = false) {
-  // Geometry follows upstream 70f4e00; persisted animation settings cannot override it.
   const geometry = Object.freeze(defaults);
-  return {
+  const controls = Object.freeze(curveControls.profiles[id].map((key) => Object.freeze({
+    key,
+    ...curveControls.controls[key],
+    ...(id === 'rose-orbit' && key === 'petalCount' ? { labelEn: 'k', labelZh: 'k 值' } : {}),
+    defaultValue: geometry[key],
+  })));
+  const item = {
     id,
     label,
     tag: 'math curve',
     defaults: geometry,
     animation: Object.freeze(REFERENCE_ANIMATION[id]),
-    controls: [],
+    controls,
     rotate: (progress) => (rotate ? -TAU * progress : 0),
-    point: (progress, detailScale = 0) => point(progress, detailValue(detailScale), geometry),
-    formula: () => `p = progress, 0 ≤ p ≤ 1; t = 2πp; s = detailScale(time), 0 ≤ s ≤ 1\n${formula(geometry)}`,
+    point: (progress, detailScale = 0, settings = {}) => point(progress, detailValue(detailScale), geometryFor(item, settings)),
+    formula: (settings = {}) => `p = progress, 0 ≤ p ≤ 1; t = 2πp; s = detailScale(time), 0 ≤ s ≤ 1\n${formula(geometryFor(item, settings))}`,
   };
+  return item;
 }
 
 function roseTrail(id, label, petalCount) {
@@ -217,14 +226,41 @@ export function getCurveAnimationSettings(id) {
   };
 }
 
-export function sampleCurve(item, _progress, detailScale = 0, settings = item.defaults, steps = DEFAULT_STEPS) {
+function parameterSettings(item, parameters = {}) {
+  const source = parameters && typeof parameters === 'object' ? parameters : {};
+  return Object.fromEntries(item.controls.map(({ key, min, max, step }) => {
+    const candidate = typeof source[key] === 'number' && Number.isFinite(source[key]) ? source[key] : item.defaults[key];
+    const value = clamp(candidate, min, max);
+    return [key, step === 1 ? Math.round(value) : value];
+  }));
+}
+
+export function getCurveParameterSettings(id, parameters = {}) {
+  return parameterSettings(getCurveProfile(id), parameters);
+}
+
+function geometryFor(item, settings) {
+  if (settings?.[RESOLVED_GEOMETRY]?.profile === item) return settings[RESOLVED_GEOMETRY].geometry;
+  const parameters = settings?.curve_parameters;
+  if (!parameters || typeof parameters !== 'object') return item.defaults;
+  return Object.freeze({ ...item.defaults, ...parameterSettings(item, parameters) });
+}
+
+export function prepareCurveSettings(item, settings = {}) {
+  return Object.freeze({
+    [RESOLVED_GEOMETRY]: Object.freeze({ profile: item, geometry: geometryFor(item, settings) }),
+  });
+}
+
+export function sampleCurve(item, _progress, detailScale = 0, settings = {}, steps = DEFAULT_STEPS) {
   const count = Math.max(2, Math.floor(Number(steps) || DEFAULT_STEPS));
+  const resolved = prepareCurveSettings(item, settings);
   // Sample the full domain, including both endpoints of open curves. Only particles wrap.
-  return Array.from({ length: count }, (_, index) => item.point(index / (count - 1), detailScale, settings));
+  return Array.from({ length: count }, (_, index) => item.point(index / (count - 1), detailScale, resolved));
 }
 
 export function formatFormula(item, settings) {
-  return item ? String(typeof item.formula === 'function' ? item.formula(settings ?? item.defaults) : item.formula ?? '') : '';
+  return item ? String(typeof item.formula === 'function' ? item.formula(settings ?? {}) : item.formula ?? '') : '';
 }
 
 export function validateCurveProfiles() {

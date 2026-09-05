@@ -12,26 +12,26 @@ function cloneUiState(value) {
 }
 
 export function createSettingsStore({ defaults, uiDefaults = {}, persist, enqueue = createSerialTaskQueue() }) {
-  let settings = { ...defaults };
+  let settings = structuredClone(defaults);
   let uiState = cloneUiState(uiDefaults);
   const enqueueTask = enqueue;
 
-  const getSettings = () => ({ ...settings });
+  const getSettings = () => structuredClone(settings);
   const getUiState = () => cloneUiState(uiState);
 
   return {
     getSettings,
     getUiState,
     replaceSettings(value) {
-      settings = { ...defaults, ...value };
+      settings = structuredClone({ ...defaults, ...value });
       return getSettings();
     },
     mergeSettings(patch) {
-      settings = { ...settings, ...patch };
+      settings = structuredClone({ ...settings, ...patch });
       return getSettings();
     },
     patchSetting(key, value) {
-      settings[key] = value;
+      settings[key] = structuredClone(value);
       return getSettings();
     },
     setUi(patch) {

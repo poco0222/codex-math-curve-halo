@@ -1,4 +1,4 @@
-import { getCurveAnimationSettings, getCurveProfile, sampleCurve } from './curves.js';
+import { getCurveAnimationSettings, getCurveProfile, prepareCurveSettings, sampleCurve } from './curves.js';
 import { DEFAULT_STATE_COLORS, normalizeHexColor, STATE_COLOR_KEYS } from './colors.js';
 
 const MORPH_DURATION_MS = 420;
@@ -49,6 +49,7 @@ export function createHaloRenderer(canvas, options = {}) {
   let state = Object.hasOwn(STATE_COLOR_KEYS, options.state) ? options.state : 'idle';
   let curve = getCurveProfile(options.curve ?? options.curve_id ?? 'original-thinking');
   let settings = { enabled: true, opacity: 1, ...(options.settings ?? {}) };
+  let curveSettings = prepareCurveSettings(curve, settings);
   let animation = animationSettings();
   let currentStyle = styleFor(state, settings);
   let transition = null;
@@ -144,7 +145,7 @@ export function createHaloRenderer(canvas, options = {}) {
       rotationPhase = normalize(rotationPhase + deltaTime / animation.rotation_duration_ms);
     }
     const angle = curve.rotate(rotationPhase, settings);
-    const points = sampleCurve(curve, 0, detailScale);
+    const points = sampleCurve(curve, 0, detailScale, curveSettings);
     const color = styleAt(time);
 
     drawPath(points, angle, color, animation.stroke_width, 0.1);
@@ -153,7 +154,7 @@ export function createHaloRenderer(canvas, options = {}) {
     for (let index = 0; index < particleCount; index += 1) {
       const fraction = index / (particleCount - 1);
       const particleProgress = normalize(progressPhase - animation.trail_span * fraction);
-      const point = curve.point(particleProgress, detailScale, settings);
+      const point = curve.point(particleProgress, detailScale, curveSettings);
       const fade = (1 - fraction) ** 0.56;
       drawParticle(point, angle, color, 0.9 + fade * 2.7, 0.04 + fade * 0.96);
     }
@@ -176,6 +177,7 @@ export function createHaloRenderer(canvas, options = {}) {
       const nextCurve = getCurveProfile(id);
       if (nextCurve !== curve) {
         curve = nextCurve;
+        curveSettings = prepareCurveSettings(curve, settings);
         animation = animationSettings();
         lastFrameTime = null;
       }
@@ -183,6 +185,7 @@ export function createHaloRenderer(canvas, options = {}) {
     setSettings(nextSettings = {}) {
       if (nextSettings.enabled !== undefined && nextSettings.enabled !== settings.enabled) lastFrameTime = null;
       settings = { ...settings, ...nextSettings };
+      curveSettings = prepareCurveSettings(curve, settings);
       animation = animationSettings();
       if (transition) {
         transition.to = styleFor(state, settings);

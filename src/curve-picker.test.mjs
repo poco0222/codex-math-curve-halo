@@ -92,3 +92,16 @@ test('all thumbnails draw the actual full sampled path without closing open curv
     }), profile.id);
   }
 });
+
+test('the current thumbnail reflects customized geometry without changing preset defaults', () => {
+  const points = [];
+  const context = {
+    setTransform() {}, clearRect() {}, beginPath() {}, stroke() {},
+    moveTo(x, y) { points.push({ x, y }); },
+    lineTo(x, y) { points.push({ x, y }); },
+  };
+  const canvas = { width: 160, height: 160, getContext: () => context };
+  drawCurveThumbnail(canvas, 'original-thinking', { curve_parameters: { baseRadius: 8 } });
+  assert.deepEqual(points[0], { x: 69.5, y: 50 });
+  assert.equal(curveProfiles[0].defaults.baseRadius, 7);
+});

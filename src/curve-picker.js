@@ -4,13 +4,13 @@ import { getCurveLabel, getText } from './i18n.js';
 
 const PREVIEW_COLOR = '#CFD6DF';
 
-export function drawCurveThumbnail(canvas, id) {
+export function drawCurveThumbnail(canvas, id, settings) {
   const context = canvas.getContext('2d');
   context.setTransform(canvas.width / 110, 0, 0, canvas.height / 110, canvas.width / 22, canvas.height / 22);
   context.clearRect(-5, -5, 110, 110);
   context.beginPath();
   // Use the full domain at a fixed detail phase; open curves keep both endpoints.
-  sampleCurve(getCurveProfile(id), 0, 1).forEach(({ x, y }, index) => {
+  sampleCurve(getCurveProfile(id), 0, 1, settings).forEach(({ x, y }, index) => {
     if (index === 0) context.moveTo(x, y);
     else context.lineTo(x, y);
   });
@@ -120,7 +120,7 @@ export function createCurvePicker({ root, store, selection, isReady }) {
     const id = button.dataset.curveId;
     button.querySelector('.curve-picker-picture').append(previewCanvas);
     const previewSettings = {
-      ...(id === settings.curve_id ? settings : getCurveAnimationSettings(id)),
+      ...(id === settings.curve_id ? settings : { ...getCurveAnimationSettings(id), curve_parameters: {} }),
       enabled: true,
       opacity: 1,
       idle_color: PREVIEW_COLOR,
@@ -173,12 +173,15 @@ export function createCurvePicker({ root, store, selection, isReady }) {
     const settings = store.getSettings();
     const language = settings.language;
     currentName.textContent = getCurveLabel(language, settings.curve_id);
-    drawCurveThumbnail(currentCanvas, settings.curve_id);
+    drawCurveThumbnail(currentCanvas, settings.curve_id, settings);
     openButton.disabled = !isReady();
     openButton.setAttribute('aria-label', `${getText(language, 'settings.changeCurve')}: ${currentName.textContent}`);
     dialog.setAttribute('aria-busy', String(selection.pending));
     for (const button of buttons) {
       const current = button.dataset.curveId === settings.curve_id;
+      if (current || button.getAttribute('aria-pressed') === 'true') {
+        drawCurveThumbnail(button.querySelector('.curve-picker-thumbnail'), button.dataset.curveId, current ? settings : undefined);
+      }
       button.setAttribute('aria-pressed', String(current));
       button.setAttribute('aria-disabled', String(selection.pending));
       button.querySelector('.curve-picker-label').textContent = getCurveLabel(language, button.dataset.curveId);

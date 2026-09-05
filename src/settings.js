@@ -1,4 +1,4 @@
-import { formatFormula, getCurveAnimationSettings, getCurveProfile } from './curves.js';
+import { formatFormula, getCurveAnimationSettings, getCurveParameterSettings, getCurveProfile } from './curves.js';
 import { DEFAULT_APP_SETTINGS, formatSetupError } from './app.js';
 import { createSettingsBridge } from './settings-bridge.js';
 import { createSettingsStore } from './settings-store.js';
@@ -97,6 +97,7 @@ const SETTINGS_VIEWS = {
     template: 'appearance',
     labelKey: 'settings.appearance',
     bind: () => {
+      renderCurveParameters();
       bindSettingsFields(settingsPanelHost);
       curvePicker = createCurvePicker({ root: settingsPanelHost, store: settingsStore, selection: curveSelection, isReady: () => initialSettingsReady });
     },
@@ -157,12 +158,18 @@ const settingsStore = createSettingsStore({
     if (result.ok) {
       settingsStore.setUi({ curveApplyError: false });
       for (const key of localSettingEdits) {
-        if (Object.is(settingsStore.getSettings()[key], settings[key])) localSettingEdits.delete(key);
+        const current = settingsStore.getSettings()[key];
+        const saved = settings[key];
+        const same = key === 'curve_parameters'
+          ? Object.keys(current).length === Object.keys(saved).length && Object.keys(current).every((name) => Object.is(current[name], saved[name]))
+          : Object.is(current, saved);
+        if (same) localSettingEdits.delete(key);
       }
       clearSetupError();
       setSaveStatus('saved');
       renderFormula();
     } else {
+      if (localSettingEdits.has('curve_parameters')) settingsStore.setUi({ curveApplyError: true });
       setSaveStatus('error');
     }
     return result;
@@ -175,6 +182,7 @@ const curveSelection = createCurveSelection({
     readSettings();
     settingsStore.patchSetting('curve_id', id);
     localSettingEdits.add('curve_id');
+    restoreCurveParameters();
     syncControlsFromSettings();
     restoreCurveAnimation();
     curvePicker?.render();
@@ -213,6 +221,7 @@ function control(key) {
 }
 
 function settingKey(field) {
+  if (field.dataset?.curveParameter) return 'curve_parameters';
   return field.dataset?.colorHex
     ? STATE_COLOR_KEYS[field.dataset.colorHex]
     : field.name || field.id.replaceAll('-', '_');
@@ -221,6 +230,17 @@ function settingKey(field) {
 function updateSettingsModel(field, local = false) {
   const key = settingKey(field);
   if (!key || !Object.hasOwn(settingsStore.getSettings(), key)) return;
+  if (field.dataset.curveParameter) {
+    // Mounting and unrelated saves must not round parameters through the range element.
+    if (!local) return;
+    const settings = settingsStore.getSettings();
+    settingsStore.patchSetting('curve_parameters', getCurveParameterSettings(settings.curve_id, {
+      ...settings.curve_parameters,
+      [field.dataset.curveParameter]: Number(field.value),
+    }));
+    localSettingEdits.add('curve_parameters');
+    return;
+  }
   // Only user input may round legacy or preset durations to whole seconds.
   if (!local && field.dataset.unit === 'seconds') return;
   settingsStore.patchSetting(key, field.type === 'checkbox'
@@ -262,6 +282,12 @@ function renderRangeValue(field) {
   const output = document.getElementById(`${field.id}-value`);
   if (!output) return;
   const key = settingKey(field);
+  if (field.dataset.curveParameter) {
+    const precision = (String(field.step).split('.')[1] ?? '').length;
+    output.textContent = Number(field.value).toFixed(precision);
+    field.setAttribute('aria-valuetext', output.textContent);
+    return;
+  }
   const seconds = field.dataset.unit === 'seconds';
   output.textContent = formatRangeValue(key, seconds ? settingsStore.getSettings()[key] : Number(field.value));
   if (seconds) field.setAttribute('aria-valuetext', output.textContent);
@@ -282,13 +308,59 @@ function syncControlsFromSettings(excluded) {
     ...(settingsPanelHost?.querySelectorAll?.('input, select') ?? []),
   ];
   for (const field of fields) {
-    if (!field || field === excluded || field.dataset.colorHex) continue;
+    if (!field || field === excluded || field.dataset.colorHex || field.dataset.curveParameter) continue;
     const value = settings[settingKey(field)];
     if (value === undefined) continue;
     if (field.type === 'checkbox') field.checked = Boolean(value);
     else field.value = String(field.dataset.unit === 'seconds' ? value / 1000 : value);
   }
   syncColorField(selectedColorState, settings[STATE_COLOR_KEYS[selectedColorState]]);
+}
+
+function renderCurveParameters() {
+  const host = document.getElementById('curve-parameters');
+  if (!host) return;
+  const settings = settingsStore.getSettings();
+  const profile = getCurveProfile(settings.curve_id);
+  if (host.dataset.curveId !== profile.id) {
+    host.replaceChildren(...profile.controls.map(({ key, min, max, step }) => {
+      const row = document.createElement('div');
+      row.className = 'range-field';
+      const heading = document.createElement('div');
+      heading.className = 'field-label-row';
+      const label = document.createElement('label');
+      const field = document.createElement('input');
+      field.id = `curve-parameter-${key}`;
+      field.type = 'range';
+      field.dataset.curveParameter = key;
+      field.min = String(min);
+      field.max = String(max);
+      field.step = String(step);
+      label.htmlFor = field.id;
+      const output = document.createElement('output');
+      output.id = `${field.id}-value`;
+      output.setAttribute('for', field.id);
+      heading.append(label, output);
+      row.append(heading, field);
+      return row;
+    }));
+    host.dataset.curveId = profile.id;
+  }
+  const parameters = getCurveParameterSettings(profile.id, settings.curve_parameters);
+  for (const definition of profile.controls) {
+    const field = document.getElementById(`curve-parameter-${definition.key}`);
+    field.previousElementSibling.querySelector('label').textContent = settings.language === 'zh-CN' ? definition.labelZh : definition.labelEn;
+    field.value = String(parameters[definition.key]);
+    renderRangeValue(field);
+  }
+}
+
+function restoreCurveParameters() {
+  settingsStore.patchSetting('curve_parameters', getCurveParameterSettings(settingsStore.getSettings().curve_id));
+  localSettingEdits.add('curve_parameters');
+  renderCurveParameters();
+  renderFormula();
+  curvePicker?.render();
 }
 
 function syncColorField(state, value) {
@@ -576,6 +648,7 @@ function renderLanguage(language = settingsStore.getSettings().language) {
   renderDiagnostics();
   setSaveStatus(settingsStore.getUiState().saveStatus);
   renderColorPresets();
+  renderCurveParameters();
   curvePicker?.render();
 }
 
@@ -593,6 +666,18 @@ function applySettings(settings, { preserveLocalEdits = false } = {}) {
   }
   if (preserveLocalEdits || localSettingEdits.size > 0) {
     for (const key of localSettingEdits) delete incoming[key];
+  }
+  if (incoming.curve_id && incoming.curve_id !== settingsStore.getSettings().curve_id) {
+    if (localSettingEdits.has('curve_parameters')) delete incoming.curve_id;
+    else if (!Object.hasOwn(incoming, 'curve_parameters')) incoming.curve_parameters = {};
+  }
+  if (Object.hasOwn(incoming, 'curve_parameters')) {
+    const current = settingsStore.getSettings();
+    const sameCurve = !incoming.curve_id || incoming.curve_id === current.curve_id;
+    incoming.curve_parameters = getCurveParameterSettings(incoming.curve_id ?? current.curve_id, {
+      ...(sameCurve ? current.curve_parameters : {}),
+      ...incoming.curve_parameters,
+    });
   }
   const nextSettings = settingsStore.mergeSettings(incoming);
   const { selectedColorState } = settingsStore.getUiState();
@@ -617,13 +702,10 @@ async function loadSettings() {
     curvePicker?.render();
     return settings;
   });
-  try {
-    if (pendingInitialSave) {
-      pendingInitialSave = false;
-      await settingsStore.saveLatest();
-    }
-  } finally {
-    localSettingEdits.clear();
+  if (pendingInitialSave) {
+    pendingInitialSave = false;
+    // Only a successful persist may release the local edits protected during loading.
+    await settingsStore.saveLatest();
   }
   await refreshDiagnostics();
   return result;
@@ -691,12 +773,27 @@ function bindSettingsFields(root) {
     restoreCurveAnimation();
     void saveCurrentSettings();
   });
+  root.querySelector?.('#reset-curve-parameters')?.addEventListener('click', () => {
+    restoreCurveParameters();
+    void saveCurrentSettings();
+  });
+  root.querySelector?.('#curve-parameters')?.addEventListener('input', ({ target: field }) => {
+    if (!field.dataset?.curveParameter) return;
+    updateSettingsModel(field, true);
+    renderRangeValue(field);
+    renderFormula();
+    curvePicker?.render();
+    void saveCurrentSettings();
+  });
   for (const field of root.querySelectorAll('input, select')) {
-    if (field.dataset.colorInput || field.dataset.colorHex) continue;
+    if (field.dataset.colorInput || field.dataset.colorHex || field.dataset.curveParameter) continue;
     const event = field.type === 'number' || field.type === 'range' ? 'input' : 'change';
     field.addEventListener(event, () => {
       updateSettingsModel(field, true);
-      if (field.id === 'curve-id') restoreCurveAnimation();
+      if (field.id === 'curve-id') {
+        restoreCurveParameters();
+        restoreCurveAnimation();
+      }
       renderRangeValue(field);
       if (field.id === 'language') renderLanguage(field.value);
       void saveCurrentSettings();

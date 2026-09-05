@@ -121,8 +121,8 @@ for (const profile of curveProfiles) {
   assert(formatFormula(profile, profile.defaults).trim().length > 0);
 }
 
+assert.deepEqual(curveProfiles.map((profile) => profile.controls.length), [4, 4, 4, 4, 6, 5, 5, 5, 5, 2, 4, 5, 5, 5, 5, 5, 3, 3, 5, 5]);
 for (const profile of curveProfiles) {
-  assert.equal(profile.controls.length, 0, `${profile.id} must keep geometry parameters internal`);
   assert(profile.animation?.particleCount >= 24);
   assert(profile.animation?.durationMs >= 2400);
 }

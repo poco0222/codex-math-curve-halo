@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::OnceLock,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -34,6 +37,42 @@ const DEFAULT_INPUT_NEEDED_COLOR: &str = "#F05252";
 const DEFAULT_COMPLETED_COLOR: &str = "#35C878";
 const DEFAULT_INTERRUPTED_COLOR: &str = "#FEBA07";
 const DEFAULT_COMPACTING_COLOR: &str = "#A56BFF";
+
+#[derive(Deserialize)]
+struct CurveControlCatalog {
+    controls: BTreeMap<String, CurveControl>,
+    profiles: BTreeMap<String, Vec<String>>,
+}
+
+#[derive(Deserialize)]
+struct CurveControl {
+    min: f64,
+    max: f64,
+    step: f64,
+}
+
+fn curve_control_catalog() -> &'static CurveControlCatalog {
+    static CATALOG: OnceLock<CurveControlCatalog> = OnceLock::new();
+    CATALOG.get_or_init(|| {
+        // A plain ES module shares JSON data without requiring WebKit JSON-module support.
+        let source = include_str!("../../src/curve-controls.js")
+            .trim()
+            .strip_prefix("export default ")
+            .and_then(|value| value.strip_suffix(';'))
+            .expect("curve controls must wrap a JSON object in a default export");
+        let catalog: CurveControlCatalog = serde_json::from_str(source)
+            .expect("embedded curve controls must match their schema");
+        assert!(
+            catalog
+                .profiles
+                .values()
+                .flatten()
+                .all(|key| catalog.controls.contains_key(key)),
+            "embedded curve control profiles must reference defined controls"
+        );
+        catalog
+    })
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -186,6 +225,7 @@ pub struct AppSettings {
     pub offset_y: i32,
     pub overlay_position: Option<OverlayPosition>,
     pub curve_id: String,
+    pub curve_parameters: BTreeMap<String, f64>,
     pub particle_count: i32,
     pub trail_span: f32,
     pub duration_ms: f32,
@@ -206,6 +246,13 @@ pub struct AppSettings {
 
 impl AppSettings {
     pub fn normalize(mut self) -> Result<Self, String> {
+        if !self
+            .curve_parameters
+            .values()
+            .all(|value| value.is_finite())
+        {
+            return Err("settings contain non-finite curve parameter values".to_owned());
+        }
         if self
             .overlay_position
             .is_some_and(|position| !position.x.is_finite() || !position.y.is_finite())
@@ -236,6 +283,27 @@ impl AppSettings {
         ];
         if !CURVE_IDS.contains(&self.curve_id.as_str()) {
             self.curve_id = "original-thinking".to_owned();
+            self.curve_parameters.clear();
+        } else {
+            let catalog = curve_control_catalog();
+            let allowed = catalog
+                .profiles
+                .get(&self.curve_id)
+                .expect("embedded curve controls must define every built-in curve");
+            self.curve_parameters.retain(|key, value| {
+                if !allowed.contains(key) {
+                    return false;
+                }
+                let control = catalog
+                    .controls
+                    .get(key)
+                    .expect("embedded curve profile must reference a defined control");
+                *value = value.clamp(control.min, control.max);
+                if control.step == 1.0 {
+                    *value = value.round();
+                }
+                true
+            });
         }
         if self.language != "en" && self.language != "zh-CN" {
             self.language = "en".to_owned();
@@ -334,6 +402,7 @@ impl Default for AppSettings {
             offset_y: 140,
             overlay_position: None,
             curve_id: "original-thinking".to_owned(),
+            curve_parameters: BTreeMap::new(),
             particle_count: 64,
             trail_span: 0.38,
             duration_ms: 5_000.0,
@@ -485,6 +554,7 @@ mod tests {
         for curve_id in ["rose-seven", "fourier-flow", "unknown", ""] {
             let settings = AppSettings {
                 curve_id: curve_id.to_owned(),
+                curve_parameters: BTreeMap::from([("baseRadius".to_owned(), 8.0)]),
                 opacity: 0.65,
                 offset_x: 99,
                 language: "zh-CN".to_owned(),
@@ -492,6 +562,7 @@ mod tests {
             };
             let mut expected = settings.clone();
             expected.curve_id = "original-thinking".to_owned();
+            expected.curve_parameters.clear();
             let normalized = settings.normalize().unwrap();
             assert_eq!(normalized, expected);
             let saved = serde_json::to_vec(&normalized).unwrap();
@@ -531,6 +602,297 @@ mod tests {
             let saved = serde_json::to_vec(&settings.normalize().unwrap()).unwrap();
             let restored: AppSettings = serde_json::from_slice(&saved).unwrap();
             assert_eq!(restored.normalize().unwrap().curve_id, curve_id);
+        }
+    }
+
+    #[test]
+    fn serializes_and_normalizes_current_curve_parameters() {
+        let settings: AppSettings = serde_json::from_str(
+            r##"{"curve_id":"original-thinking","curve_parameters":{"baseRadius":99,"petalCount":6.6,"roseK":4},"opacity":0.65,"offset_x":99,"idle_color":"#abcdef"}"##,
+        )
+        .unwrap();
+
+        let normalized = settings.normalize().unwrap();
+        assert_eq!(normalized.opacity, 0.65);
+        assert_eq!(normalized.offset_x, 99);
+        assert_eq!(normalized.idle_color, "#ABCDEF");
+        let restored: AppSettings =
+            serde_json::from_slice(&serde_json::to_vec(&normalized).unwrap()).unwrap();
+        assert_eq!(restored.normalize().unwrap(), normalized);
+
+        let value = serde_json::to_value(normalized).unwrap();
+        assert_eq!(value["curve_parameters"]["baseRadius"], 10.0);
+        assert_eq!(value["curve_parameters"]["petalCount"], 7.0);
+        assert!(value["curve_parameters"].get("roseK").is_none());
+    }
+
+    #[test]
+    fn missing_curve_parameters_uses_an_empty_map() {
+        let settings: AppSettings = serde_json::from_str("{}").unwrap();
+
+        assert!(settings.curve_parameters.is_empty());
+        assert_eq!(
+            serde_json::to_value(settings).unwrap()["curve_parameters"],
+            serde_json::json!({})
+        );
+    }
+
+    #[test]
+    fn normalizes_all_profile_whitelists_and_control_bounds() {
+        let profiles: [(&str, &[&str]); 20] = [
+            (
+                "original-thinking",
+                &["baseRadius", "detailAmplitude", "petalCount", "curveScale"],
+            ),
+            (
+                "thinking-five",
+                &["baseRadius", "detailAmplitude", "petalCount", "curveScale"],
+            ),
+            (
+                "thinking-nine",
+                &["baseRadius", "detailAmplitude", "petalCount", "curveScale"],
+            ),
+            (
+                "rose-orbit",
+                &["orbitRadius", "detailAmplitude", "petalCount", "curveScale"],
+            ),
+            (
+                "rose-curve",
+                &[
+                    "roseA",
+                    "roseABoost",
+                    "roseBreathBase",
+                    "roseBreathBoost",
+                    "roseK",
+                    "roseScale",
+                ],
+            ),
+            (
+                "rose-two",
+                &[
+                    "roseA",
+                    "roseABoost",
+                    "roseBreathBase",
+                    "roseBreathBoost",
+                    "roseScale",
+                ],
+            ),
+            (
+                "rose-three",
+                &[
+                    "roseA",
+                    "roseABoost",
+                    "roseBreathBase",
+                    "roseBreathBoost",
+                    "roseScale",
+                ],
+            ),
+            (
+                "rose-four",
+                &[
+                    "roseA",
+                    "roseABoost",
+                    "roseBreathBase",
+                    "roseBreathBoost",
+                    "roseScale",
+                ],
+            ),
+            (
+                "lissajous-drift",
+                &[
+                    "lissajousAmp",
+                    "lissajousAmpBoost",
+                    "lissajousAX",
+                    "lissajousBY",
+                    "lissajousYScale",
+                ],
+            ),
+            ("lemniscate-bloom", &["lemniscateA", "lemniscateBoost"]),
+            (
+                "hypotrochoid-loop",
+                &["spiroR", "spiror", "spirod", "spiroScale"],
+            ),
+            (
+                "three-petal-spiral",
+                &[
+                    "spiralR",
+                    "spiralr",
+                    "spirald",
+                    "spiralScale",
+                    "spiralBreath",
+                ],
+            ),
+            (
+                "four-petal-spiral",
+                &[
+                    "spiralR",
+                    "spiralr",
+                    "spirald",
+                    "spiralScale",
+                    "spiralBreath",
+                ],
+            ),
+            (
+                "five-petal-spiral",
+                &[
+                    "spiralR",
+                    "spiralr",
+                    "spirald",
+                    "spiralScale",
+                    "spiralBreath",
+                ],
+            ),
+            (
+                "six-petal-spiral",
+                &[
+                    "spiralR",
+                    "spiralr",
+                    "spirald",
+                    "spiralScale",
+                    "spiralBreath",
+                ],
+            ),
+            (
+                "butterfly-phase",
+                &[
+                    "butterflyTurns",
+                    "butterflyScale",
+                    "butterflyPulse",
+                    "butterflyCosWeight",
+                    "butterflyPower",
+                ],
+            ),
+            (
+                "cardioid-glow",
+                &["cardioidA", "cardioidPulse", "cardioidScale"],
+            ),
+            (
+                "cardioid-heart",
+                &["cardioidA", "cardioidPulse", "cardioidScale"],
+            ),
+            (
+                "heart-wave",
+                &[
+                    "heartWaveB",
+                    "heartWaveRoot",
+                    "heartWaveAmp",
+                    "heartWaveScaleX",
+                    "heartWaveScaleY",
+                ],
+            ),
+            (
+                "spiral-search",
+                &[
+                    "searchTurns",
+                    "searchBaseRadius",
+                    "searchRadiusAmp",
+                    "searchPulse",
+                    "searchScale",
+                ],
+            ),
+        ];
+        let catalog = curve_control_catalog();
+        assert_eq!(catalog.controls.len(), 45);
+        assert_eq!(catalog.profiles.len(), profiles.len());
+        assert_eq!(
+            profiles.iter().map(|(_, keys)| keys.len()).sum::<usize>(),
+            89
+        );
+
+        for (curve_id, expected_keys) in profiles {
+            assert_eq!(
+                catalog.profiles[curve_id].as_slice(),
+                expected_keys,
+                "{curve_id}"
+            );
+
+            for use_max in [false, true] {
+                let mut curve_parameters = catalog
+                    .controls
+                    .iter()
+                    .map(|(key, control)| {
+                        (
+                            key.clone(),
+                            if use_max {
+                                control.max + 100.0
+                            } else {
+                                control.min - 100.0
+                            },
+                        )
+                    })
+                    .collect::<BTreeMap<_, _>>();
+                curve_parameters.insert("lissajousPhase".to_owned(), 1.57);
+                curve_parameters.insert("spirorBoost".to_owned(), 0.45);
+                curve_parameters.insert("spirodBoost".to_owned(), 1.2);
+                let normalized = AppSettings {
+                    curve_id: curve_id.to_owned(),
+                    curve_parameters,
+                    ..AppSettings::default()
+                }
+                .normalize()
+                .unwrap();
+
+                assert_eq!(
+                    normalized.curve_parameters.len(),
+                    expected_keys.len(),
+                    "{curve_id}"
+                );
+                for key in expected_keys {
+                    let control = &catalog.controls[*key];
+                    assert_eq!(
+                        normalized.curve_parameters[*key],
+                        if use_max { control.max } else { control.min },
+                        "{curve_id}/{key}"
+                    );
+                }
+            }
+
+            let integer_inputs = expected_keys
+                .iter()
+                .filter_map(|key| {
+                    let control = &catalog.controls[*key];
+                    (control.step == 1.0).then(|| ((*key).to_owned(), control.min + 0.6))
+                })
+                .collect::<BTreeMap<_, _>>();
+            let expected_integers = integer_inputs
+                .iter()
+                .map(|(key, value)| (key.clone(), value.round()))
+                .collect::<BTreeMap<_, _>>();
+            let normalized = AppSettings {
+                curve_id: curve_id.to_owned(),
+                curve_parameters: integer_inputs,
+                ..AppSettings::default()
+            }
+            .normalize()
+            .unwrap();
+            assert_eq!(normalized.curve_parameters, expected_integers, "{curve_id}");
+        }
+    }
+
+    #[test]
+    fn rejects_non_numeric_curve_parameters() {
+        for raw in [
+            r#"{"curve_parameters":{"baseRadius":"7"}}"#,
+            r#"{"curve_parameters":{"baseRadius":true}}"#,
+            r#"{"curve_parameters":{"baseRadius":null}}"#,
+        ] {
+            assert!(serde_json::from_str::<AppSettings>(raw).is_err(), "{raw}");
+        }
+    }
+
+    #[test]
+    fn rejects_non_finite_curve_parameters_before_filtering_unknown_keys() {
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let settings = AppSettings {
+                curve_id: "rose-two".to_owned(),
+                curve_parameters: BTreeMap::from([("baseRadius".to_owned(), value)]),
+                ..AppSettings::default()
+            };
+
+            assert_eq!(
+                settings.normalize().unwrap_err(),
+                "settings contain non-finite curve parameter values"
+            );
         }
     }
 
@@ -718,6 +1080,7 @@ mod tests {
                 offset_y: 456,
                 overlay_position: None,
                 curve_id: curve_id.to_owned(),
+                curve_parameters: BTreeMap::new(),
                 particle_count: 80,
                 trail_span: 0.4,
                 duration_ms: 500.0,
@@ -848,6 +1211,7 @@ mod tests {
             "offset_y",
             "overlay_position",
             "curve_id",
+            "curve_parameters",
             "particle_count",
             "trail_span",
             "duration_ms",
@@ -862,6 +1226,7 @@ mod tests {
             "interrupted_color",
             "compacting_color",
             "start_at_login",
+            "follow_codex_lifecycle",
             "language",
         ] {
             assert!(value.get(key).is_some(), "missing {key}");
