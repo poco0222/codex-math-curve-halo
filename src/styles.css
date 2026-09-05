@@ -370,6 +370,191 @@ summary:focus-visible {
   min-width: 0;
 }
 
+.curve-picker-entry {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+}
+
+#curve-picker-current {
+  display: block;
+  width: 48px;
+  height: 48px;
+}
+
+#curve-picker-name {
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+#curve-picker-open {
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.curve-picker-dialog {
+  width: min(920px, calc(100vw - 48px));
+  max-width: none;
+  max-height: calc(100dvh - 48px);
+  padding: 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--panel);
+  color: #eef1f5;
+  scrollbar-color: var(--line-strong) var(--panel);
+}
+
+.curve-picker-dialog::backdrop {
+  background: rgb(7 9 12 / 76%);
+}
+
+.curve-picker-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  background: var(--panel);
+}
+
+.curve-picker-header h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.35;
+  font-weight: 650;
+}
+
+#curve-picker-close,
+#curve-picker-retry {
+  flex: none;
+  white-space: nowrap;
+}
+
+.curve-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.curve-picker-item {
+  display: grid;
+  grid-template-rows: 96px 36px 16px;
+  align-items: center;
+  justify-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 6px;
+  border-color: transparent;
+  background: transparent;
+  text-align: center;
+}
+
+.curve-picker-item:hover {
+  border-color: var(--line-strong);
+  background: var(--field);
+}
+
+.curve-picker-item[aria-pressed="true"] {
+  border-color: var(--accent);
+}
+
+.curve-picker-item:focus-visible {
+  outline-color: #eef1f5;
+}
+
+.curve-picker-item[aria-disabled="true"] {
+  cursor: wait;
+}
+
+.curve-picker-picture {
+  position: relative;
+  display: block;
+  width: 96px;
+  height: 96px;
+}
+
+.curve-picker-thumbnail,
+#curve-picker-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+#curve-picker-preview {
+  position: absolute;
+  inset: 0;
+}
+
+.is-previewing .curve-picker-thumbnail {
+  visibility: hidden;
+}
+
+.curve-picker-label {
+  width: 100%;
+  color: #eef1f5;
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.curve-picker-current-label {
+  color: var(--accent);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.curve-picker-feedback {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#curve-picker-status {
+  margin: 12px 0 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+#curve-picker-status:empty {
+  margin: 0;
+}
+
+#curve-picker-status[data-status="error"] {
+  color: #ff9d9d;
+}
+
+@media (max-width: 760px) {
+  .curve-picker-dialog {
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+    padding: 14px;
+  }
+
+  .curve-picker-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  .curve-picker-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .field-label-row,
 .section-heading-row,
 .subsection-heading {

@@ -56,8 +56,13 @@
           <fieldset id="display-section" class="settings-panel settings-panel-display" data-section="display">
             <legend data-i18n="settings.display">Display</legend>
             <div class="field-stack">
-              <label for="curve-id" data-i18n="settings.curveProfile">Curve profile</label>
-              <select id="curve-id" name="curve_id">
+              <label for="curve-picker-open" data-i18n="settings.curveProfile">Curve profile</label>
+              <div class="curve-picker-entry">
+                <canvas id="curve-picker-current" width="160" height="160" aria-hidden="true"></canvas>
+                <strong id="curve-picker-name">Original Thinking</strong>
+                <button id="curve-picker-open" type="button" aria-haspopup="dialog" aria-controls="curve-picker-dialog" data-i18n="settings.changeCurve">Change</button>
+              </div>
+              <select id="curve-id" name="curve_id" hidden aria-hidden="true" tabindex="-1">
                 <option value="original-thinking" data-i18n="settings.curves.originalThinking">Original Thinking</option>
                 <option value="thinking-five" data-i18n="settings.curves.thinkingFive">Thinking Five</option>
                 <option value="thinking-nine" data-i18n="settings.curves.thinkingNine">Thinking Nine</option>
@@ -155,6 +160,17 @@
             </div>
             <output id="formula" class="formula" aria-label="Active formula" data-i18n-aria-label="settings.activeFormula"></output>
           </fieldset>
+          <dialog id="curve-picker-dialog" class="curve-picker-dialog" aria-labelledby="curve-picker-title">
+            <div class="curve-picker-header">
+              <h2 id="curve-picker-title" data-i18n="settings.chooseCurve">Choose a curve</h2>
+              <button id="curve-picker-close" type="button" data-i18n="settings.closeCurvePicker">Close</button>
+            </div>
+            <div id="curve-picker-grid" class="curve-picker-grid"></div>
+            <div class="curve-picker-feedback">
+              <p id="curve-picker-status" role="status" aria-live="polite"></p>
+              <button id="curve-picker-retry" type="button" hidden data-i18n="settings.retryCurveSave">Retry</button>
+            </div>
+          </dialog>
         </template>
 
         <template data-view-template="colors">

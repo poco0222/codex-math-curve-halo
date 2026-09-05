@@ -2,6 +2,7 @@ import { formatFormula, getCurveAnimationSettings, getCurveProfile } from './cur
 import { DEFAULT_APP_SETTINGS, formatSetupError } from './app.js';
 import { createSettingsBridge } from './settings-bridge.js';
 import { createSettingsStore } from './settings-store.js';
+import { createCurvePicker, createCurveSelection } from './curve-picker.js';
 import {
   COLOR_PRESET_GROUPS,
   isHexColor,
@@ -95,7 +96,10 @@ const SETTINGS_VIEWS = {
   appearance: {
     template: 'appearance',
     labelKey: 'settings.appearance',
-    bind: () => bindSettingsFields(settingsPanelHost),
+    bind: () => {
+      bindSettingsFields(settingsPanelHost);
+      curvePicker = createCurvePicker({ root: settingsPanelHost, store: settingsStore, selection: curveSelection, isReady: () => initialSettingsReady });
+    },
   },
   colors: {
     template: 'colors',
@@ -121,6 +125,7 @@ const SETTINGS_VIEWS = {
   },
 };
 let settingsViewController;
+let curvePicker;
 let initialSettingsReady = false;
 let pendingInitialSave = false;
 let initialSettingsLoadPromise = Promise.resolve();
@@ -143,11 +148,14 @@ const settingsStore = createSettingsStore({
     invalidColorDrafts: {},
     pluginStatus: 'settings.pluginReady',
     pluginOperationInFlight: false,
+    curveApplying: false,
+    curveApplyError: false,
   },
   persist: async (settings) => {
     setSaveStatus('saving');
     const result = await settingsBridge.command('save_settings', { settings });
     if (result.ok) {
+      settingsStore.setUi({ curveApplyError: false });
       for (const key of localSettingEdits) {
         if (Object.is(settingsStore.getSettings()[key], settings[key])) localSettingEdits.delete(key);
       }
@@ -159,6 +167,20 @@ const settingsStore = createSettingsStore({
     }
     return result;
   },
+});
+
+const curveSelection = createCurveSelection({
+  store: settingsStore,
+  changeCurve(id) {
+    readSettings();
+    settingsStore.patchSetting('curve_id', id);
+    localSettingEdits.add('curve_id');
+    syncControlsFromSettings();
+    restoreCurveAnimation();
+    curvePicker?.render();
+  },
+  save: () => saveCurrentSettings({ latest: true }),
+  onChange: () => curvePicker?.render(),
 });
 
 const saveStatusKeys = {
@@ -554,6 +576,7 @@ function renderLanguage(language = settingsStore.getSettings().language) {
   renderDiagnostics();
   setSaveStatus(settingsStore.getUiState().saveStatus);
   renderColorPresets();
+  curvePicker?.render();
 }
 
 function applySettings(settings, { preserveLocalEdits = false } = {}) {
@@ -591,6 +614,7 @@ async function loadSettings() {
     const settings = await invokeCommand('get_settings');
     applySettings(settings.ok ? settings.value : DEFAULT_APP_SETTINGS, { preserveLocalEdits: true });
     initialSettingsReady = true;
+    curvePicker?.render();
     return settings;
   });
   try {
@@ -616,13 +640,13 @@ const pluginOperationSubscription = settingsBridge.subscribe('plugin-operation',
 });
 pluginOperationSubscription?.catch?.(() => {});
 
-function saveCurrentSettings() {
+function saveCurrentSettings({ latest = false } = {}) {
   readSettings();
   if (!initialSettingsReady) {
     pendingInitialSave = true;
     return initialSettingsLoadPromise;
   }
-  return settingsStore.save();
+  return latest ? settingsStore.saveLatest() : settingsStore.save();
 }
 
 async function runPluginAction(command, successStatus) {
@@ -773,7 +797,11 @@ settingsViewController = createSettingsViewController({
   host: settingsPanelHost,
   tabs: viewTabs,
   getTemplate: (view) => document.querySelector?.(`[data-view-template="${view.template}"]`),
-  beforeMount: syncSettingsModelFromControls,
+  beforeMount: () => {
+    syncSettingsModelFromControls();
+    curvePicker?.destroy();
+    curvePicker = null;
+  },
   afterMount: (viewId) => {
     settingsStore.setUi({ activeView: viewId });
     syncControlsFromSettings();

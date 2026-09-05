@@ -36,7 +36,7 @@ try {
     };
   }, { ...DEFAULT_APP_SETTINGS, duration_ms: 4637, pulse_duration_ms: 4275, rotation_duration_ms: 28041 });
   await page.goto(url + '/settings.html');
-  await page.waitForSelector('#curve-id');
+  await page.waitForSelector('#curve-picker-open');
   assert.equal(await page.locator('#duration-ms').inputValue(), '5');
   assert.equal(await page.locator('#duration-ms-value').textContent(), '4.637 s');
   await page.selectOption('#language', 'zh-CN');
@@ -46,7 +46,9 @@ try {
     return { duration_ms, pulse_duration_ms, rotation_duration_ms };
   });
   assert.deepEqual(legacyDurations, { duration_ms: 4637, pulse_duration_ms: 4275, rotation_duration_ms: 28041 }, 'unrelated saves must preserve legacy millisecond precision');
-  await page.selectOption('#curve-id', 'heart-wave');
+  await page.click('#curve-picker-open');
+  await page.click('#curve-picker-grid button[data-curve-id="heart-wave"]');
+  await page.waitForFunction(() => !document.getElementById('curve-picker-dialog').open);
   await page.waitForFunction(() => window.__haloSaves.at(-1)?.curve_id === 'heart-wave');
   const values = () => page.evaluate(() => Object.fromEntries(
     [...document.querySelectorAll('#animation-section input')].map((field) => [field.name, Number(field.value)]),
@@ -76,7 +78,7 @@ try {
   const custom = { ...heart, particle_count: 64, duration_ms: 5, pulse_duration_ms: 4, rotation_duration_ms: 18, stroke_width: 5.5 };
   assert.deepEqual(await values(), custom, 'remount must retain overrides');
   await page.reload();
-  await page.waitForSelector('#curve-id');
+  await page.waitForSelector('#curve-picker-open');
   assert.deepEqual(await values(), custom, 'reload must retain overrides');
   await page.click('#reset-animation');
   await page.waitForFunction(() => window.__haloSaves.at(-1)?.particle_count === 104);

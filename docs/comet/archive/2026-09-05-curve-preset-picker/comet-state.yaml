@@ -1,0 +1,350 @@
+schema: comet.native.v4
+name: curve-preset-picker
+language: zh-CN
+phase: archive
+status: done
+state_version: 7
+brief: brief.md
+spec_changes:
+  - capability: curve-preset-picker
+    operation: create
+    source: specs/curve-preset-picker/spec.md
+workspace:
+  isolation: current
+  change_branch: main
+  target_branch: main
+  finish: null
+loop:
+  stage: done
+  goal_cycle: 1
+  iteration: 1
+  attempt: 1
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: null
+acceptance:
+  - id: A1
+    source: specs/curve-preset-picker/spec.md
+    text: Open the visual catalog - **WHEN** 用户打开外观页并激活“更换” - **THEN** 弹层显示现有的全部 20
+      项真实轮廓和完整本地化名称，无新增或遗漏 - **AND** 初始焦点落在当前项，当前项位于可见区域且明确标记 - **AND** 标准
+      `1130x890` 窗口中图库为 5 列、4 行，开关弹层不改变背景参数区布局
+    result: passed
+    reason:
+      text: settings.html 接入原生 modal dialog；picker-browser 确认 20 项真实缩略图均非空。1130x890
+        截图显示 5 列 4 行，当前项有橙色边框与 Current 标记，初始焦点定位当前项。
+      truncated: false
+  - id: A2
+    source: specs/curve-preset-picker/spec.md
+    text: Browse without changing settings - **WHEN** 用户悬停、聚焦或通过方向键浏览多个曲线 - **THEN**
+      同时运行的局部动画至多一个，曲线轮廓与所示名称匹配 - **AND** 已保存曲线、六项动画值、其他设置和实际桌面悬浮层均不因浏览而改变
+    result: passed
+    reason:
+      text: src/curve-picker.js 的 preview() 先 stopPreview()，只创建单一
+        renderer；previewSettings 为本地副本，未调用 IPC。picker-browser
+        验证浏览期间保存次数与持久设置不变。真实桌面 Overlay 未运行，不能据此宣称原生 Overlay 不变。
+      truncated: false
+  - id: A3
+    source: specs/curve-preset-picker/spec.md
+    text: Apply a different preset - **WHEN** 用户激活与当前曲线不同的预设 - **THEN** 该曲线 ID
+      与六项现有默认动画值一次提交给现有保存路径 - **AND** 颜色、透明度、位置、语言及集成设置保持原值 - **AND**
+      保存成功后入口、参数和公式显示新曲线，桌面悬浮层通过既有设置事件更新，弹层关闭并恢复焦点
+    result: passed
+    reason:
+      text: "createCurveSelection.persist() 调用 changeCurve() 后经 saveCurrentSettings({
+        latest: true }) 进入既有保存队列；changeCurve() 使用 getCurveAnimationSettings()
+        恢复六项默认动画值。picker-browser 与完整 Node 测试通过应用、保存、关闭和同步检查。"
+      truncated: false
+  - id: A4
+    source: specs/curve-preset-picker/spec.md
+    text: Keep custom values when selecting the current preset - **WHEN**
+      当前曲线已自定义动画参数，且用户再次激活该曲线 - **THEN** 弹层关闭并恢复焦点，全部自定义值保持原样 - **AND**
+      不执行动画重置或多余保存
+    result: passed
+    reason:
+      text: createCurveSelection.apply() 对当前 curve_id 且无错误状态直接返回 unchanged，不调用
+        persist；Node 测试通过同项保留自定义值且无额外保存。
+      truncated: false
+  - id: A5
+    source: specs/curve-preset-picker/spec.md
+    text: Retry a failed application - **WHEN** 新预设应用的保存失败 - **THEN**
+      弹层保持打开，显示本地化失败信息和重试操作，全局保存状态为 error - **AND** 不显示成功，不把局部预览当作已保存结果 -
+      **WHEN** 用户重试 - **THEN** 使用现有保存路径提交当前待保存值，不重复恢复默认值；成功后关闭，失败后仍可重试 - **AND**
+      失败后关闭弹层不执行回滚或额外保存，现有全局错误状态继续表达未保存结果
+    result: passed
+    reason:
+      text: 保存失败时 persist() 设置 curveApplyError，picker 保持 dialog 打开并显示本地化失败状态；retry()
+        复用当前待保存值，不再次 changeCurve。Node 与 picker-browser 通过失败重试、异常保存和全局 error
+        状态检查。
+      truncated: false
+  - id: A6
+    source: specs/curve-preset-picker/spec.md
+    text: Dismiss an unused preview - **WHEN** 用户打开并浏览图库后通过关闭按钮、Esc 或遮罩退出，期间没有应用操作 -
+      **THEN** 当前曲线和所有参数保持不变，没有保存请求，焦点返回有效入口
+    result: passed
+    reason:
+      text: 关闭按钮、dialog cancel/Esc 和遮罩点击均调用 close()；close() 停止预览、移除监听、关闭 dialog
+        并恢复焦点。picker-browser 通过预览不保存及关闭行为检查。
+      truncated: false
+  - id: A7
+    source: specs/curve-preset-picker/spec.md
+    text: Remount and synchronize the picker - **WHEN** 用户切换设置页后回到外观页，或收到完整或部分
+      `settings-changed` 事件 - **THEN** 入口与选中标记从共享设置重新呈现，未挂载字段与自定义参数不丢失 - **AND**
+      已关闭或卸载的图库没有残留动画循环
+    result: passed
+    reason:
+      text: settings.js 的 beforeMount() 销毁旧 curvePicker，appearance bind 重新创建；共享
+        settingsStore 保留未挂载字段。settings-tabs、Node remount/sync 和
+        animation-browser remount/reload 检查通过，destroy() 清理 renderer 与监听。
+      truncated: false
+  - id: A8
+    source: specs/curve-preset-picker/spec.md
+    text: Choose a curve using the keyboard - **WHEN** 用户只使用键盘打开、浏览、应用或关闭图库 -
+      **THEN** 所有操作均可完成，焦点不会落入背景控件，聚焦与当前使用状态可区分 - **AND** 方向键不发起保存，Enter 或 Space
+      明确应用，关闭后焦点恢复
+    result: passed
+    reason:
+      text: curve-picker.js 实现网格方向键、Home/End、Tab 循环、Enter/Space 原生 button 激活及 Esc
+        关闭；picker-browser 通过键盘导航、方向键不保存和焦点恢复检查。
+      truncated: false
+  - id: A9
+    source: specs/curve-preset-picker/spec.md
+    text: Use localized and narrow layouts - **WHEN** 使用 `en` 或 `zh-CN`，窗口从
+      `1130x890` 缩小到 `390x844` - **THEN** 网格减少列数，完整名称可换行且不遮挡缩略图或相邻项 - **AND**
+      页面没有横向溢出，弹层内容必要时内部纵向滚动，全部 20 项和关闭操作始终可达
+    result: passed
+    reason:
+      text: styles.css 桌面使用 5 列；媒体查询在 <=760px 使用 3 列、<=480px 使用 2 列，dialog
+        内容支持内部滚动，标签允许换行。en/zh-CN 1130 与 390 截图及 picker-browser 响应式检查通过，无横向溢出，20
+        项可达。
+      truncated: false
+  - id: A10
+    source: specs/curve-preset-picker/spec.md
+    text: Respect reduced motion - **WHEN** 系统请求 `prefers-reduced-motion` - **THEN**
+      所有缩略图和聚焦预览保持静态，选择、焦点及保存反馈正常
+    result: passed
+    reason:
+      text: createCurvePicker() 检查 prefers-reduced-motion；reduced motion 时不启动局部
+        renderer，静态缩略图仍由 drawCurveThumbnail() 绘制。picker-browser 通过
+        reduced-motion、选择、焦点和保存反馈检查。
+      truncated: false
+builder_handoff:
+  candidate_id: 1c4cceca-2d54-4110-a4ce-a489bd63cd93
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:71d1f1a7-a9d0-43be-a80d-a082585cc624
+  iteration: 1
+  summary:
+    text: 实现原生曲线图库、20项真实缩略图、单实例本地动画预览、明确应用和失败重试、同项不重置、键盘焦点、响应式与卸载清理。复用现有曲线、renderer和保存队列。
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A2
+    - A3
+    - A4
+    - A5
+    - A6
+    - A7
+    - A8
+    - A9
+    - A10
+  checks:
+    - name:
+        text: node --test src/app.test.mjs src/curve-picker.test.mjs
+        truncated: false
+      result: passed
+      note:
+        text: 最终局部修复后71项通过；此前完整src/scripts套件80项通过，正式验收重新运行完整套件。
+        truncated: false
+    - name:
+        text: check-curve-picker-browser
+        truncated: false
+      result: passed
+      note:
+        text: 20项非空且不同、单项运动、预览不保存、同项不重置、失败重试、错误同步、隐藏释放、重开竞态、双语桌面窄窗均通过。
+        truncated: false
+    - name:
+        text: check-animation-browser
+        truncated: false
+      result: passed
+      note:
+        text: 既有预设、滑块覆盖、重挂载、重载、重置与20项动态Canvas通过；最大Canvas/SVG平均alpha误差0.000521。
+        truncated: false
+    - name:
+        text: check-renderer
+        truncated: false
+      result: passed
+      note:
+        text: 20 profiles / 80 upstream points通过。
+        truncated: false
+    - name:
+        text: git diff --check
+        truncated: false
+      result: passed
+      note:
+        text: 新增文件也已直接审读。
+        truncated: false
+  checks_truncated: false
+  known_limits:
+    - text: 浏览器使用隔离IPC替身；真实Tauri和Windows运行时未执行，未更改用户安装实例的设置。
+      truncated: false
+    - text: Impeccable检测器缺少HTML解析模块，降级正则后无finding；实际布局、像素、键盘及对比度另有检查，不把降级结果称为完整审计。
+      truncated: false
+  known_limits_truncated: false
+  review:
+    status: passed
+    summary:
+      text: 独立只读复核未发现P1/P2；复验普通保存清错误、同项无多余保存、隐藏监听释放、打开中卸载及pending重挂竞态。
+      truncated: false
+    reviewer_execution_ref: /root/review_picker
+  submitted_at: 2026-09-05T06:34:37.158Z
+blockers: []
+verification:
+  candidate_id: 1c4cceca-2d54-4110-a4ce-a489bd63cd93
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:c054f608-e32a-4863-bde7-81e852ff9184
+  iteration: 1
+  attempt: 1
+  assurance: skill-coordinated
+  verdict: pass
+  checks:
+    - id: node-tests
+      name:
+        text: 完整Node回归
+        truncated: false
+      argv_display:
+        - text: --test
+          truncated: false
+        - text: src/app.test.mjs
+          truncated: false
+        - text: src/curve-picker.test.mjs
+          truncated: false
+        - text: scripts/build-sidecar.test.mjs
+          truncated: false
+        - text: scripts/build-windows-remote.test.mjs
+          truncated: false
+        - text: scripts/plugin-package.test.mjs
+          truncated: false
+        - text: scripts/vscode-launch.test.mjs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 119
+    - id: settings-tabs
+      name:
+        text: 设置结构检查
+        truncated: false
+      argv_display:
+        - text: scripts/check-settings-tabs.mjs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 29
+    - id: renderer
+      name:
+        text: 曲线渲染检查
+        truncated: false
+      argv_display:
+        - text: scripts/check-renderer.mjs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 78
+    - id: picker-browser
+      name:
+        text: 图库浏览器验收
+        truncated: false
+      argv_display:
+        - text: NODE_PATH=/Users/PopoY/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules
+          truncated: false
+        - text: HALO_TEST_URL=http://127.0.0.1:1430
+          truncated: false
+        - text: node
+          truncated: false
+        - text: scripts/check-curve-picker-browser.mjs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 2082
+    - id: animation-browser
+      name:
+        text: 既有动画浏览器回归
+        truncated: false
+      argv_display:
+        - text: NODE_PATH=/Users/PopoY/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules
+          truncated: false
+        - text: HALO_TEST_URL=http://127.0.0.1:1430
+          truncated: false
+        - text: node
+          truncated: false
+        - text: scripts/check-animation-browser.mjs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 1556
+    - id: diff-check
+      name:
+        text: Diff空白检查
+        truncated: false
+      argv_display:
+        - text: diff
+          truncated: false
+        - text: --check
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 13
+  summary:
+    text: 10 个 acceptance scope 全部通过。完整 Node
+      测试、settings-tabs、renderer、picker-browser、animation-browser、diff-check 均
+      exit 0；20 项曲线、保存/重试、生命周期、键盘、本地化响应式和 reduced-motion 均有实现及运行证据。真实
+      Tauri/Windows IPC 与桌面 Overlay 联动保留为未验证局限。
+    truncated: false
+  risks:
+    - text: 真实 Tauri IPC、桌面悬浮层跨窗口联动和 Windows 原生运行时未执行；相关结论来自隔离浏览器 IPC
+        替身与源码检查，不能替代原生验收。
+      truncated: false
+    - text: Impeccable HTML 解析模块缺失，降级检查不等同于完整审计；实际布局、像素、键盘和对比度检查已有独立证据。
+      truncated: false
+  risks_truncated: false
+  completed_at: 2026-09-05T06:40:40.916Z
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: 10 个 acceptance scope 全部通过。完整 Node
+        测试、settings-tabs、renderer、picker-browser、animation-browser、diff-check 均
+        exit 0；20 项曲线、保存/重试、生命周期、键盘、本地化响应式和 reduced-motion 均有实现及运行证据。真实
+        Tauri/Windows IPC 与桌面 Overlay 联动保留为未验证局限。
+      truncated: false
+    completed_at: 2026-09-05T06:40:40.916Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: true
+created_at: 2026-09-05T06:04:47.863Z

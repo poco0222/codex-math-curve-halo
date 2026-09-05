@@ -1171,6 +1171,14 @@ test('every built-in curve has matching English and Chinese labels', async () =>
   }
 });
 
+test('appearance offers an accessible visual curve dialog while retaining the legacy value control', async () => {
+  const html = await readFile(new URL('./settings.html', import.meta.url), 'utf8');
+  assert.match(html, /<button[^>]+id="curve-picker-open"[^>]+aria-haspopup="dialog"/);
+  assert.match(html, /<dialog[^>]+id="curve-picker-dialog"[^>]+aria-labelledby="curve-picker-title"/);
+  assert.match(html, /<select[^>]+id="curve-id"[^>]+hidden/);
+  assert.match(html, /id="curve-picker-retry"/);
+});
+
 test('settings navigation uses a localized Test label', async () => {
   const html = await readFile(new URL('./settings.html', import.meta.url), 'utf8');
   const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
