@@ -40,6 +40,36 @@ macOS 打包时，使用带目标后缀的 helper 并执行打包：
 cargo tauri build --target aarch64-apple-darwin
 ```
 
+## Windows 远程打包
+
+在 Mac 项目目录运行：
+
+```bash
+npm run build:windows
+```
+
+默认连接 `Lenovo@192.168.10.114:22`，上传当前工作区的构建源码，包括未提交修改和
+未被 Git 忽略的新文件。无需先提交或推送，Windows 端不执行 `git pull`。上传范围
+包含前端、Rust、构建脚本和插件资源；不包含 `.git`、编译产物、`.env*` 和本地工具状态。
+
+源码在 Windows 独立临时目录解包，复用
+`D:\BuildWorkspace\codex-math-curve-halo\src-tauri\target` 编译缓存，原仓库源码保留。
+成功后清理临时源码，失败时保留供排查。安装包下载到本地 `dist/windows/`，版本取自
+本地 `src-tauri/tauri.conf.json`。
+
+Windows 需要可用的 SSH、传统 SCP、`tar` 和原有的 Rust、Tauri、MSVC、Node.js、NSIS
+构建环境。脚本使用 `scp -O`；密码登录时，上传、构建、下载可能各提示一次密码。
+同一台设备同时只运行一个构建。
+
+若构建已完成、只需重试下载，可直接取回远端最新成功生成的安装包：
+
+```bash
+scp -O Lenovo@192.168.10.114:D:/BuildWorkspace/codex-halo-windows-setup.exe dist/windows/
+```
+
+可通过 `WIN_BUILD_HOST`、`WIN_BUILD_USER`、`WIN_BUILD_PORT`、`WIN_BUILD_ROOT` 和
+`WIN_BUILD_SSH_KEY` 覆盖连接配置；`WIN_BUILD_ROOT` 指定 Windows 缓存仓库目录。
+
 ## Codex Plugin
 
 先安装并启动一次 Codex Halo 原生应用。在 App 设置窗口或托盘菜单点击
