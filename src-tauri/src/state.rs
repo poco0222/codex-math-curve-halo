@@ -240,7 +240,7 @@ impl AppSettings {
             return Err("settings contain non-finite numeric values".to_owned());
         }
 
-        // Only the complete legacy default tuple opts into upstream curve defaults.
+        // Only the complete legacy default tuple opts into the rounded curve defaults.
         if self.particle_count == 80
             && self.trail_span == 0.4
             && self.duration_ms == 500.0
@@ -256,26 +256,26 @@ impl AppSettings {
                 self.rotation_duration_ms,
                 self.stroke_width,
             ) = match self.curve_id.as_str() {
-                "thinking-five" => (62, 0.38, 4_600.0, 4_200.0, 28_000.0, 5.5),
-                "thinking-nine" => (68, 0.39, 4_700.0, 4_200.0, 30_000.0, 5.5),
-                "rose-orbit" => (72, 0.42, 5_200.0, 4_600.0, 28_000.0, 5.2),
-                "rose-curve" => (78, 0.32, 5_400.0, 4_600.0, 28_000.0, 4.5),
-                "rose-two" => (74, 0.30, 5_200.0, 4_300.0, 28_000.0, 4.6),
-                "rose-three" => (76, 0.31, 5_300.0, 4_400.0, 28_000.0, 4.6),
-                "rose-four" => (78, 0.32, 5_400.0, 4_500.0, 28_000.0, 4.6),
-                "lissajous-drift" => (68, 0.34, 6_000.0, 5_400.0, 36_000.0, 4.7),
-                "lemniscate-bloom" => (70, 0.40, 5_600.0, 5_000.0, 34_000.0, 4.8),
-                "hypotrochoid-loop" => (82, 0.46, 7_600.0, 6_200.0, 42_000.0, 4.6),
-                "three-petal-spiral" => (82, 0.34, 4_600.0, 4_200.0, 28_000.0, 4.4),
-                "four-petal-spiral" => (84, 0.34, 4_600.0, 4_200.0, 28_000.0, 4.4),
-                "five-petal-spiral" => (85, 0.34, 4_600.0, 4_200.0, 28_000.0, 4.4),
-                "six-petal-spiral" => (86, 0.34, 4_600.0, 4_200.0, 28_000.0, 4.4),
+                "thinking-five" => (62, 0.38, 5_000.0, 5_000.0, 28_000.0, 5.5),
+                "thinking-nine" => (68, 0.39, 5_000.0, 5_000.0, 30_000.0, 5.5),
+                "rose-orbit" => (72, 0.42, 6_000.0, 5_000.0, 28_000.0, 5.2),
+                "rose-curve" => (78, 0.32, 6_000.0, 5_000.0, 28_000.0, 4.5),
+                "rose-two" => (74, 0.30, 6_000.0, 5_000.0, 28_000.0, 4.6),
+                "rose-three" => (76, 0.31, 6_000.0, 5_000.0, 28_000.0, 4.6),
+                "rose-four" => (78, 0.32, 6_000.0, 5_000.0, 28_000.0, 4.6),
+                "lissajous-drift" => (68, 0.34, 6_000.0, 6_000.0, 36_000.0, 4.7),
+                "lemniscate-bloom" => (70, 0.40, 6_000.0, 5_000.0, 34_000.0, 4.8),
+                "hypotrochoid-loop" => (82, 0.46, 8_000.0, 7_000.0, 42_000.0, 4.6),
+                "three-petal-spiral" => (82, 0.34, 5_000.0, 5_000.0, 28_000.0, 4.4),
+                "four-petal-spiral" => (84, 0.34, 5_000.0, 5_000.0, 28_000.0, 4.4),
+                "five-petal-spiral" => (85, 0.34, 5_000.0, 5_000.0, 28_000.0, 4.4),
+                "six-petal-spiral" => (86, 0.34, 5_000.0, 5_000.0, 28_000.0, 4.4),
                 "butterfly-phase" => (88, 0.32, 9_000.0, 7_000.0, 50_000.0, 4.4),
-                "cardioid-glow" => (72, 0.36, 6_200.0, 5_200.0, 36_000.0, 4.9),
-                "cardioid-heart" => (74, 0.36, 6_200.0, 5_200.0, 36_000.0, 4.9),
-                "heart-wave" => (104, 0.18, 8_400.0, 5_600.0, 22_000.0, 3.9),
-                "spiral-search" => (86, 0.28, 7_800.0, 6_800.0, 44_000.0, 4.3),
-                _ => (64, 0.38, 4_600.0, 4_200.0, 28_000.0, 5.5),
+                "cardioid-glow" => (72, 0.36, 7_000.0, 6_000.0, 36_000.0, 4.9),
+                "cardioid-heart" => (74, 0.36, 7_000.0, 6_000.0, 36_000.0, 4.9),
+                "heart-wave" => (104, 0.18, 9_000.0, 6_000.0, 22_000.0, 3.9),
+                "spiral-search" => (86, 0.28, 8_000.0, 7_000.0, 44_000.0, 4.3),
+                _ => (64, 0.38, 5_000.0, 5_000.0, 28_000.0, 5.5),
             };
         }
 
@@ -320,8 +320,8 @@ impl Default for AppSettings {
             curve_id: "original-thinking".to_owned(),
             particle_count: 64,
             trail_span: 0.38,
-            duration_ms: 4_600.0,
-            pulse_duration_ms: 4_200.0,
+            duration_ms: 5_000.0,
+            pulse_duration_ms: 5_000.0,
             rotation_duration_ms: 28_000.0,
             stroke_width: 5.5,
             idle_color: DEFAULT_IDLE_COLOR.to_owned(),
@@ -625,6 +625,10 @@ mod tests {
 
     #[test]
     fn migrates_complete_legacy_animation_defaults_for_the_selected_curve() {
+        let defaults = AppSettings::default();
+        assert_eq!(defaults.duration_ms, 5_000.0);
+        assert_eq!(defaults.pulse_duration_ms, 5_000.0);
+        assert_eq!(defaults.rotation_duration_ms, 28_000.0);
         let cases = [
             (
                 "original-thinking",
@@ -711,9 +715,9 @@ mod tests {
                 .to_owned(),
                 particle_count: particles,
                 trail_span: trail,
-                duration_ms: duration,
-                pulse_duration_ms: pulse,
-                rotation_duration_ms: rotation,
+                duration_ms: (duration as f32 / 1_000.0).ceil() * 1_000.0,
+                pulse_duration_ms: (pulse as f32 / 1_000.0).ceil() * 1_000.0,
+                rotation_duration_ms: (rotation as f32 / 1_000.0).ceil() * 1_000.0,
                 stroke_width: stroke,
                 ..settings.clone()
             };

@@ -34,25 +34,46 @@ try {
       } },
       event: { listen: async (name, callback) => { listeners[name] = callback; } },
     };
-  }, DEFAULT_APP_SETTINGS);
+  }, { ...DEFAULT_APP_SETTINGS, duration_ms: 4637, pulse_duration_ms: 4275, rotation_duration_ms: 28041 });
   await page.goto(url + '/settings.html');
   await page.waitForSelector('#curve-id');
-  await page.selectOption('#curve-id', 'heart-wave');
+  assert.equal(await page.locator('#duration-ms').inputValue(), '5');
+  assert.equal(await page.locator('#duration-ms-value').textContent(), '4.637 s');
+  await page.selectOption('#language', 'zh-CN');
   await page.waitForFunction(() => window.__haloSaves.length > 0);
+  const legacyDurations = await page.evaluate(() => {
+    const { duration_ms, pulse_duration_ms, rotation_duration_ms } = window.__haloSaves.at(-1);
+    return { duration_ms, pulse_duration_ms, rotation_duration_ms };
+  });
+  assert.deepEqual(legacyDurations, { duration_ms: 4637, pulse_duration_ms: 4275, rotation_duration_ms: 28041 }, 'unrelated saves must preserve legacy millisecond precision');
+  await page.selectOption('#curve-id', 'heart-wave');
+  await page.waitForFunction(() => window.__haloSaves.at(-1)?.curve_id === 'heart-wave');
   const values = () => page.evaluate(() => Object.fromEntries(
     [...document.querySelectorAll('#animation-section input')].map((field) => [field.name, Number(field.value)]),
   ));
-  const heart = { particle_count: 104, trail_span: .18, duration_ms: 8400, pulse_duration_ms: 5600, rotation_duration_ms: 22000, stroke_width: 3.9 };
+  const heart = { particle_count: 104, trail_span: .18, duration_ms: 9, pulse_duration_ms: 6, rotation_duration_ms: 22, stroke_width: 3.9 };
   assert.deepEqual(await values(), heart, 'selecting a preset must load its actual animation values');
-  for (const [id, value] of [['particle-count', 64], ['duration-ms', 4600], ['stroke-width', 5.5]]) {
+  for (const id of ['duration-ms', 'pulse-duration-ms', 'rotation-duration-ms']) {
+    const field = page.locator('#' + id);
+    await field.fill('3');
+    await field.press('ArrowRight');
+    await page.waitForFunction((key) => window.__haloSaves.at(-1)?.[key] === 4000, id.replaceAll('-', '_'));
+    assert.equal(await field.inputValue(), '4', 'arrow keys must advance by one second');
+  }
+  for (const [id, value] of [['particle-count', 64], ['duration-ms', 5], ['pulse-duration-ms', 4], ['rotation-duration-ms', 18], ['stroke-width', 5.5]]) {
     await page.locator('#' + id).fill(String(value));
     await page.locator('#' + id).dispatchEvent('input');
   }
   await page.waitForFunction(() => window.__haloSaves.at(-1)?.stroke_width === 5.5);
+  const savedDurations = await page.evaluate(() => {
+    const { duration_ms, pulse_duration_ms, rotation_duration_ms } = window.__haloSaves.at(-1);
+    return { duration_ms, pulse_duration_ms, rotation_duration_ms };
+  });
+  assert.deepEqual(savedDurations, { duration_ms: 5000, pulse_duration_ms: 4000, rotation_duration_ms: 18000 }, 'seconds must be saved as milliseconds');
   await page.click('#settings-tab-colors');
   assert.equal(await page.locator('#animation-section').count(), 0);
   await page.click('#settings-tab-display');
-  const custom = { ...heart, particle_count: 64, duration_ms: 4600, stroke_width: 5.5 };
+  const custom = { ...heart, particle_count: 64, duration_ms: 5, pulse_duration_ms: 4, rotation_duration_ms: 18, stroke_width: 5.5 };
   assert.deepEqual(await values(), custom, 'remount must retain overrides');
   await page.reload();
   await page.waitForSelector('#curve-id');
@@ -62,6 +83,11 @@ try {
   assert.deepEqual(await values(), heart);
   await page.selectOption('#language', 'zh-CN');
   await page.waitForFunction(() => document.documentElement.lang === 'zh-CN');
+  for (const [id, label, value] of [['duration-ms', '循环时长（秒）', '9 s'], ['pulse-duration-ms', '脉冲时长（秒）', '6 s'], ['rotation-duration-ms', '旋转时长（秒）', '22 s']]) {
+    assert.equal(await page.locator(`label[for="${id}"]`).textContent(), label);
+    assert.equal(await page.locator(`#${id}-value`).textContent(), value);
+    assert.equal(await page.locator(`#${id}`).getAttribute('step'), '1');
+  }
   for (const [width, height] of [[1130, 890], [390, 844]]) {
     await page.setViewportSize({ width, height });
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'horizontal overflow');
@@ -81,6 +107,10 @@ try {
     const ns = 'http://www.w3.org/2000/svg';
     return Promise.all(curveProfiles.map(async (profile, index) => {
       const config = referenceCurves[index];
+      // Compare geometry at the app's whole-second default durations.
+      for (const key of ['durationMs', 'pulseDurationMs', 'rotationDurationMs']) {
+        config[key] = Math.ceil(config[key] / 1000) * 1000;
+      }
       const tile = document.createElement('div');
       tile.style.cssText = 'display:grid;grid-template-columns:112px 112px;gap:8px';
       const title = document.createElement('div');

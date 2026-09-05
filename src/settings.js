@@ -199,10 +199,12 @@ function settingKey(field) {
 function updateSettingsModel(field, local = false) {
   const key = settingKey(field);
   if (!key || !Object.hasOwn(settingsStore.getSettings(), key)) return;
+  // Only user input may round legacy or preset durations to whole seconds.
+  if (!local && field.dataset.unit === 'seconds') return;
   settingsStore.patchSetting(key, field.type === 'checkbox'
     ? field.checked
     : field.type === 'number' || field.type === 'range'
-      ? Number(field.value)
+      ? field.dataset.unit === 'seconds' ? Math.round(Number(field.value) * 1000) : Number(field.value)
       : field.value);
   if (local && (!initialSettingsReady || document.activeElement === field)) localSettingEdits.add(key);
 }
@@ -229,7 +231,7 @@ function formatRangeValue(key, value) {
   if (key === 'opacity') return `${Math.round(value * 100)}%`;
   if (key === 'trail_span') return value.toFixed(2);
   if (key === 'stroke_width') return value.toFixed(1);
-  if (key === 'duration_ms' || key.endsWith('_duration_ms')) return `${Math.round(value)} ms`;
+  if (key === 'duration_ms' || key.endsWith('_duration_ms')) return `${value / 1000} s`;
   return String(Math.round(value));
 }
 
@@ -237,7 +239,10 @@ function renderRangeValue(field) {
   if (!field || field.type !== 'range') return;
   const output = document.getElementById(`${field.id}-value`);
   if (!output) return;
-  output.textContent = formatRangeValue(settingKey(field), Number(field.value));
+  const key = settingKey(field);
+  const seconds = field.dataset.unit === 'seconds';
+  output.textContent = formatRangeValue(key, seconds ? settingsStore.getSettings()[key] : Number(field.value));
+  if (seconds) field.setAttribute('aria-valuetext', output.textContent);
 }
 
 function renderRangeValues() {
@@ -259,7 +264,7 @@ function syncControlsFromSettings(excluded) {
     const value = settings[settingKey(field)];
     if (value === undefined) continue;
     if (field.type === 'checkbox') field.checked = Boolean(value);
-    else field.value = String(value);
+    else field.value = String(field.dataset.unit === 'seconds' ? value / 1000 : value);
   }
   syncColorField(selectedColorState, settings[STATE_COLOR_KEYS[selectedColorState]]);
 }

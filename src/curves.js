@@ -4,27 +4,28 @@ const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const detailValue = (value) => clamp(Number.isFinite(Number(value)) ? Number(value) : 0, 0, 1);
 const tOf = (progress) => progress * TAU;
 
+// Reference durations are rounded up to whole seconds, stored in milliseconds.
 const REFERENCE_ANIMATION = Object.freeze({
-  'original-thinking': { particleCount: 64, trailSpan: 0.38, durationMs: 4600, rotationDurationMs: 28000, pulseDurationMs: 4200, strokeWidth: 5.5 },
-  'thinking-five': { particleCount: 62, trailSpan: 0.38, durationMs: 4600, rotationDurationMs: 28000, pulseDurationMs: 4200, strokeWidth: 5.5 },
-  'thinking-nine': { particleCount: 68, trailSpan: 0.39, durationMs: 4700, rotationDurationMs: 30000, pulseDurationMs: 4200, strokeWidth: 5.5 },
-  'rose-orbit': { particleCount: 72, trailSpan: 0.42, durationMs: 5200, rotationDurationMs: 28000, pulseDurationMs: 4600, strokeWidth: 5.2 },
-  'rose-curve': { particleCount: 78, trailSpan: 0.32, durationMs: 5400, rotationDurationMs: 28000, pulseDurationMs: 4600, strokeWidth: 4.5 },
-  'rose-two': { particleCount: 74, trailSpan: 0.3, durationMs: 5200, rotationDurationMs: 28000, pulseDurationMs: 4300, strokeWidth: 4.6 },
-  'rose-three': { particleCount: 76, trailSpan: 0.31, durationMs: 5300, rotationDurationMs: 28000, pulseDurationMs: 4400, strokeWidth: 4.6 },
-  'rose-four': { particleCount: 78, trailSpan: 0.32, durationMs: 5400, rotationDurationMs: 28000, pulseDurationMs: 4500, strokeWidth: 4.6 },
-  'lissajous-drift': { particleCount: 68, trailSpan: 0.34, durationMs: 6000, rotationDurationMs: 36000, pulseDurationMs: 5400, strokeWidth: 4.7 },
-  'lemniscate-bloom': { particleCount: 70, trailSpan: 0.4, durationMs: 5600, rotationDurationMs: 34000, pulseDurationMs: 5000, strokeWidth: 4.8 },
-  'hypotrochoid-loop': { particleCount: 82, trailSpan: 0.46, durationMs: 7600, rotationDurationMs: 42000, pulseDurationMs: 6200, strokeWidth: 4.6 },
-  'three-petal-spiral': { particleCount: 82, trailSpan: 0.34, durationMs: 4600, rotationDurationMs: 28000, pulseDurationMs: 4200, strokeWidth: 4.4 },
-  'four-petal-spiral': { particleCount: 84, trailSpan: 0.34, durationMs: 4600, rotationDurationMs: 28000, pulseDurationMs: 4200, strokeWidth: 4.4 },
-  'five-petal-spiral': { particleCount: 85, trailSpan: 0.34, durationMs: 4600, rotationDurationMs: 28000, pulseDurationMs: 4200, strokeWidth: 4.4 },
-  'six-petal-spiral': { particleCount: 86, trailSpan: 0.34, durationMs: 4600, rotationDurationMs: 28000, pulseDurationMs: 4200, strokeWidth: 4.4 },
+  'original-thinking': { particleCount: 64, trailSpan: 0.38, durationMs: 5000, rotationDurationMs: 28000, pulseDurationMs: 5000, strokeWidth: 5.5 },
+  'thinking-five': { particleCount: 62, trailSpan: 0.38, durationMs: 5000, rotationDurationMs: 28000, pulseDurationMs: 5000, strokeWidth: 5.5 },
+  'thinking-nine': { particleCount: 68, trailSpan: 0.39, durationMs: 5000, rotationDurationMs: 30000, pulseDurationMs: 5000, strokeWidth: 5.5 },
+  'rose-orbit': { particleCount: 72, trailSpan: 0.42, durationMs: 6000, rotationDurationMs: 28000, pulseDurationMs: 5000, strokeWidth: 5.2 },
+  'rose-curve': { particleCount: 78, trailSpan: 0.32, durationMs: 6000, rotationDurationMs: 28000, pulseDurationMs: 5000, strokeWidth: 4.5 },
+  'rose-two': { particleCount: 74, trailSpan: 0.3, durationMs: 6000, rotationDurationMs: 28000, pulseDurationMs: 5000, strokeWidth: 4.6 },
+  'rose-three': { particleCount: 76, trailSpan: 0.31, durationMs: 6000, rotationDurationMs: 28000, pulseDurationMs: 5000, strokeWidth: 4.6 },
+  'rose-four': { particleCount: 78, trailSpan: 0.32, durationMs: 6000, rotationDurationMs: 28000, pulseDurationMs: 5000, strokeWidth: 4.6 },
+  'lissajous-drift': { particleCount: 68, trailSpan: 0.34, durationMs: 6000, rotationDurationMs: 36000, pulseDurationMs: 6000, strokeWidth: 4.7 },
+  'lemniscate-bloom': { particleCount: 70, trailSpan: 0.4, durationMs: 6000, rotationDurationMs: 34000, pulseDurationMs: 5000, strokeWidth: 4.8 },
+  'hypotrochoid-loop': { particleCount: 82, trailSpan: 0.46, durationMs: 8000, rotationDurationMs: 42000, pulseDurationMs: 7000, strokeWidth: 4.6 },
+  'three-petal-spiral': { particleCount: 82, trailSpan: 0.34, durationMs: 5000, rotationDurationMs: 28000, pulseDurationMs: 5000, strokeWidth: 4.4 },
+  'four-petal-spiral': { particleCount: 84, trailSpan: 0.34, durationMs: 5000, rotationDurationMs: 28000, pulseDurationMs: 5000, strokeWidth: 4.4 },
+  'five-petal-spiral': { particleCount: 85, trailSpan: 0.34, durationMs: 5000, rotationDurationMs: 28000, pulseDurationMs: 5000, strokeWidth: 4.4 },
+  'six-petal-spiral': { particleCount: 86, trailSpan: 0.34, durationMs: 5000, rotationDurationMs: 28000, pulseDurationMs: 5000, strokeWidth: 4.4 },
   'butterfly-phase': { particleCount: 88, trailSpan: 0.32, durationMs: 9000, rotationDurationMs: 50000, pulseDurationMs: 7000, strokeWidth: 4.4 },
-  'cardioid-glow': { particleCount: 72, trailSpan: 0.36, durationMs: 6200, rotationDurationMs: 36000, pulseDurationMs: 5200, strokeWidth: 4.9 },
-  'cardioid-heart': { particleCount: 74, trailSpan: 0.36, durationMs: 6200, rotationDurationMs: 36000, pulseDurationMs: 5200, strokeWidth: 4.9 },
-  'heart-wave': { particleCount: 104, trailSpan: 0.18, durationMs: 8400, rotationDurationMs: 22000, pulseDurationMs: 5600, strokeWidth: 3.9 },
-  'spiral-search': { particleCount: 86, trailSpan: 0.28, durationMs: 7800, rotationDurationMs: 44000, pulseDurationMs: 6800, strokeWidth: 4.3 },
+  'cardioid-glow': { particleCount: 72, trailSpan: 0.36, durationMs: 7000, rotationDurationMs: 36000, pulseDurationMs: 6000, strokeWidth: 4.9 },
+  'cardioid-heart': { particleCount: 74, trailSpan: 0.36, durationMs: 7000, rotationDurationMs: 36000, pulseDurationMs: 6000, strokeWidth: 4.9 },
+  'heart-wave': { particleCount: 104, trailSpan: 0.18, durationMs: 9000, rotationDurationMs: 22000, pulseDurationMs: 6000, strokeWidth: 3.9 },
+  'spiral-search': { particleCount: 86, trailSpan: 0.28, durationMs: 8000, rotationDurationMs: 44000, pulseDurationMs: 7000, strokeWidth: 4.3 },
 });
 
 function profile(id, label, defaults, point, formula, rotate = false) {

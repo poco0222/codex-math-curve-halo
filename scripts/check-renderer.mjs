@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { curveProfiles, formatFormula, sampleCurve, validateCurveProfiles } from '../src/curves.js';
+import { curveProfiles, formatFormula, getCurveAnimationSettings, sampleCurve, validateCurveProfiles } from '../src/curves.js';
 import { createHaloRenderer } from '../src/halo.js';
 import { createCommandInvoker, createDisplayStatePoller } from '../src/app.js';
 
@@ -199,7 +199,12 @@ const referenceAnimations = [
 ];
 const states = ['idle', 'thinking', 'executing', 'input_needed', 'completed', 'interrupted', 'compacting'];
 for (const [index, profile] of curveProfiles.entries()) {
-  const [count, trail, loop, rotation, pulse, stroke] = referenceAnimations[index];
+  const [count, trail, loop, rotation, pulse, stroke] = referenceAnimations[index]
+    .map((value, column) => column >= 2 && column <= 4 ? Math.ceil(value / 1000) * 1000 : value);
+  assert.deepEqual(getCurveAnimationSettings(profile.id), {
+    particle_count: count, trail_span: trail, duration_ms: loop,
+    rotation_duration_ms: rotation, pulse_duration_ms: pulse, stroke_width: stroke,
+  }, `${profile.id} defaults must round durations up to whole seconds`);
   for (const [time, phase] of [[0, 0], [1234, .37], [65000, .91]]) {
     const state = states[index % states.length];
     const snap = renderSnapshot({ [`${state}_color`]: '#123456' }, time, profile.id, state, phase);
@@ -234,7 +239,7 @@ for (const id of ['butterfly-phase', 'heart-wave']) {
   assert(screenInterpolationError(profile, snapshot.path, detail) < 1.1, id);
 }
 
-// Values matching Original Thinking defaults are still legal overrides on other curves.
+// Values matching the former Original Thinking defaults remain legal overrides.
 const overrides = { particle_count: 64, duration_ms: 4600, pulse_duration_ms: 4200, rotation_duration_ms: 28000, stroke_width: 5.5, trail_span: .38 };
 const overridden = renderSnapshot(overrides, 1150, 'heart-wave');
 assert.equal(overridden.particles.length, 64);
