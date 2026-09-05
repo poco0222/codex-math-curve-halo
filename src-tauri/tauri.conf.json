@@ -5,7 +5,10 @@
   "identifier": "com.codex-halo.app",
   "build": {
     "frontendDist": "../src",
-    "beforeDevCommand": "npm run build:sidecar",
+    "beforeDevCommand": {
+      "script": "npm run build:sidecar",
+      "wait": true
+    },
     "beforeBuildCommand": "npm run build:sidecar"
   },
   "app": {

@@ -244,7 +244,7 @@ fn run_launchctl(action: &str, domain: &str, plist_path: &Path) -> Result<(), La
     if output.status.success() {
         Ok(())
     } else {
-        Err(classify_launchctl_failure(&output.stderr))
+        Err(classify_launchctl_failure(action, &output.stderr))
     }
 }
 
@@ -257,7 +257,7 @@ fn bootout_launch_agent(domain: &str, plist_path: &Path) -> Result<(), Autostart
 }
 
 #[cfg(target_os = "macos")]
-fn classify_launchctl_failure(stderr: &[u8]) -> LaunchctlFailure {
+fn classify_launchctl_failure(action: &str, stderr: &[u8]) -> LaunchctlFailure {
     let detail = String::from_utf8_lossy(stderr).to_ascii_lowercase();
     if detail.contains("permission denied")
         || detail.contains("operation not permitted")
@@ -267,6 +267,7 @@ fn classify_launchctl_failure(stderr: &[u8]) -> LaunchctlFailure {
     } else if detail.contains("could not find service")
         || detail.contains("service is not loaded")
         || detail.contains("no such process")
+        || (action == "bootout" && detail.contains("input/output error"))
     {
         LaunchctlFailure::EntryAbsent
     } else {
@@ -641,6 +642,10 @@ mod tests {
     fn bootout_ignores_only_explicit_absent_entry() {
         assert_eq!(
             bootout_with_fake_launchctl("Could not find service"),
+            Ok(())
+        );
+        assert_eq!(
+            bootout_with_fake_launchctl("Boot-out failed: 5: Input/output error"),
             Ok(())
         );
         assert_eq!(
