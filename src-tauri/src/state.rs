@@ -197,6 +197,31 @@ pub struct AppSettings {
 
 impl AppSettings {
     pub fn normalize(mut self) -> Result<Self, String> {
+        const CURVE_IDS: [&str; 20] = [
+            "original-thinking",
+            "thinking-five",
+            "thinking-nine",
+            "rose-orbit",
+            "rose-curve",
+            "rose-two",
+            "rose-three",
+            "rose-four",
+            "lissajous-drift",
+            "lemniscate-bloom",
+            "hypotrochoid-loop",
+            "three-petal-spiral",
+            "four-petal-spiral",
+            "five-petal-spiral",
+            "six-petal-spiral",
+            "butterfly-phase",
+            "cardioid-glow",
+            "cardioid-heart",
+            "heart-wave",
+            "spiral-search",
+        ];
+        if !CURVE_IDS.contains(&self.curve_id.as_str()) {
+            self.curve_id = "original-thinking".to_owned();
+        }
         if self.language != "en" && self.language != "zh-CN" {
             self.language = "en".to_owned();
         }
@@ -253,7 +278,7 @@ impl Default for AppSettings {
             opacity: 1.0,
             offset_x: 28,
             offset_y: 140,
-            curve_id: "rose-seven".to_owned(),
+            curve_id: "original-thinking".to_owned(),
             particle_count: 80,
             trail_span: 0.4,
             duration_ms: 500.0,
@@ -386,6 +411,60 @@ mod tests {
         let raw = r#"{"session_key":"a","state":"thinking","updated_at_ms":100,"prompt":"secret"}"#;
 
         assert!(serde_json::from_str::<Snapshot>(raw).is_err());
+    }
+
+    #[test]
+    fn normalizes_removed_curve_ids_to_the_new_default() {
+        for curve_id in ["rose-seven", "fourier-flow", "unknown", ""] {
+            let settings = AppSettings {
+                curve_id: curve_id.to_owned(),
+                opacity: 0.65,
+                offset_x: 99,
+                language: "zh-CN".to_owned(),
+                ..AppSettings::default()
+            };
+            let mut expected = settings.clone();
+            expected.curve_id = "original-thinking".to_owned();
+            let normalized = settings.normalize().unwrap();
+            assert_eq!(normalized, expected);
+            let saved = serde_json::to_vec(&normalized).unwrap();
+            let restored: AppSettings = serde_json::from_slice(&saved).unwrap();
+            assert_eq!(restored.normalize().unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn retains_every_catalog_curve_after_settings_round_trip() {
+        for curve_id in [
+            "original-thinking",
+            "thinking-five",
+            "thinking-nine",
+            "rose-orbit",
+            "rose-curve",
+            "rose-two",
+            "rose-three",
+            "rose-four",
+            "lissajous-drift",
+            "lemniscate-bloom",
+            "hypotrochoid-loop",
+            "three-petal-spiral",
+            "four-petal-spiral",
+            "five-petal-spiral",
+            "six-petal-spiral",
+            "butterfly-phase",
+            "cardioid-glow",
+            "cardioid-heart",
+            "heart-wave",
+            "spiral-search",
+        ] {
+            let settings = AppSettings {
+                curve_id: curve_id.to_owned(),
+                ..AppSettings::default()
+            };
+            let saved = serde_json::to_vec(&settings.normalize().unwrap()).unwrap();
+            let restored: AppSettings = serde_json::from_slice(&saved).unwrap();
+            assert_eq!(restored.normalize().unwrap().curve_id, curve_id);
+        }
     }
 
     #[test]

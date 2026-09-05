@@ -72,13 +72,15 @@ export function createHaloRenderer(canvas, options = {}) {
   const requestFrame = options.requestAnimationFrame ?? globalThis.requestAnimationFrame?.bind(globalThis) ?? ((callback) => setTimeout(() => callback(clock()), 16));
   const cancelFrame = options.cancelAnimationFrame ?? globalThis.cancelAnimationFrame?.bind(globalThis) ?? clearTimeout;
   let state = STATE_STYLES[options.state] ? options.state : 'idle';
-  let curve = getCurveProfile(options.curve ?? options.curve_id ?? 'rose-seven');
-  let settings = { ...DEFAULT_SETTINGS, ...curve.defaults, ...(options.settings ?? {}) };
+  let curve = getCurveProfile(options.curve ?? options.curve_id ?? 'original-thinking');
+  let settings = { ...DEFAULT_SETTINGS, ...(options.settings ?? {}) };
   let currentStyle = styleFor(state, settings);
   let transition = null;
   let frameId = null;
   let running = false;
   let animationStartedAt = null;
+  let lastFrameTime = null;
+  let rotationPhase = 0;
 
   function applyOpacity() {
     if (canvas.style) canvas.style.opacity = String(opacityValue(settings.opacity));
@@ -147,6 +149,8 @@ export function createHaloRenderer(canvas, options = {}) {
   }
 
   function draw(time) {
+    const deltaTime = Math.max(0, time - (lastFrameTime ?? time));
+    lastFrameTime = time;
     resizeCanvas();
     context.clearRect(0, 0, LOGICAL_SIZE, LOGICAL_SIZE);
     if (settings.enabled === false) return;
@@ -159,9 +163,12 @@ export function createHaloRenderer(canvas, options = {}) {
     const pulse = 0.5 + 0.5 * Math.sin(TAU * elapsed / pulseDuration);
     const detailScale = clamp(pulse, 0, 1);
     const progress = normalize(elapsed * style.speed / loopDuration);
-    const rotationProgress = normalize(elapsed * style.speed / rotationDuration);
-    const angle = curve.rotate(rotationProgress, settings) * style.rotation;
-    const points = sampleCurve(curve, progress, detailScale, settings, 72);
+    // Integrate new frame time so changing speed or duration never replays elapsed time.
+    if (curve.rotate(1, settings) !== 0) {
+      rotationPhase = normalize(rotationPhase + deltaTime * style.speed * style.rotation / rotationDuration);
+    }
+    const angle = curve.rotate(rotationPhase, settings);
+    const points = sampleCurve(curve, 0, detailScale);
     const strokeWidth = clamp(positive(settings.stroke_width, DEFAULT_SETTINGS.stroke_width), 1, 5);
     const color = style.color;
     const alpha = style.alpha;
@@ -198,9 +205,14 @@ export function createHaloRenderer(canvas, options = {}) {
       state = nextState;
     },
     setCurve(id) {
-      curve = getCurveProfile(id);
+      const nextCurve = getCurveProfile(id);
+      if (nextCurve !== curve) {
+        curve = nextCurve;
+        lastFrameTime = null;
+      }
     },
     setSettings(nextSettings = {}) {
+      if (nextSettings.enabled !== undefined && nextSettings.enabled !== settings.enabled) lastFrameTime = null;
       settings = { ...settings, ...nextSettings };
       if (transition) {
         transition.to = styleFor(state, settings);
@@ -212,6 +224,7 @@ export function createHaloRenderer(canvas, options = {}) {
     start() {
       if (running) return;
       running = true;
+      lastFrameTime = null;
       frameId = requestFrame(renderFrame);
     },
     stop() {

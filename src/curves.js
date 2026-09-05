@@ -1,216 +1,205 @@
 const TAU = Math.PI * 2;
-const DEFAULT_STEPS = 96;
-
+const DEFAULT_STEPS = 481;
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-const numberSetting = (settings, key, fallback) => {
-  const value = Number(settings?.[key]);
-  return Number.isFinite(value) ? value : fallback;
-};
 const detailValue = (value) => clamp(Number.isFinite(Number(value)) ? Number(value) : 0, 0, 1);
-const normalizeProgress = (progress) => ((progress % 1) + 1) % 1;
-const formulaNumber = (value) => Number(value).toFixed(2).replace(/\.00$/, '');
+const tOf = (progress) => progress * TAU;
 
-const roseDefaults = {
-  petals: 7,
-  radius: 31,
-  detail: 4,
-  phase: 0,
-};
+function profile(id, label, defaults, point, formula, rotate = false) {
+  // Geometry follows upstream 70f4e00; persisted animation settings cannot override it.
+  const geometry = Object.freeze(defaults);
+  return {
+    id,
+    label,
+    tag: 'math curve',
+    defaults: geometry,
+    controls: [],
+    rotate: (progress) => (rotate ? -TAU * progress : 0),
+    point: (progress, detailScale = 0) => point(progress, detailValue(detailScale), geometry),
+    formula: () => `p = progress, 0 ≤ p ≤ 1; t = 2πp; s = detailScale(time), 0 ≤ s ≤ 1\n${formula(geometry)}`,
+  };
+}
 
-const lissajousDefaults = {
-  x_frequency: 3,
-  y_frequency: 2,
-  x_phase: 0,
-  y_phase: Math.PI / 2,
-  drift: 4,
-};
+function roseTrail(id, label, petalCount) {
+  return profile(id, label, { baseRadius: 7, detailAmplitude: 3, petalCount, curveScale: 3.9 }, (progress, s, config) => {
+    const t = tOf(progress);
+    const x = config.baseRadius * Math.cos(t) - config.detailAmplitude * s * Math.cos(config.petalCount * t);
+    const y = config.baseRadius * Math.sin(t) - config.detailAmplitude * s * Math.sin(config.petalCount * t);
+    return { x: 50 + x * config.curveScale, y: 50 + y * config.curveScale };
+  }, (config) => [
+    `x(t) = 50 + (${config.baseRadius} cos t - ${config.detailAmplitude}s cos(${config.petalCount}t)) · ${config.curveScale}`,
+    `y(t) = 50 + (${config.baseRadius} sin t - ${config.detailAmplitude}s sin(${config.petalCount}t)) · ${config.curveScale}`,
+  ].join('\n'), true);
+}
 
-const spiralDefaults = {
-  turns: 1.75,
-  radius: 34,
-  modulation: 0.18,
-  phase: 0,
-};
+function roseCurve(id, label, roseK) {
+  return profile(id, label, { roseA: 9.2, roseABoost: 0.6, roseBreathBase: 0.72, roseBreathBoost: 0.28, roseK, roseScale: 3.25 }, (progress, s, config) => {
+    const t = tOf(progress);
+    const a = config.roseA + config.roseABoost * s;
+    const r = a * (config.roseBreathBase + config.roseBreathBoost * s) * Math.cos(config.roseK * t);
+    return { x: 50 + Math.cos(t) * r * config.roseScale, y: 50 + Math.sin(t) * r * config.roseScale };
+  }, (config) => [
+    `r(t) = (${config.roseA} + ${config.roseABoost}s)(${config.roseBreathBase} + ${config.roseBreathBoost}s) cos(${config.roseK}t)`,
+    `x(t) = 50 + ${config.roseScale}r cos t`,
+    `y(t) = 50 + ${config.roseScale}r sin t`,
+  ].join('\n'), true);
+}
 
-const fourierDefaults = {
-  pulse_mix: 0.24,
-  phase: 0,
-  x_mix: 1,
-  y_mix: 1,
-};
-
-const roseParameters = (settings) => ({
-  petals: clamp(Math.round(numberSetting(settings, 'petals', roseDefaults.petals)), 3, 11),
-  radius: clamp(numberSetting(settings, 'radius', roseDefaults.radius), 24, 38),
-  detail: clamp(numberSetting(settings, 'detail', roseDefaults.detail), 0, 8),
-  phase: numberSetting(settings, 'phase', roseDefaults.phase),
-});
-
-const lissajousParameters = (settings) => ({
-  xFrequency: clamp(numberSetting(settings, 'x_frequency', lissajousDefaults.x_frequency), 1, 7),
-  yFrequency: clamp(numberSetting(settings, 'y_frequency', lissajousDefaults.y_frequency), 1, 7),
-  xPhase: numberSetting(settings, 'x_phase', lissajousDefaults.x_phase),
-  yPhase: numberSetting(settings, 'y_phase', lissajousDefaults.y_phase),
-  drift: clamp(numberSetting(settings, 'drift', lissajousDefaults.drift), 0, 8),
-});
-
-const spiralParameters = (settings) => ({
-  turns: clamp(numberSetting(settings, 'turns', spiralDefaults.turns), 0.5, 3),
-  radius: clamp(numberSetting(settings, 'radius', spiralDefaults.radius), 26, 38),
-  modulation: clamp(numberSetting(settings, 'modulation', spiralDefaults.modulation), 0, 0.35),
-  phase: numberSetting(settings, 'phase', spiralDefaults.phase),
-});
-
-const fourierParameters = (settings) => ({
-  pulseMix: clamp(numberSetting(settings, 'pulse_mix', fourierDefaults.pulse_mix), 0, 0.4),
-  phase: numberSetting(settings, 'phase', fourierDefaults.phase),
-  xMix: clamp(numberSetting(settings, 'x_mix', fourierDefaults.x_mix), 0.7, 1.3),
-  yMix: clamp(numberSetting(settings, 'y_mix', fourierDefaults.y_mix), 0.7, 1.3),
-});
+const names = ['Three', 'Four', 'Five', 'Six'];
+const spiralProfiles = [3, 4, 5, 6].map((spiralR, index) => profile(
+  `${names[index].toLowerCase()}-petal-spiral`,
+  `${names[index]}-Petal Spiral`,
+  { spiralR, spiralr: 1, spirald: 3, spiralScale: 2.2, spiralBreath: 0.45 },
+  (progress, s, config) => {
+    const t = tOf(progress);
+    const radius = config.spiralR - config.spiralr;
+    const d = config.spirald + 0.25 * s;
+    const k = radius / config.spiralr;
+    const scale = config.spiralScale + config.spiralBreath * s;
+    return {
+      x: 50 + (radius * Math.cos(t) + d * Math.cos(k * t)) * scale,
+      y: 50 + (radius * Math.sin(t) - d * Math.sin(k * t)) * scale,
+    };
+  },
+  (config) => [
+    `R = ${config.spiralR}, r = ${config.spiralr}, d = ${config.spirald} + 0.25s, m = ${config.spiralScale} + ${config.spiralBreath}s`,
+    'x(t) = 50 + ((R-r) cos t + d cos((R-r)t/r)) · m',
+    'y(t) = 50 + ((R-r) sin t - d sin((R-r)t/r)) · m',
+  ].join('\n'),
+  true,
+));
 
 export const curveProfiles = [
-  {
-    id: 'rose-seven',
-    label: 'Rose Seven',
-    tag: '7-petal rose',
-    defaults: roseDefaults,
-    controls: [
-      { key: 'petals', label: 'Petals', min: 3, max: 11, step: 1 },
-      { key: 'radius', label: 'Radius', min: 24, max: 38, step: 1 },
-      { key: 'detail', label: 'Detail', min: 0, max: 8, step: 0.5 },
-    ],
-    rotate: (progress) => TAU * progress,
-    point: (progress, detailScale = 0, settings = roseDefaults) => {
-      const t = normalizeProgress(progress) * TAU;
-      const { petals, radius, detail, phase } = roseParameters(settings);
-      const detailScaleValue = detailValue(detailScale);
-      const petalRadius = radius + detail * Math.cos(petals * t + phase) + detailScaleValue * 2 * Math.sin(2 * t);
-      return {
-        x: 50 + petalRadius * Math.cos(t + phase),
-        y: 50 + petalRadius * Math.sin(t + phase),
-      };
-    },
-    formula: (settings) => {
-      const { petals, radius, detail, phase } = roseParameters(settings);
-      return `r(t,d) = ${formulaNumber(radius)} + ${formulaNumber(detail)} cos(${formulaNumber(petals)}t + ${formulaNumber(phase)}) + 2d sin(2t),  x = 50 + r cos(t + ${formulaNumber(phase)}),  y = 50 + r sin(t + ${formulaNumber(phase)}),  d ∈ [0,1]`;
-    },
-  },
-  {
-    id: 'lissajous-drift',
-    label: 'Lissajous Drift',
-    tag: 'independent sine drift',
-    defaults: lissajousDefaults,
-    controls: [
-      { key: 'x_frequency', label: 'X frequency', min: 1, max: 7, step: 1 },
-      { key: 'y_frequency', label: 'Y frequency', min: 1, max: 7, step: 1 },
-      { key: 'drift', label: 'Drift', min: 0, max: 8, step: 0.5 },
-    ],
-    rotate: (progress) => TAU * progress * 0.72,
-    point: (progress, detailScale = 0, settings = lissajousDefaults) => {
-      const t = normalizeProgress(progress) * TAU;
-      const { xFrequency, yFrequency, xPhase, yPhase, drift } = lissajousParameters(settings);
-      const detailScaleValue = detailValue(detailScale);
-      return {
-        x: 50 + 34 * Math.sin(xFrequency * t + xPhase) + drift * detailScaleValue * Math.sin(t),
-        y: 50 + 34 * Math.sin(yFrequency * t + yPhase) + drift * detailScaleValue * Math.cos(t),
-      };
-    },
-    formula: (settings) => {
-      const { xFrequency, yFrequency, xPhase, yPhase, drift } = lissajousParameters(settings);
-      return `x(t,d) = 50 + 34 sin(${formulaNumber(xFrequency)}t + ${formulaNumber(xPhase)}) + ${formulaNumber(drift)}d sin(t),  y(t,d) = 50 + 34 sin(${formulaNumber(yFrequency)}t + ${formulaNumber(yPhase)}) + ${formulaNumber(drift)}d cos(t),  d ∈ [0,1]`;
-    },
-  },
-  {
-    id: 'spiral-search',
-    label: 'Spiral Search',
-    tag: 'modulated radius',
-    defaults: spiralDefaults,
-    controls: [
-      { key: 'turns', label: 'Turns', min: 0.5, max: 3, step: 0.25 },
-      { key: 'radius', label: 'Radius', min: 26, max: 38, step: 1 },
-      { key: 'modulation', label: 'Modulation', min: 0, max: 0.35, step: 0.01 },
-    ],
-    rotate: (progress) => TAU * progress * 1.2,
-    point: (progress, detailScale = 0, settings = spiralDefaults) => {
-      const p = normalizeProgress(progress);
-      const { turns, radius, modulation, phase } = spiralParameters(settings);
-      const detailScaleValue = detailValue(detailScale);
-      const angle = TAU * turns * p + phase;
-      const wave = 1 + modulation * (1 + detailScaleValue) * Math.cos(TAU * 2 * p + phase);
-      const distance = Math.min(68, (4 + radius * p) * wave);
-      return {
-        x: 50 + distance * Math.cos(angle),
-        y: 50 + distance * Math.sin(angle),
-      };
-    },
-    formula: (settings) => {
-      const { turns, radius, modulation, phase } = spiralParameters(settings);
-      return `θ(t) = ${formulaNumber(turns)}·2πt + ${formulaNumber(phase)},  r(t,d) = min(68,(4 + ${formulaNumber(radius)}t)(1 + ${formulaNumber(modulation)}(1 + d) cos(4πt + ${formulaNumber(phase)}))),  d ∈ [0,1]`;
-    },
-  },
-  {
-    id: 'fourier-flow',
-    label: 'Fourier Flow',
-    tag: 'finite harmonic flow',
-    defaults: fourierDefaults,
-    controls: [
-      { key: 'pulse_mix', label: 'Pulse mix', min: 0, max: 0.4, step: 0.01 },
-      { key: 'x_mix', label: 'X mix', min: 0.7, max: 1.3, step: 0.01 },
-      { key: 'y_mix', label: 'Y mix', min: 0.7, max: 1.3, step: 0.01 },
-    ],
-    rotate: (progress) => TAU * progress * 0.86,
-    point: (progress, detailScale = 0, settings = fourierDefaults) => {
-      const t = normalizeProgress(progress) * TAU;
-      const { pulseMix, phase, xMix, yMix } = fourierParameters(settings);
-      const detailScaleValue = detailValue(detailScale);
-      const pulse = 1 + pulseMix * (0.5 + 0.5 * Math.sin(2 * t + phase));
-      const harmonic = 1 + detailScaleValue * 0.12;
-      return {
-        x: 50 + xMix * pulse * (24 * Math.sin(t + phase) + 8 * Math.sin(2 * t) + 4 * harmonic * Math.cos(3 * t)),
-        y: 50 + yMix * pulse * (22 * Math.cos(t) + 10 * Math.cos(2 * t + phase) + 4 * harmonic * Math.sin(3 * t)),
-      };
-    },
-    formula: (settings) => {
-      const { pulseMix, phase, xMix, yMix } = fourierParameters(settings);
-      return `P(t) = 1 + ${formulaNumber(pulseMix)}(0.5 + 0.5 sin(2t + ${formulaNumber(phase)})),  x(t,d) = 50 + ${formulaNumber(xMix)}P(t)(24 sin(t + ${formulaNumber(phase)}) + 8 sin(2t) + 4(1 + 0.12d) cos(3t)),  y(t,d) = 50 + ${formulaNumber(yMix)}P(t)(22 cos(t) + 10 cos(2t + ${formulaNumber(phase)}) + 4(1 + 0.12d) sin(3t)),  d ∈ [0,1]`;
-    },
-  },
+  roseTrail('original-thinking', 'Original Thinking', 7),
+  roseTrail('thinking-five', 'Thinking Five', 5),
+  roseTrail('thinking-nine', 'Thinking Nine', 9),
+  profile('rose-orbit', 'Rose Orbit', { orbitRadius: 7, detailAmplitude: 2.7, petalCount: 7, curveScale: 3.9 }, (progress, s, config) => {
+    const t = tOf(progress);
+    const r = config.orbitRadius - config.detailAmplitude * s * Math.cos(config.petalCount * t);
+    return { x: 50 + Math.cos(t) * r * config.curveScale, y: 50 + Math.sin(t) * r * config.curveScale };
+  }, (config) => [
+    `r(t) = ${config.orbitRadius} - ${config.detailAmplitude}s cos(${config.petalCount}t)`,
+    `x(t) = 50 + ${config.curveScale}r cos t`,
+    `y(t) = 50 + ${config.curveScale}r sin t`,
+  ].join('\n'), true),
+  roseCurve('rose-curve', 'Rose Curve', 5),
+  roseCurve('rose-two', 'Rose Two', 2),
+  roseCurve('rose-three', 'Rose Three', 3),
+  roseCurve('rose-four', 'Rose Four', 4),
+  profile('lissajous-drift', 'Lissajous Drift', { lissajousAmp: 24, lissajousAmpBoost: 6, lissajousAX: 3, lissajousBY: 4, lissajousPhase: 1.57, lissajousYScale: 0.92 }, (progress, s, config) => {
+    const t = tOf(progress);
+    const amp = config.lissajousAmp + config.lissajousAmpBoost * s;
+    return {
+      x: 50 + Math.sin(config.lissajousAX * t + config.lissajousPhase) * amp,
+      y: 50 + Math.sin(config.lissajousBY * t) * amp * config.lissajousYScale,
+    };
+  }, (config) => [
+    `A = ${config.lissajousAmp} + ${config.lissajousAmpBoost}s`,
+    `x(t) = 50 + A sin(${config.lissajousAX}t + ${config.lissajousPhase})`,
+    `y(t) = 50 + ${config.lissajousYScale}A sin(${config.lissajousBY}t)`,
+  ].join('\n')),
+  profile('lemniscate-bloom', 'Lemniscate Bloom', { lemniscateA: 20, lemniscateBoost: 7 }, (progress, s, config) => {
+    const t = tOf(progress);
+    const a = config.lemniscateA + config.lemniscateBoost * s;
+    const d = 1 + Math.sin(t) ** 2;
+    return { x: 50 + a * Math.cos(t) / d, y: 50 + a * Math.sin(t) * Math.cos(t) / d };
+  }, (config) => [
+    `a = ${config.lemniscateA} + ${config.lemniscateBoost}s, d = 1 + sin²t`,
+    'x(t) = 50 + a cos t / d',
+    'y(t) = 50 + a sin t cos t / d',
+  ].join('\n')),
+  profile('hypotrochoid-loop', 'Hypotrochoid Loop', { spiroR: 8.2, spiror: 2.7, spirorBoost: 0.45, spirod: 4.8, spirodBoost: 1.2, spiroScale: 3.05 }, (progress, s, config) => {
+    const t = tOf(progress);
+    const r = config.spiror + config.spirorBoost * s;
+    const d = config.spirod + config.spirodBoost * s;
+    const radius = config.spiroR - r;
+    const k = radius / r;
+    return {
+      x: 50 + (radius * Math.cos(t) + d * Math.cos(k * t)) * config.spiroScale,
+      y: 50 + (radius * Math.sin(t) - d * Math.sin(k * t)) * config.spiroScale,
+    };
+  }, (config) => [
+    `R = ${config.spiroR}, r = ${config.spiror} + ${config.spirorBoost}s, d = ${config.spirod} + ${config.spirodBoost}s`,
+    `x(t) = 50 + ${config.spiroScale}((R-r) cos t + d cos((R-r)t/r))`,
+    `y(t) = 50 + ${config.spiroScale}((R-r) sin t - d sin((R-r)t/r))`,
+  ].join('\n')),
+  ...spiralProfiles,
+  profile('butterfly-phase', 'Butterfly Phase', { butterflyTurns: 12, butterflyScale: 4.6, butterflyPulse: 0.45, butterflyCosWeight: 2, butterflyPower: 5 }, (progress, s, config) => {
+    const u = progress * Math.PI * config.butterflyTurns;
+    const b = Math.exp(Math.cos(u)) - config.butterflyCosWeight * Math.cos(4 * u) - Math.sin(u / 12) ** config.butterflyPower;
+    const scale = config.butterflyScale + config.butterflyPulse * s;
+    return { x: 50 + Math.sin(u) * b * scale, y: 50 + Math.cos(u) * b * scale };
+  }, (config) => [
+    `u = ${config.butterflyTurns}πp = ${config.butterflyTurns / 2}t`,
+    `B(u) = exp(cos u) - ${config.butterflyCosWeight} cos(4u) - sin(u/12)^${config.butterflyPower}`,
+    `x(t) = 50 + sin u · B(u)(${config.butterflyScale} + ${config.butterflyPulse}s)`,
+    `y(t) = 50 + cos u · B(u)(${config.butterflyScale} + ${config.butterflyPulse}s)`,
+  ].join('\n')),
+  profile('cardioid-glow', 'Cardioid Glow', { cardioidA: 8.4, cardioidPulse: 0.8, cardioidScale: 2.15 }, (progress, s, config) => {
+    const t = tOf(progress);
+    const r = (config.cardioidA + config.cardioidPulse * s) * (1 - Math.cos(t));
+    return { x: 50 + Math.cos(t) * r * config.cardioidScale, y: 50 + Math.sin(t) * r * config.cardioidScale };
+  }, (config) => [
+    `a = ${config.cardioidA} + ${config.cardioidPulse}s, r(t) = a(1 - cos t)`,
+    `x(t) = 50 + ${config.cardioidScale}r cos t`,
+    `y(t) = 50 + ${config.cardioidScale}r sin t`,
+  ].join('\n')),
+  profile('cardioid-heart', 'Cardioid Heart', { cardioidA: 8.8, cardioidPulse: 0.8, cardioidScale: 2.15 }, (progress, s, config) => {
+    const t = tOf(progress);
+    const r = (config.cardioidA + config.cardioidPulse * s) * (1 + Math.cos(t));
+    return { x: 50 - Math.sin(t) * r * config.cardioidScale, y: 50 - Math.cos(t) * r * config.cardioidScale };
+  }, (config) => [
+    `a = ${config.cardioidA} + ${config.cardioidPulse}s, r(t) = a(1 + cos t)`,
+    `x(t) = 50 - ${config.cardioidScale}r sin t`,
+    `y(t) = 50 - ${config.cardioidScale}r cos t`,
+  ].join('\n')),
+  profile('heart-wave', 'Heart Wave', { heartWaveB: 6.4, heartWaveRoot: 3.3, heartWaveAmp: 0.9, heartWaveScaleX: 23.2, heartWaveScaleY: 24.5 }, (progress, s, config) => {
+    const limit = Math.sqrt(config.heartWaveRoot);
+    const x = -limit + progress * limit * 2;
+    const wave = config.heartWaveAmp * Math.sqrt(Math.max(0, config.heartWaveRoot - x * x)) * Math.sin(config.heartWaveB * Math.PI * x);
+    const y = Math.abs(x) ** (2 / 3) + wave;
+    return { x: 50 + x * config.heartWaveScaleX, y: 18 + (1.75 - y) * (config.heartWaveScaleY + 1.5 * s) };
+  }, (config) => [
+    `x = -√${config.heartWaveRoot} + 2p√${config.heartWaveRoot}`,
+    `f(x) = |x|^(2/3) + ${config.heartWaveAmp}√(${config.heartWaveRoot} - x²) sin(${config.heartWaveB}πx)`,
+    `screenX = 50 + ${config.heartWaveScaleX}x`,
+    `screenY = 18 + (1.75 - f(x))(${config.heartWaveScaleY} + 1.5s)`,
+  ].join('\n')),
+  profile('spiral-search', 'Spiral Search', { searchTurns: 4, searchBaseRadius: 8, searchRadiusAmp: 8.5, searchPulse: 2.4, searchScale: 1 }, (progress, s, config) => {
+    const t = tOf(progress);
+    const angle = t * config.searchTurns;
+    const radius = config.searchBaseRadius + (1 - Math.cos(t)) * (config.searchRadiusAmp + config.searchPulse * s);
+    return { x: 50 + Math.cos(angle) * radius * config.searchScale, y: 50 + Math.sin(angle) * radius * config.searchScale };
+  }, (config) => [
+    `θ(t) = ${config.searchTurns}t, r(t) = ${config.searchBaseRadius} + (1 - cos t)(${config.searchRadiusAmp} + ${config.searchPulse}s)`,
+    `x(t) = 50 + ${config.searchScale}r cos θ`,
+    `y(t) = 50 + ${config.searchScale}r sin θ`,
+  ].join('\n')),
 ];
 
 export function getCurveProfile(id) {
-  return curveProfiles.find((profile) => profile.id === id) ?? curveProfiles[0];
+  return curveProfiles.find((item) => item.id === id) ?? curveProfiles[0];
 }
 
-export function sampleCurve(profile, progress, detailScale = 0, settings = profile.defaults, steps = DEFAULT_STEPS) {
+export function sampleCurve(item, _progress, detailScale = 0, settings = item.defaults, steps = DEFAULT_STEPS) {
   const count = Math.max(2, Math.floor(Number(steps) || DEFAULT_STEPS));
-  const pointSettings = settings ?? profile.defaults;
-  const points = [];
-  for (let index = 0; index < count; index += 1) {
-    const offset = index / (count - 1);
-    points.push(profile.point(normalizeProgress(progress + offset), detailScale, pointSettings));
-  }
-  return points;
+  // Sample the full domain, including both endpoints of open curves. Only particles wrap.
+  return Array.from({ length: count }, (_, index) => item.point(index / (count - 1), detailScale, settings));
 }
 
-export function formatFormula(profile, settings) {
-  if (!profile) return '';
-  const formulaSettings = settings ?? profile.defaults;
-  return typeof profile.formula === 'function' ? String(profile.formula(formulaSettings)) : String(profile.formula ?? '');
+export function formatFormula(item, settings) {
+  return item ? String(typeof item.formula === 'function' ? item.formula(settings ?? item.defaults) : item.formula ?? '') : '';
 }
 
 export function validateCurveProfiles() {
-  for (const profile of curveProfiles) {
+  for (const item of curveProfiles) {
     for (const detailScale of [0, 0.5, 1]) {
-      for (let index = 0; index < 128; index += 1) {
-        const point = profile.point(index / 127, detailScale, profile.defaults);
-        if (!Number.isFinite(point.x) || !Number.isFinite(point.y) || point.x < -20 || point.x > 120 || point.y < -20 || point.y > 120) {
-          throw new Error(`Invalid point in curve profile: ${profile.id}`);
+      for (const point of sampleCurve(item, 0, detailScale)) {
+        if (![point.x, point.y].every(Number.isFinite) || point.x < -20 || point.x > 120 || point.y < -20 || point.y > 120) {
+          throw new Error(`Invalid point in curve profile: ${item.id}`);
         }
       }
     }
-    if (!formatFormula(profile, profile.defaults).trim()) {
-      throw new Error(`Missing formula in curve profile: ${profile.id}`);
-    }
+    if (!formatFormula(item, item.defaults).trim()) throw new Error(`Missing formula in curve profile: ${item.id}`);
   }
   return true;
 }

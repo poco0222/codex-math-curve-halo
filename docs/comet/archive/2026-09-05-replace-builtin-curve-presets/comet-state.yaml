@@ -1,0 +1,381 @@
+schema: comet.native.v4
+name: replace-builtin-curve-presets
+language: zh-CN
+phase: archive
+status: done
+state_version: 9
+brief: brief.md
+spec_changes:
+  - capability: curve-profiles
+    operation: create
+    source: specs/curve-profiles/spec.md
+workspace:
+  isolation: current
+  change_branch: main
+  target_branch: main
+  finish: null
+loop:
+  stage: done
+  goal_cycle: 2
+  iteration: 1
+  attempt: 1
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: null
+acceptance:
+  - id: A1
+    source: brief.md
+    text: "**A1**：`curveProfiles` 按上述顺序包含恰好 20 个 profile，且不包含 `fourier-flow`；每个
+      profile 有稳定 `id`、本地化名称、公式、默认几何参数、`point` 和 `rotate`。"
+    result: passed
+    reason:
+      text: src/curves.js:7、71 定义完整 profile 接口和指定顺序的 20 项目录，排除 fourier-flow；默认几何与完整
+        Spec 一致。Runtime renderer 检查确认目录、80 个上游黄金点、旋转方向和公式通过。
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: "**A2**：设置页曲线选择器显示恰好这 20 个名称，英文与 `zh-CN` 文案一致；不存在 `Fourier Flow` 选项。"
+    result: passed
+    reason:
+      text: src/settings.html:60 的 20 个选项与 src/i18n.js 的英中映射一致。Runtime Node
+        本地化测试通过；独立浏览器只读确认当前页面的 20 个 ID、英文名称及顺序，无 Fourier Flow。
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: "**A3**：20 个 profile 在 `detailScale` 为 `0`、`0.5`、`1` 和完整采样范围内均返回有限且位于
+      renderer 既有校验边界 `[-20,120]` 内的坐标；现有 renderer self-check 通过。"
+    result: passed
+    reason:
+      text: src/curves.js:183、193 保留完整路径端点并检查有限坐标和 [-20,120] 边界。Runtime renderer 日志确认
+        20 项通过；检查覆盖 detailScale=0/0.5/1 的 481 点完整采样及每项 128 点采样。
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: "**A4**：默认设置使用 `original-thinking`；`rose-seven`、`fourier-flow` 设置值加载后回退到
+      `original-thinking`，`lissajous-drift`、`spiral-search` 保持对应目标案例，并可正常保存新值。"
+    result: passed
+    reason:
+      text: src/app.js:15、src-tauri/src/state.rs:281 使用 original-thinking
+        默认值；normalize 白名单仅回退已移除或未知 ID。Runtime Rust
+        测试通过：rose-seven/fourier-flow/unknown/空值回退，以及全部 20 个有效 ID 序列化往返保留。
+      truncated: false
+  - id: A5
+    source: brief.md
+    text: "**A5**：现有通用动画控件、公式输出、自动保存、状态切换和跨窗口 `settings-changed`
+      行为保持可用；相关现有测试与新增曲线检查通过。"
+    result: passed
+    reason:
+      text: src/halo.js 保留通用控件范围、粒子拖尾、七状态样式和颜色过渡；新增旋转按帧累积。Runtime renderer
+        状态、时长、暂停回归通过；Node 保存队列、settings-changed、状态事件等相关测试通过，按 brief
+        仅排除两项已有窗口尺寸断言。
+      truncated: false
+  - id: A6
+    source: specs/curve-profiles/spec.md
+    text: Select a built-in profile - **WHEN** the Appearance view is opened -
+      **THEN** the curve selector contains exactly the 20 IDs and labels above
+      in the same order - **AND** `fourier-flow` is absent - **AND** the active
+      formula output describes the selected profile
+    result: passed
+    reason:
+      text: 实际 Appearance 页面显示指定的 20 项目录和默认公式。src/settings.js:460、647 将选择变更及视图重挂载连接到
+        renderFormula；每项公式由 Runtime renderer 检查确认含坐标与脉冲定义。
+      truncated: false
+  - id: A7
+    source: specs/curve-profiles/spec.md
+    text: Render every profile - **WHEN** each profile is sampled at 128 points with
+      `detailScale` values `0`, `0.5`, and `1` - **THEN** every point has finite
+      `x` and `y` values - **AND** every point remains within the existing
+      validation bounds `[-20,120]` on both axes - **AND** the profile has a
+      non-empty formula
+    result: passed
+    reason:
+      text: scripts/check-renderer.mjs:118 对每项执行 128 点、detailScale=0/0.5/1
+        的有限值、边界及非空公式断言；Runtime renderer.log 返回 PASS，无检查失败。
+      truncated: false
+  - id: A8
+    source: specs/curve-profiles/spec.md
+    text: Load legacy settings - **WHEN** a persisted settings file contains a
+      removed or unknown `curve_id` - **THEN** the native settings value
+      returned to both windows is `original-thinking` - **AND** saving the
+      normalized settings writes the new ID - **WHEN** a persisted settings file
+      contains `lissajous-drift` or `spiral-search` - **THEN** that curve ID
+      remains unchanged
+    result: passed
+    reason:
+      text: src-tauri/src/main.rs:249 的 load_settings_file 在返回前
+        normalize，值变化时写回；get_settings 共用此入口，save_settings_unlocked 同样先
+        normalize。Rust 迁移及全部有效 ID 往返测试通过，lissajous-drift、spiral-search
+        保留；双窗口取得同一规范化契约。
+      truncated: false
+  - id: A9
+    source: specs/curve-profiles/spec.md
+    text: Change profile without changing global settings - **WHEN** the user
+      selects any of the 20 profiles - **THEN** the existing auto-save path
+      persists only `curve_id` and current generic settings - **AND** particle
+      count, trail span, durations, stroke width, state colors, and cross-window
+      synchronization keep their existing behavior
+    result: passed
+    reason:
+      text: AppSettings 未新增字段；src/settings.js:199、311、647 仍通过现有 Store 更新 curve_id
+        并保存完整通用设置。src/curves.js:7 固定几何，避免覆盖通用设置；Native 保存和双窗口广播链路未变，相关
+        Store/Bridge、广播及 renderer 回归通过。
+      truncated: false
+builder_handoff:
+  candidate_id: 3f24ae62-f976-483d-a738-61983a218a18
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:257c174b-e50b-4989-a40a-b7a00bfdbcb4
+  iteration: 1
+  summary:
+    text: 已完成20项内置曲线替换并排除Fourier
+      Flow；中英文、默认值、Native旧/未知ID迁移及保留有效ID一致。按用户确认修正仅rose-seven/fourier-flow回退。80黄金点和220220点独立上游比对一致，开放路径不错误闭合，481点采样，长运行旋转逐帧累计。独立复核发现的P2已修复并复核通过。
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A2
+    - A3
+    - A4
+    - A5
+    - A6
+    - A7
+    - A8
+    - A9
+  checks:
+    - name:
+        text: renderer
+        truncated: false
+      result: passed
+      note:
+        text: 20 profiles, 80 upstream points; max 112px interpolation 0.981px;
+          long-running state/timing/pause regressions passed
+        truncated: false
+    - name:
+        text: node-suite
+        truncated: false
+      result: failed
+      note:
+        text: "75 tests: 73 pass, only 2 independently reproduced HEAD baseline
+          window-size assertions fail (expected960x760, actual1130x890); log
+          /tmp/halo-curves-node.log"
+        truncated: false
+    - name:
+        text: node-with-baseline-exclusions
+        truncated: false
+      result: passed
+      note:
+        text: 73 pass; excluded only the two named pre-existing window-size tests
+        truncated: false
+    - name:
+        text: rust-lib
+        truncated: false
+      result: passed
+      note:
+        text: 74 passed, including all20 ID round trips and removed/unknown ID migration
+          retaining other settings
+        truncated: false
+    - name:
+        text: rust-bins
+        truncated: false
+      result: passed
+      note:
+        text: 31 passed
+        truncated: false
+    - name:
+        text: settings-tabs-and-format
+        truncated: false
+      result: passed
+      note:
+        text: npm run check:settings-tabs; cargo fmt --check; git diff --check
+        truncated: false
+    - name:
+        text: browser
+        truncated: false
+      result: passed
+      note:
+        text: All20 selectors and formulas; en/zh-CN; View remount retained selection.
+          Settings desktop1130x890/mobile390x844 no horizontal/formula overflow.
+          All20 actual canvas ink>0 and pixel hashes change at
+          desktop1130x900/mobile390x844. Temporary QA page removed.
+        truncated: false
+  checks_truncated: false
+  known_limits:
+    - text: The two pre-existing full Node window-size assertion failures remain;
+        baseline git archive HEAD fd79e33 independently reproduces them.
+      truncated: false
+    - text: Browser was a static frontend preview without Tauri IPC; native
+        serialization/load normalization paths are checked by Rust tests. Real
+        Tauri GUI IPC and Windows runtime were not run.
+      truncated: false
+  known_limits_truncated: false
+  review:
+    status: passed
+    summary:
+      text: 独立只读审查20项几何、目录/本地化、Native保存迁移及测试。上游220220点最大误差1.42e-14；P2旋转历史重算已修复，0/60s/1h状态过渡一致。无新增问题。
+      truncated: false
+    reviewer_execution_ref: /root/candidate_review
+  submitted_at: 2026-09-05T02:25:31.294Z
+blockers: []
+verification:
+  candidate_id: 3f24ae62-f976-483d-a738-61983a218a18
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:87320b6c-4f14-4b45-bb70-4918b29bae8f
+  iteration: 1
+  attempt: 1
+  assurance: skill-coordinated
+  verdict: pass
+  checks:
+    - id: renderer
+      name:
+        text: renderer
+        truncated: false
+      argv_display:
+        - text: scripts/check-renderer.mjs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 69
+    - id: node-regressions
+      name:
+        text: node-regressions-excluding-two-baseline-failures
+        truncated: false
+      argv_display:
+        - text: --test
+          truncated: false
+        - text: --test-skip-pattern=settings page uses (a responsive settings
+            workbench|the Halo Control Room workbench layout)
+          truncated: false
+        - text: src/app.test.mjs
+          truncated: false
+        - text: scripts/build-sidecar.test.mjs
+          truncated: false
+        - text: scripts/build-windows-remote.test.mjs
+          truncated: false
+        - text: scripts/plugin-package.test.mjs
+          truncated: false
+        - text: scripts/vscode-launch.test.mjs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 116
+    - id: settings-tabs
+      name:
+        text: settings-tabs
+        truncated: false
+      argv_display:
+        - text: scripts/check-settings-tabs.mjs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 31
+    - id: rust-unit-tests
+      name:
+        text: rust-unit-tests
+        truncated: false
+      argv_display:
+        - text: test
+          truncated: false
+        - text: --manifest-path
+          truncated: false
+        - text: src-tauri/Cargo.toml
+          truncated: false
+        - text: --lib
+          truncated: false
+        - text: --bins
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 1832
+    - id: rust-format
+      name:
+        text: rust-format
+        truncated: false
+      argv_display:
+        - text: fmt
+          truncated: false
+        - text: --manifest-path
+          truncated: false
+        - text: src-tauri/Cargo.toml
+          truncated: false
+        - text: --check
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 87
+    - id: diff-whitespace
+      name:
+        text: diff-whitespace
+        truncated: false
+      argv_display:
+        - text: diff
+          truncated: false
+        - text: --check
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 14
+  summary:
+    text: A1-A9 全部通过，无新增缺陷。已核对完整 brief/Spec、当前实现及 Runtime
+      六项检查记录：renderer、settings-tabs、Rust 74 lib + 31 bins、排除两项基线后的 Node
+      73/73、格式与空白检查均通过。全程只读，未自行运行测试或推进 Comet 状态。
+    truncated: false
+  risks:
+    - text: 全量 Node 测试仍有 brief 已记录的两项 HEAD 窗口尺寸基线失败；Runtime 仅排除指定的两项后取得
+        73/73，通过范围不能表述为全量 Node 通过。
+      truncated: false
+    - text: 真实 Tauri GUI IPC 与 Windows runtime 未运行；Native 迁移、序列化和保存广播链路的结论依据 Rust
+        测试与源码。静态浏览器观察不证明真实跨窗口保存。
+      truncated: false
+    - text: 本 Verifier 未重复 Builder 已报告的全部桌面/移动端 Canvas
+        像素与运动检查；独立浏览器观察覆盖当前设置页目录、默认公式及页面宽度。
+      truncated: false
+  risks_truncated: false
+  completed_at: 2026-09-05T02:35:13.557Z
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 0
+    outcome: recovery
+    unresolved_ids: []
+    summary:
+      text: Native target specification declarations changed
+      truncated: false
+    completed_at: 2026-09-05T02:24:54.311Z
+  - goal_cycle: 2
+    iteration: 1
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: A1-A9 全部通过，无新增缺陷。已核对完整 brief/Spec、当前实现及 Runtime
+        六项检查记录：renderer、settings-tabs、Rust 74 lib + 31 bins、排除两项基线后的 Node
+        73/73、格式与空白检查均通过。全程只读，未自行运行测试或推进 Comet 状态。
+      truncated: false
+    completed_at: 2026-09-05T02:35:13.557Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: true
+created_at: 2026-09-05T01:44:59.561Z

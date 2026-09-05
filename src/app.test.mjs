@@ -1156,7 +1156,19 @@ test('localization defaults and falls back to English', () => {
   assert.equal(getText('zh-CN', 'settings.display'), '显示');
   assert.equal(getStateLabel('zh-CN', 'input_needed'), '需要输入');
   assert.equal(getStateLabel('zh-CN', 'interrupted'), '已中断');
-  assert.equal(getCurveLabel('zh-CN', 'rose-seven'), '七瓣玫瑰');
+  assert.equal(getCurveLabel('zh-CN', 'rose-seven'), '原始思考');
+});
+
+test('every built-in curve has matching English and Chinese labels', async () => {
+  const { curveProfiles } = await import('./curves.js');
+  for (const profile of curveProfiles) {
+    assert.equal(getCurveLabel('en', profile.id), profile.label);
+    assert.match(getCurveLabel('zh-CN', profile.id), /[\u4e00-\u9fff]/u, profile.id);
+  }
+  for (const removed of ['rose-seven', 'fourier-flow', 'unknown']) {
+    assert.equal(getCurveLabel('en', removed), 'Original Thinking');
+    assert.equal(getCurveLabel('zh-CN', removed), '原始思考');
+  }
 });
 
 test('settings navigation uses a localized Test label', async () => {
@@ -1644,7 +1656,7 @@ test('renderer startup uses exact frontend defaults after get_settings fails', a
     opacity: 1,
     offset_x: 28,
     offset_y: 140,
-    curve_id: 'rose-seven',
+    curve_id: 'original-thinking',
     particle_count: 80,
     trail_span: 0.4,
     duration_ms: 500,

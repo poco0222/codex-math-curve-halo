@@ -12,7 +12,7 @@ export const DEFAULT_APP_SETTINGS = Object.freeze({
   opacity: 1,
   offset_x: 28,
   offset_y: 140,
-  curve_id: 'rose-seven',
+  curve_id: 'original-thinking',
   particle_count: 80,
   trail_span: 0.4,
   duration_ms: 500,
