@@ -240,15 +240,54 @@ impl AppSettings {
             return Err("settings contain non-finite numeric values".to_owned());
         }
 
+        // Only the complete legacy default tuple opts into upstream curve defaults.
+        if self.particle_count == 80
+            && self.trail_span == 0.4
+            && self.duration_ms == 500.0
+            && self.pulse_duration_ms == 1_200.0
+            && self.rotation_duration_ms == 3_000.0
+            && self.stroke_width == 4.0
+        {
+            (
+                self.particle_count,
+                self.trail_span,
+                self.duration_ms,
+                self.pulse_duration_ms,
+                self.rotation_duration_ms,
+                self.stroke_width,
+            ) = match self.curve_id.as_str() {
+                "thinking-five" => (62, 0.38, 4_600.0, 4_200.0, 28_000.0, 5.5),
+                "thinking-nine" => (68, 0.39, 4_700.0, 4_200.0, 30_000.0, 5.5),
+                "rose-orbit" => (72, 0.42, 5_200.0, 4_600.0, 28_000.0, 5.2),
+                "rose-curve" => (78, 0.32, 5_400.0, 4_600.0, 28_000.0, 4.5),
+                "rose-two" => (74, 0.30, 5_200.0, 4_300.0, 28_000.0, 4.6),
+                "rose-three" => (76, 0.31, 5_300.0, 4_400.0, 28_000.0, 4.6),
+                "rose-four" => (78, 0.32, 5_400.0, 4_500.0, 28_000.0, 4.6),
+                "lissajous-drift" => (68, 0.34, 6_000.0, 5_400.0, 36_000.0, 4.7),
+                "lemniscate-bloom" => (70, 0.40, 5_600.0, 5_000.0, 34_000.0, 4.8),
+                "hypotrochoid-loop" => (82, 0.46, 7_600.0, 6_200.0, 42_000.0, 4.6),
+                "three-petal-spiral" => (82, 0.34, 4_600.0, 4_200.0, 28_000.0, 4.4),
+                "four-petal-spiral" => (84, 0.34, 4_600.0, 4_200.0, 28_000.0, 4.4),
+                "five-petal-spiral" => (85, 0.34, 4_600.0, 4_200.0, 28_000.0, 4.4),
+                "six-petal-spiral" => (86, 0.34, 4_600.0, 4_200.0, 28_000.0, 4.4),
+                "butterfly-phase" => (88, 0.32, 9_000.0, 7_000.0, 50_000.0, 4.4),
+                "cardioid-glow" => (72, 0.36, 6_200.0, 5_200.0, 36_000.0, 4.9),
+                "cardioid-heart" => (74, 0.36, 6_200.0, 5_200.0, 36_000.0, 4.9),
+                "heart-wave" => (104, 0.18, 8_400.0, 5_600.0, 22_000.0, 3.9),
+                "spiral-search" => (86, 0.28, 7_800.0, 6_800.0, 44_000.0, 4.3),
+                _ => (64, 0.38, 4_600.0, 4_200.0, 28_000.0, 5.5),
+            };
+        }
+
         self.opacity = self.opacity.clamp(0.1, 1.0);
         self.offset_x = self.offset_x.clamp(-2_000, 2_000);
         self.offset_y = self.offset_y.clamp(-2_000, 2_000);
-        self.particle_count = self.particle_count.clamp(80, 140);
+        self.particle_count = self.particle_count.clamp(24, 140);
         self.trail_span = self.trail_span.clamp(0.12, 0.68);
-        self.duration_ms = self.duration_ms.clamp(500.0, 1_500.0);
-        self.pulse_duration_ms = self.pulse_duration_ms.clamp(500.0, 2_000.0);
-        self.rotation_duration_ms = self.rotation_duration_ms.clamp(500.0, 3_000.0);
-        self.stroke_width = self.stroke_width.clamp(1.0, 5.0);
+        self.duration_ms = self.duration_ms.clamp(500.0, 12_000.0);
+        self.pulse_duration_ms = self.pulse_duration_ms.clamp(500.0, 10_000.0);
+        self.rotation_duration_ms = self.rotation_duration_ms.clamp(500.0, 60_000.0);
+        self.stroke_width = self.stroke_width.clamp(1.0, 7.5);
         self.idle_color = normalize_color(self.idle_color)?;
         self.thinking_color = normalize_color(self.thinking_color)?;
         self.executing_color = normalize_color(self.executing_color)?;
@@ -279,12 +318,12 @@ impl Default for AppSettings {
             offset_x: 28,
             offset_y: 140,
             curve_id: "original-thinking".to_owned(),
-            particle_count: 80,
-            trail_span: 0.4,
-            duration_ms: 500.0,
-            pulse_duration_ms: 1_200.0,
-            rotation_duration_ms: 3_000.0,
-            stroke_width: 4.0,
+            particle_count: 64,
+            trail_span: 0.38,
+            duration_ms: 4_600.0,
+            pulse_duration_ms: 4_200.0,
+            rotation_duration_ms: 28_000.0,
+            stroke_width: 5.5,
             idle_color: DEFAULT_IDLE_COLOR.to_owned(),
             thinking_color: DEFAULT_THINKING_COLOR.to_owned(),
             executing_color: DEFAULT_EXECUTING_COLOR.to_owned(),
@@ -576,12 +615,159 @@ mod tests {
         assert_eq!(normalized.opacity, 0.1);
         assert_eq!(normalized.offset_x, 2_000);
         assert_eq!(normalized.offset_y, -2_000);
-        assert_eq!(normalized.particle_count, 80);
+        assert_eq!(normalized.particle_count, 24);
         assert_eq!(normalized.trail_span, 0.68);
         assert_eq!(normalized.duration_ms, 500.0);
-        assert_eq!(normalized.pulse_duration_ms, 2_000.0);
+        assert_eq!(normalized.pulse_duration_ms, 2_001.0);
         assert_eq!(normalized.rotation_duration_ms, 500.0);
-        assert_eq!(normalized.stroke_width, 5.0);
+        assert_eq!(normalized.stroke_width, 7.5);
+    }
+
+    #[test]
+    fn migrates_complete_legacy_animation_defaults_for_the_selected_curve() {
+        let cases = [
+            (
+                "original-thinking",
+                (64, 0.38, 4_600.0, 4_200.0, 28_000.0, 5.5),
+            ),
+            ("thinking-five", (62, 0.38, 4_600.0, 4_200.0, 28_000.0, 5.5)),
+            ("thinking-nine", (68, 0.39, 4_700.0, 4_200.0, 30_000.0, 5.5)),
+            ("rose-orbit", (72, 0.42, 5_200.0, 4_600.0, 28_000.0, 5.2)),
+            ("rose-curve", (78, 0.32, 5_400.0, 4_600.0, 28_000.0, 4.5)),
+            ("rose-two", (74, 0.30, 5_200.0, 4_300.0, 28_000.0, 4.6)),
+            ("rose-three", (76, 0.31, 5_300.0, 4_400.0, 28_000.0, 4.6)),
+            ("rose-four", (78, 0.32, 5_400.0, 4_500.0, 28_000.0, 4.6)),
+            (
+                "lissajous-drift",
+                (68, 0.34, 6_000.0, 5_400.0, 36_000.0, 4.7),
+            ),
+            (
+                "lemniscate-bloom",
+                (70, 0.40, 5_600.0, 5_000.0, 34_000.0, 4.8),
+            ),
+            (
+                "hypotrochoid-loop",
+                (82, 0.46, 7_600.0, 6_200.0, 42_000.0, 4.6),
+            ),
+            (
+                "three-petal-spiral",
+                (82, 0.34, 4_600.0, 4_200.0, 28_000.0, 4.4),
+            ),
+            (
+                "four-petal-spiral",
+                (84, 0.34, 4_600.0, 4_200.0, 28_000.0, 4.4),
+            ),
+            (
+                "five-petal-spiral",
+                (85, 0.34, 4_600.0, 4_200.0, 28_000.0, 4.4),
+            ),
+            (
+                "six-petal-spiral",
+                (86, 0.34, 4_600.0, 4_200.0, 28_000.0, 4.4),
+            ),
+            (
+                "butterfly-phase",
+                (88, 0.32, 9_000.0, 7_000.0, 50_000.0, 4.4),
+            ),
+            ("cardioid-glow", (72, 0.36, 6_200.0, 5_200.0, 36_000.0, 4.9)),
+            (
+                "cardioid-heart",
+                (74, 0.36, 6_200.0, 5_200.0, 36_000.0, 4.9),
+            ),
+            ("heart-wave", (104, 0.18, 8_400.0, 5_600.0, 22_000.0, 3.9)),
+            ("spiral-search", (86, 0.28, 7_800.0, 6_800.0, 44_000.0, 4.3)),
+            ("unknown", (64, 0.38, 4_600.0, 4_200.0, 28_000.0, 5.5)),
+        ];
+        for (curve_id, (particles, trail, duration, pulse, rotation, stroke)) in cases {
+            let settings = AppSettings {
+                enabled: false,
+                opacity: 0.65,
+                offset_x: -123,
+                offset_y: 456,
+                curve_id: curve_id.to_owned(),
+                particle_count: 80,
+                trail_span: 0.4,
+                duration_ms: 500.0,
+                pulse_duration_ms: 1_200.0,
+                rotation_duration_ms: 3_000.0,
+                stroke_width: 4.0,
+                idle_color: "#123456".to_owned(),
+                thinking_color: "#234567".to_owned(),
+                executing_color: "#345678".to_owned(),
+                input_needed_color: "#456789".to_owned(),
+                completed_color: "#56789A".to_owned(),
+                interrupted_color: "#6789AB".to_owned(),
+                compacting_color: "#789ABC".to_owned(),
+                start_at_login: true,
+                follow_codex_lifecycle: true,
+                language: "zh-CN".to_owned(),
+            };
+            let expected = AppSettings {
+                curve_id: if curve_id == "unknown" {
+                    "original-thinking"
+                } else {
+                    curve_id
+                }
+                .to_owned(),
+                particle_count: particles,
+                trail_span: trail,
+                duration_ms: duration,
+                pulse_duration_ms: pulse,
+                rotation_duration_ms: rotation,
+                stroke_width: stroke,
+                ..settings.clone()
+            };
+            let normalized = settings.normalize().unwrap();
+            assert_eq!(normalized, expected, "{curve_id}");
+            assert_eq!(normalized.normalize().unwrap(), expected, "{curve_id}");
+        }
+    }
+
+    #[test]
+    fn preserves_custom_animation_values_in_the_combined_control_ranges() {
+        for (particles, trail, duration, pulse, rotation, stroke) in [
+            (81, 0.4, 500.0, 1_200.0, 3_000.0, 4.0),
+            (80, 0.41, 500.0, 1_200.0, 3_000.0, 4.0),
+            (80, 0.4, 501.0, 1_200.0, 3_000.0, 4.0),
+            (80, 0.4, 500.0, 1_201.0, 3_000.0, 4.0),
+            (80, 0.4, 500.0, 1_200.0, 2_999.0, 4.0),
+            (80, 0.4, 500.0, 1_200.0, 3_000.0, 4.1),
+            (24, 0.12, 500.0, 500.0, 500.0, 1.0),
+            (140, 0.68, 12_000.0, 10_000.0, 60_000.0, 7.5),
+        ] {
+            let settings = AppSettings {
+                curve_id: "heart-wave".to_owned(),
+                particle_count: particles,
+                trail_span: trail,
+                duration_ms: duration,
+                pulse_duration_ms: pulse,
+                rotation_duration_ms: rotation,
+                stroke_width: stroke,
+                ..AppSettings::default()
+            };
+            assert_eq!(settings.clone().normalize().unwrap(), settings);
+        }
+    }
+
+    #[test]
+    fn clamps_animation_values_above_the_combined_control_ranges() {
+        let normalized = AppSettings {
+            particle_count: 141,
+            trail_span: 0.69,
+            duration_ms: 12_001.0,
+            pulse_duration_ms: 10_001.0,
+            rotation_duration_ms: 60_001.0,
+            stroke_width: 7.6,
+            ..AppSettings::default()
+        }
+        .normalize()
+        .unwrap();
+        assert_eq!(normalized.particle_count, 140);
+        assert_eq!(normalized.trail_span, 0.68);
+        assert_eq!(normalized.duration_ms, 12_000.0);
+        assert_eq!(normalized.pulse_duration_ms, 10_000.0);
+        assert_eq!(normalized.rotation_duration_ms, 60_000.0);
+        assert_eq!(normalized.stroke_width, 7.5);
     }
 
     #[test]

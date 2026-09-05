@@ -1,0 +1,429 @@
+schema: comet.native.v4
+name: align-reference-animation
+language: zh-CN
+phase: archive
+status: done
+state_version: 13
+brief: brief.md
+spec_changes:
+  - capability: curve-profiles
+    operation: modify
+    source: specs/curve-profiles/spec.md
+  - capability: settings-sliders
+    operation: modify
+    source: specs/settings-sliders/spec.md
+workspace:
+  isolation: current
+  change_branch: main
+  target_branch: main
+  finish: null
+loop:
+  stage: done
+  goal_cycle: 2
+  iteration: 2
+  attempt: 1
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: null
+acceptance:
+  - id: A1
+    source: brief.md
+    text: "**A1**：20 个现有曲线在 renderer 中呈现与参考项目一致的进度、呼吸、旋转方向和粒子尾迹节奏；随机相位不会破坏可重复的测试注入。"
+    result: passed
+    reason:
+      text: 沿用上一轮验收；动画实现未变，本轮 renderer 检查仍通过 20 profiles。
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: "**A2**：Canvas 仍输出非空轨迹和粒子；开放曲线保留首尾端点，不人为闭合。"
+    result: passed
+    reason:
+      text: 沿用上一轮开放端点验收；本轮 browser 记录确认 20 个 Canvas 非空且运动。
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: "**A3**：状态颜色、`420ms` 状态过渡、启用开关、透明度、跨窗口设置同步和现有通用动画控件继续工作；用户可见的覆盖语义与最终决定一致。"
+    result: passed
+    reason:
+      text: 沿用上一轮状态、420ms 过渡与设置覆盖验收；相关实现未变，Node 与 browser 检查通过。
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: "**A4**：现有 renderer/self-check、应用测试和 Rust library tests
+      通过；新增检查覆盖参考动画公式与边界。"
+    result: passed
+    reason:
+      text: src/app.test.mjs:1285、1321 均断言 1130x890，与 main.rs:1054 一致；main.rs 相对 HEAD
+        无 diff。当前 Runtime 日志确认 Node 75/75、0 skipped，Rust 77/77；全部 7
+        组检查通过，brief:82 已取消用例排除。
+      truncated: false
+  - id: A5
+    source: specs/curve-profiles/spec.md
+    text: Select a built-in profile - **WHEN** the Appearance view is opened -
+      **THEN** the curve selector contains exactly the 20 IDs and labels above
+      in the same order - **AND** `fourier-flow` is absent - **AND** the active
+      formula output describes the selected profile
+    result: passed
+    reason:
+      text: 沿用上一轮 20 个曲线目录与公式验收；目录实现未变，本轮 renderer、settings-tabs 与 browser 通过。
+      truncated: false
+  - id: A6
+    source: specs/curve-profiles/spec.md
+    text: Render every profile - **WHEN** each profile is sampled at 128 points with
+      `detailScale` values `0`, `0.5`, and `1` - **THEN** every point has finite
+      `x` and `y` values - **AND** every point remains within the existing
+      validation bounds `[-20,120]` on both axes - **AND** the profile has a
+      non-empty formula
+    result: passed
+    reason:
+      text: 沿用上一轮有限坐标、边界及公式验收；曲线实现未变，本轮 renderer self-check 通过。
+      truncated: false
+  - id: A7
+    source: specs/curve-profiles/spec.md
+    text: Load legacy settings - **WHEN** a persisted settings file contains a
+      removed or unknown `curve_id` - **THEN** the native settings value
+      returned to both windows is `original-thinking` - **AND** saving the
+      normalized settings writes the new ID - **WHEN** a persisted settings file
+      contains `lissajous-drift` or `spiral-search` - **THEN** that curve ID
+      remains unchanged
+    result: passed
+    reason:
+      text: 沿用上一轮旧 curve_id 兼容验收；本轮 Rust 的 removed IDs 与 catalog round-trip 测试通过。
+      truncated: false
+  - id: A8
+    source: specs/curve-profiles/spec.md
+    text: Match reference motion - **WHEN** each curve runs with its reference
+      parameters and a fixed phase at elapsed times 0, 1234 and 65000 ms -
+      **THEN** path endpoints, particle positions, radii, alpha, order, count
+      and line width match the upstream gallery at the same phase - **AND** the
+      seven states do not alter reference speed, pulse, particle size or alpha
+    result: passed
+    reason:
+      text: 沿用上一轮参考运动公式验收；本轮 renderer 与 browser 通过，Canvas/SVG mean alpha error 最大为
+        0.000547。
+      truncated: false
+  - id: A9
+    source: specs/curve-profiles/spec.md
+    text: Preserve animation phase - **WHEN** durations are edited or states change
+      during a long-running animation - **THEN** existing motion phases remain
+      continuous and subsequent frames use the new durations - **WHEN** the
+      renderer stops or is disabled - **THEN** paused time does not accumulate
+      motion - **AND** non-rotating profiles do not accumulate rotation
+    result: passed
+    reason:
+      text: 沿用上一轮相位连续、停启与非旋转曲线验收；src/halo.js 未变，本轮 renderer 检查通过。
+      truncated: false
+  - id: A10
+    source: specs/curve-profiles/spec.md
+    text: Use and override a preset - **WHEN** the user selects Heart Wave -
+      **THEN** controls and the save payload contain 104 particles, trail 0.18,
+      loop 8400, pulse 5600, rotation 22000 and stroke 3.9 - **WHEN** particles
+      are changed to 64, loop to 4600 and stroke to 5.5 - **THEN** those exact
+      values render and survive a remount and reload - **WHEN** the
+      current-curve reset action is used - **THEN** only its six animation
+      values return to the reference values
+    result: passed
+    reason:
+      text: 沿用上一轮预设覆盖验收；当前 browser 日志明确确认 preset、overrides、remount、reload、reset 全部通过。
+      truncated: false
+  - id: A11
+    source: specs/curve-profiles/spec.md
+    text: Upgrade existing settings - **WHEN** existing settings contain the
+      complete old default animation tuple - **THEN** normalization adopts the
+      selected curve's reference tuple, keeps other settings and remains stable
+      on another load - **WHEN** any of the six old animation values was
+      customized - **THEN** valid custom values remain unchanged
+    result: passed
+    reason:
+      text: 本轮 Rust 的完整旧默认元组迁移与自定义动画参数保留测试均通过；实现未变。
+      truncated: false
+  - id: A12
+    source: specs/curve-profiles/spec.md
+    text: Preserve Halo controls - **WHEN** the state changes with custom state
+      colors - **THEN** the new color is reached after 420 ms and motion stays
+      continuous - **WHEN** global opacity or enabled changes - **THEN** opacity
+      and visibility still apply - **WHEN** reduced motion is requested -
+      **THEN** positions remain still while colors can transition
+    result: passed
+    reason:
+      text: 沿用上一轮颜色、透明度、启用与 reduced motion 验收；renderer 实现未变，本轮检查通过。
+      truncated: false
+  - id: A13
+    source: specs/settings-sliders/spec.md
+    text: Numeric fields are sliders - GIVEN the Appearance view is mounted - WHEN
+      the view is inspected - THEN each listed numeric setting has an associated
+      label and `input[type="range"]` with the specified `min`, `max`, and
+      `step` - AND `curve_id` remains a `select` - AND `formula` remains
+      read-only
+    result: passed
+    reason:
+      text: 沿用上一轮原生滑块、范围、select 与只读公式验收；settings.html 未变，settings-tabs 检查通过。
+      truncated: false
+  - id: A14
+    source: specs/settings-sliders/spec.md
+    text: Slider values are readable and editable - GIVEN a listed slider has focus
+      - WHEN the user drags it or uses the native arrow keys - THEN the setting
+      model receives a finite number - AND the associated output displays the
+      value using the field's required precision - AND the label, slider, and
+      output remain programmatically associated
+    result: passed
+    reason:
+      text: 沿用上一轮滑块数值、精度与关联验收；相关实现未变，本轮 settings-tabs 与 browser 检查通过。
+      truncated: false
+  - id: A15
+    source: specs/settings-sliders/spec.md
+    text: External settings stay synchronized - GIVEN Appearance is mounted or an
+      external `settings-changed` payload arrives - WHEN the payload contains
+      valid settings - THEN every mounted slider and output reflects the payload
+      - AND the existing local-edit preservation behavior remains intact
+    result: passed
+    reason:
+      text: 本轮 Node 的 partial settings-changed、局部编辑保留、排队保存和外部事件同步测试全部通过。
+      truncated: false
+  - id: A16
+    source: specs/settings-sliders/spec.md
+    text: Native bounds reject invalid values - GIVEN a settings payload contains a
+      value outside a declared slider range or a non-finite numeric duration -
+      WHEN native normalization runs - THEN the resulting settings are finite
+      and inside the declared range - AND the renderer does not receive an
+      invalid value
+    result: passed
+    reason:
+      text: 本轮 Rust 的上界钳制、正常范围、自定义值保留及非有限数字拒绝测试全部通过。
+      truncated: false
+  - id: A17
+    source: specs/settings-sliders/spec.md
+    text: Existing persistence and layout remain stable - GIVEN the user changes any
+      listed slider - WHEN the existing save path completes - THEN settings
+      continue to synchronize to both windows and save failures use the existing
+      safe status/error path - AND the Appearance layout remains usable at its
+      existing responsive breakpoints without overflow
+    result: passed
+    reason:
+      text: 沿用上一轮保存与布局验收；本轮 Node 的安全错误、双窗口同步测试及 desktop/mobile browser
+        检查通过；两项正式窗口尺寸断言均通过。
+      truncated: false
+builder_handoff:
+  candidate_id: 6b6d8368-b3a5-448a-b04a-c6cf04c17f39
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:aab77508-7507-4223-9571-8b2902d2e0b0
+  iteration: 2
+  summary:
+    text: 本轮仅将两处窗口尺寸断言从960x760修正为正式main.rs的1130x890；移除brief中的测试排除说明。窗口实现与上一轮动画实现未改。
+    truncated: false
+  addressed_acceptance_ids:
+    - A4
+  checks:
+    - name:
+        text: full-node-suite
+        truncated: false
+      result: passed
+      note:
+        text: node --test src/app.test.mjs scripts/*.test.mjs:75 passed,0 failed,0
+          skipped；修正前已复现两项失败
+        truncated: false
+    - name:
+        text: diff-check
+        truncated: false
+      result: passed
+      note:
+        text: git diff --check通过；src-tauri/src/main.rs无差异
+        truncated: false
+  checks_truncated: false
+  known_limits:
+    - text: 真实Tauri IPC和Windows运行仍未做端到端验证。
+      truncated: false
+  known_limits_truncated: false
+  review:
+    status: passed
+    summary:
+      text: 两处1130x890断言与正式main.rs一致，窗口实现未改；brief不再排除用例。只读复核无发现。
+      truncated: false
+    reviewer_execution_ref: "agent:/root/window_test_review; exec chunks: 441d53,
+      133f12, 96d121, 63a567, 146604"
+  submitted_at: 2026-09-05T03:53:43.483Z
+blockers: []
+verification:
+  candidate_id: 6b6d8368-b3a5-448a-b04a-c6cf04c17f39
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:69f7c4b4-7eff-4cc6-bbb6-41efad568e14
+  iteration: 2
+  attempt: 1
+  assurance: skill-coordinated
+  verdict: pass
+  checks:
+    - id: renderer
+      name:
+        text: renderer
+        truncated: false
+      argv_display:
+        - text: scripts/check-renderer.mjs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 93
+    - id: settings-tabs
+      name:
+        text: settings-tabs
+        truncated: false
+      argv_display:
+        - text: scripts/check-settings-tabs.mjs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 29
+    - id: node-regression
+      name:
+        text: node-regression
+        truncated: false
+      argv_display:
+        - text: --test
+          truncated: false
+        - text: src/app.test.mjs
+          truncated: false
+        - text: scripts/build-sidecar.test.mjs
+          truncated: false
+        - text: scripts/build-windows-remote.test.mjs
+          truncated: false
+        - text: scripts/plugin-package.test.mjs
+          truncated: false
+        - text: scripts/vscode-launch.test.mjs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 136
+    - id: rust-lib
+      name:
+        text: rust-lib
+        truncated: false
+      argv_display:
+        - text: test
+          truncated: false
+        - text: --manifest-path
+          truncated: false
+        - text: src-tauri/Cargo.toml
+          truncated: false
+        - text: --lib
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 552
+    - id: native-compile
+      name:
+        text: native-compile
+        truncated: false
+      argv_display:
+        - text: check
+          truncated: false
+        - text: --manifest-path
+          truncated: false
+        - text: src-tauri/Cargo.toml
+          truncated: false
+        - text: --bins
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 1272
+    - id: browser
+      name:
+        text: browser
+        truncated: false
+      argv_display:
+        - text: NODE_PATH=/Users/PopoY/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules
+          truncated: false
+        - text: node
+          truncated: false
+        - text: scripts/check-animation-browser.mjs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 1852
+    - id: diff-check
+      name:
+        text: diff-check
+        truncated: false
+      argv_display:
+        - text: diff
+          truncated: false
+        - text: --check
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 13
+  summary:
+    text: 17/17 通过，无新增发现。已核对正式 Spec、本轮修改与当前 Runtime 原始日志，最后核对 Builder
+      交接；未重跑检查、修改文件或推进流程。旧窗口尺寸失败已消除，不再列为当前风险。真实 Tauri IPC 与 Windows 运行仍未做端到端验证。
+    truncated: false
+  risks: []
+  risks_truncated: false
+  completed_at: 2026-09-05T03:58:14.623Z
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 0
+    outcome: recovery
+    unresolved_ids: []
+    summary:
+      text: Native target specification declarations changed
+      truncated: false
+    completed_at: 2026-09-05T03:35:31.240Z
+  - goal_cycle: 2
+    iteration: 1
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: 当前17项scope全部通过。已独立核对验收、brief、完整Spec、实现、上游参考、Runtime日志和4张截图，最后核对Builder交接；无阻断发现，无需补检查。全程只读，未改文件或推进状态。
+      truncated: false
+    completed_at: 2026-09-05T03:46:01.677Z
+  - goal_cycle: 2
+    iteration: 1
+    attempt: 1
+    outcome: recovery
+    unresolved_ids: []
+    summary:
+      text: 用户要求按正式窗口尺寸1130x890修正两个测试断言，并以不排除用例的完整测试更新验收。
+      truncated: false
+    completed_at: 2026-09-05T03:50:51.143Z
+  - goal_cycle: 2
+    iteration: 2
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: 17/17 通过，无新增发现。已核对正式 Spec、本轮修改与当前 Runtime 原始日志，最后核对 Builder
+        交接；未重跑检查、修改文件或推进流程。旧窗口尺寸失败已消除，不再列为当前风险。真实 Tauri IPC 与 Windows
+        运行仍未做端到端验证。
+      truncated: false
+    completed_at: 2026-09-05T03:58:14.623Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: true
+created_at: 2026-09-05T02:49:20.089Z

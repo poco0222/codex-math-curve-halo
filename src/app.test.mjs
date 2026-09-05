@@ -1282,7 +1282,7 @@ test('settings page uses a responsive settings workbench', async () => {
   assert.match(css, /\.settings-dashboard\s*\{[\s\S]*margin:\s*0/);
   assert.match(css, /\.settings-panel-host\s*\{/);
   assert.match(css, /@media\s*\(max-width:\s*880px\)/);
-  assert.match(mainSource, /\.inner_size\(960\.0, 760\.0\)/);
+  assert.match(mainSource, /\.inner_size\(1130\.0, 890\.0\)/);
 });
 
 test('settings page uses the Halo Control Room workbench layout', async () => {
@@ -1318,7 +1318,7 @@ test('settings page uses the Halo Control Room workbench layout', async () => {
   assert.match(source, /function mountSettingsView\(viewId\)/);
   assert.match(source, /host\.replaceChildren\(/);
   assert.doesNotMatch(source, /const sectionNames = \[/);
-  assert.match(mainSource, /\.inner_size\(960\.0, 760\.0\)/);
+  assert.match(mainSource, /\.inner_size\(1130\.0, 890\.0\)/);
 });
 
 test('settings navigation mounts one strict section at a time', async () => {
@@ -1657,12 +1657,12 @@ test('renderer startup uses exact frontend defaults after get_settings fails', a
     offset_x: 28,
     offset_y: 140,
     curve_id: 'original-thinking',
-    particle_count: 80,
-    trail_span: 0.4,
-    duration_ms: 500,
-    pulse_duration_ms: 1200,
-    rotation_duration_ms: 3000,
-    stroke_width: 4,
+    particle_count: 64,
+    trail_span: 0.38,
+    duration_ms: 4600,
+    pulse_duration_ms: 4200,
+    rotation_duration_ms: 28000,
+    stroke_width: 5.5,
     idle_color: '#A7ADB5',
     thinking_color: '#FF8A3D',
     executing_color: '#339CFF',

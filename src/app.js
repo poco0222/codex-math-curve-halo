@@ -1,4 +1,5 @@
 import { createHaloRenderer } from './halo.js';
+import { getCurveAnimationSettings } from './curves.js';
 import { DEFAULT_STATE_COLORS } from './colors.js';
 import { formatSetupError } from './i18n.js';
 
@@ -13,12 +14,7 @@ export const DEFAULT_APP_SETTINGS = Object.freeze({
   offset_x: 28,
   offset_y: 140,
   curve_id: 'original-thinking',
-  particle_count: 80,
-  trail_span: 0.4,
-  duration_ms: 500,
-  pulse_duration_ms: 1200,
-  rotation_duration_ms: 3000,
-  stroke_width: 4,
+  ...getCurveAnimationSettings('original-thinking'),
   idle_color: DEFAULT_STATE_COLORS.idle,
   thinking_color: DEFAULT_STATE_COLORS.thinking,
   executing_color: DEFAULT_STATE_COLORS.executing,

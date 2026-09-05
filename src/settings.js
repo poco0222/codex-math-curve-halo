@@ -1,4 +1,4 @@
-import { formatFormula, getCurveProfile } from './curves.js';
+import { formatFormula, getCurveAnimationSettings, getCurveProfile } from './curves.js';
 import { DEFAULT_APP_SETTINGS, formatSetupError } from './app.js';
 import { createSettingsBridge } from './settings-bridge.js';
 import { createSettingsStore } from './settings-store.js';
@@ -645,17 +645,34 @@ function setPluginButtonsDisabled(disabled) {
 }
 
 function bindSettingsFields(root) {
+  root.querySelector?.('#reset-animation')?.addEventListener('click', () => {
+    restoreCurveAnimation();
+    void saveCurrentSettings();
+  });
   for (const field of root.querySelectorAll('input, select')) {
     if (field.dataset.colorInput || field.dataset.colorHex) continue;
     const event = field.type === 'number' || field.type === 'range' ? 'input' : 'change';
     field.addEventListener(event, () => {
       updateSettingsModel(field, true);
-      if (field.id === 'curve-id') renderFormula();
+      if (field.id === 'curve-id') restoreCurveAnimation();
       renderRangeValue(field);
       if (field.id === 'language') renderLanguage(field.value);
       void saveCurrentSettings();
     });
   }
+}
+
+function restoreCurveAnimation() {
+  syncSettingsModelFromControls();
+  const defaults = getCurveAnimationSettings(settingsStore.getSettings().curve_id);
+  for (const [key, value] of Object.entries(defaults)) {
+    settingsStore.patchSetting(key, value);
+    // Preserve the complete preset if an earlier load or queued save arrives later.
+    localSettingEdits.add(key);
+  }
+  syncControlsFromSettings();
+  renderRangeValues();
+  renderFormula();
 }
 
 function bindColorEditor(state, picker, hex, reset) {

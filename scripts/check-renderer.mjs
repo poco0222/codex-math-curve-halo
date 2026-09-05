@@ -1,14 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import { curveProfiles, formatFormula, sampleCurve, validateCurveProfiles } from '../src/curves.js';
 import { createHaloRenderer } from '../src/halo.js';
 import { createCommandInvoker, createDisplayStatePoller } from '../src/app.js';
-
-const haloSource = await readFile(new URL('../src/halo.js', import.meta.url), 'utf8');
-assert.match(haloSource, /const loopDuration = clamp\(positive\(settings\.duration_ms, DEFAULT_SETTINGS\.duration_ms\), 500, 1500\)/);
-assert.match(haloSource, /const pulseDuration = clamp\(positive\(settings\.pulse_duration_ms, DEFAULT_SETTINGS\.pulse_duration_ms\), 500, 2000\)/);
-assert.match(haloSource, /const rotationDuration = clamp\(positive\(settings\.rotation_duration_ms, DEFAULT_SETTINGS\.rotation_duration_ms\), 500, 3000\)/);
-assert.match(haloSource, /const particleCount = clamp\(Math\.max\(2, Math\.floor\(Number\(settings\.particle_count\) \|\| DEFAULT_SETTINGS\.particle_count\)\), 80, 140\)/);
 
 const expectedCurveIds = [
   'original-thinking', 'thinking-five', 'thinking-nine', 'rose-orbit', 'rose-curve',
@@ -130,89 +123,43 @@ for (const profile of curveProfiles) {
 
 for (const profile of curveProfiles) {
   assert.equal(profile.controls.length, 0, `${profile.id} must keep geometry parameters internal`);
+  assert(profile.animation?.particleCount >= 24);
+  assert(profile.animation?.durationMs >= 2400);
 }
 
-const rendererCalls = [];
-const lineWidths = [];
-let particleArcs = 0;
-const context = {
-  setTransform: () => {},
-  clearRect: () => {},
-  beginPath: () => {},
-  moveTo: () => {},
-  lineTo: () => {},
-  stroke: () => {},
-  arc: () => { particleArcs += 1; },
-  fill: () => {},
-};
-Object.defineProperty(context, 'lineWidth', {
-  set: (value) => lineWidths.push(value),
-});
-const canvas = {
-  width: 0,
-  height: 0,
-  style: {},
-  getContext: () => context,
-  getBoundingClientRect: () => ({ width: 112, height: 112 }),
-};
-let nextFrame;
-const renderer = createHaloRenderer(canvas, {
-  settings: { opacity: 0.5, particle_count: 2, stroke_width: 1, idle_color: '#123456' },
-  now: () => 0,
-  requestAnimationFrame: (callback) => { nextFrame = callback; return 1; },
-  cancelAnimationFrame: () => {},
-});
-Object.defineProperty(context, 'strokeStyle', {
-  set: (value) => rendererCalls.push(value),
-});
-renderer.start();
-nextFrame(0);
-assert.equal(canvas.style.opacity, '0.5');
-assert.equal(lineWidths.at(-1), 1);
-assert.equal(particleArcs, 81);
-particleArcs = 0;
-renderer.setSettings({ particle_count: 999 });
-nextFrame(100);
-assert.equal(particleArcs, 141);
-const coreAlpha = Number(rendererCalls.at(-1).match(/,([0-9.]+)\)$/)[1]);
-assert(Math.abs(coreAlpha - 0.2464) < 1e-10);
-assert.match(rendererCalls.at(-1), /^rgba\(18,52,86,/);
-renderer.stop();
+assert.equal(curveProfiles.find((profile) => profile.id === 'original-thinking').animation.particleCount, 64);
+assert.equal(curveProfiles.find((profile) => profile.id === 'heart-wave').animation.particleCount, 104);
 
-function createRenderProbe(settings, curve = 'original-thinking', state = 'idle') {
+function createRenderProbe(settings = {}, curve = 'original-thinking', state = 'idle', phaseOffset = 0) {
   let frame;
   let currentTime = 0;
   let path = [];
   const strokes = [];
   const particles = [];
-  const anchorContext = {
-    setTransform: () => {},
-    clearRect: () => {},
-    beginPath: () => { path = []; },
-    moveTo: (x, y) => path.push({ x, y }),
-    lineTo: (x, y) => path.push({ x, y }),
-    stroke: () => strokes.push({ path, width: anchorContext.lineWidth, shadow: anchorContext.shadowBlur, color: anchorContext.strokeStyle }),
-    arc: (x, y, radius) => particles.push({ x, y, radius }),
-    fill: () => {},
+  const context = {
+    setTransform() {},
+    clearRect() {},
+    beginPath() { path = []; },
+    moveTo(x, y) { path.push({ x, y }); },
+    lineTo(x, y) { path.push({ x, y }); },
+    stroke() { strokes.push({ path, width: this.lineWidth, color: this.strokeStyle }); },
+    arc(x, y, radius) { particles.push({ x, y, radius }); },
+    fill() { particles.at(-1).color = this.fillStyle; },
   };
-  const anchorCanvas = {
-    width: 0,
-    height: 0,
-    style: {},
-    getContext: () => anchorContext,
+  const canvas = {
+    width: 0, height: 0, style: {},
+    getContext: () => context,
     getBoundingClientRect: () => ({ width: 112, height: 112 }),
   };
-  const anchorRenderer = createHaloRenderer(anchorCanvas, {
-    curve,
-    state,
-    settings: { particle_count: 80, ...settings },
+  const renderer = createHaloRenderer(canvas, {
+    curve, state, phaseOffset, settings,
     now: () => currentTime,
     requestAnimationFrame: (callback) => { frame = callback; return 1; },
-    cancelAnimationFrame: () => {},
+    cancelAnimationFrame() {},
   });
-  anchorRenderer.start();
+  renderer.start();
   return {
-    renderer: anchorRenderer,
+    renderer, canvas,
     frame(time) {
       currentTime = time;
       strokes.length = 0;
@@ -223,65 +170,93 @@ function createRenderProbe(settings, curve = 'original-thinking', state = 'idle'
   };
 }
 
-function renderSnapshot(settings, sampleTime, curve = 'original-thinking', state = 'idle') {
-  const probe = createRenderProbe(settings, curve, state);
+function renderSnapshot(settings, time, curve, state, phaseOffset) {
+  const probe = createRenderProbe(settings, curve, state, phaseOffset);
   probe.frame(0);
-  const snapshot = probe.frame(sampleTime);
+  const snapshot = probe.frame(time);
   probe.renderer.stop();
   return snapshot;
 }
 
-assert.deepEqual(renderSnapshot({ duration_ms: 1 }, 500), renderSnapshot({ duration_ms: 500 }, 500));
-assert.deepEqual(renderSnapshot({ pulse_duration_ms: 1 }, 625), renderSnapshot({ pulse_duration_ms: 500 }, 625));
-assert.deepEqual(renderSnapshot({ rotation_duration_ms: 1 }, 500), renderSnapshot({ rotation_duration_ms: 500 }, 500));
-assert.notDeepEqual(renderSnapshot({ duration_ms: 500 }, 500).particles.at(-1), renderSnapshot({ duration_ms: 1000 }, 500).particles.at(-1));
+const near = (actual, expected, message) => assert(Math.abs(actual - expected) < 1e-8, message ?? `${actual} != ${expected}`);
+const nearPoint = (actual, expected, label) => {
+  near(actual.x, expected.x, `${label} x`);
+  near(actual.y, expected.y, `${label} y`);
+};
 
-const rendererGeometryFailures = [];
+// Audited gallery defaults from upstream 70f4e00: count, trail, loop, rotation, pulse, stroke.
+const referenceAnimations = [
+  [64, .38, 4600, 28000, 4200, 5.5], [62, .38, 4600, 28000, 4200, 5.5],
+  [68, .39, 4700, 30000, 4200, 5.5], [72, .42, 5200, 28000, 4600, 5.2],
+  [78, .32, 5400, 28000, 4600, 4.5], [74, .30, 5200, 28000, 4300, 4.6],
+  [76, .31, 5300, 28000, 4400, 4.6], [78, .32, 5400, 28000, 4500, 4.6],
+  [68, .34, 6000, 36000, 5400, 4.7], [70, .40, 5600, 34000, 5000, 4.8],
+  [82, .46, 7600, 42000, 6200, 4.6], [82, .34, 4600, 28000, 4200, 4.4],
+  [84, .34, 4600, 28000, 4200, 4.4], [85, .34, 4600, 28000, 4200, 4.4],
+  [86, .34, 4600, 28000, 4200, 4.4], [88, .32, 9000, 50000, 7000, 4.4],
+  [72, .36, 6200, 36000, 5200, 4.9], [74, .36, 6200, 36000, 5200, 4.9],
+  [104, .18, 8400, 22000, 5600, 3.9], [86, .28, 7800, 44000, 6800, 4.3],
+];
+const states = ['idle', 'thinking', 'executing', 'input_needed', 'completed', 'interrupted', 'compacting'];
+for (const [index, profile] of curveProfiles.entries()) {
+  const [count, trail, loop, rotation, pulse, stroke] = referenceAnimations[index];
+  for (const [time, phase] of [[0, 0], [1234, .37], [65000, .91]]) {
+    const state = states[index % states.length];
+    const snap = renderSnapshot({ [`${state}_color`]: '#123456' }, time, profile.id, state, phase);
+    assert.equal(snap.strokes.length, 1);
+    assert.equal(snap.strokes[0].width, stroke, profile.id);
+    assert.equal(snap.strokes[0].color, 'rgba(18,52,86,0.1)');
+    assert.equal(snap.particles.length, count, profile.id);
+    const detail = .52 + (Math.sin((time / pulse + phase) * Math.PI * 2 + .55) + 1) * .24;
+    const rotates = index < 8 || (index >= 11 && index <= 14);
+    const angle = rotates ? -(time / rotation + phase) * Math.PI * 2 : 0;
+    const rotate = ({ x, y }) => ({
+      x: 50 + (x - 50) * Math.cos(angle) - (y - 50) * Math.sin(angle),
+      y: 50 + (x - 50) * Math.sin(angle) + (y - 50) * Math.cos(angle),
+    });
+    // Geometry is checked against independent golden coordinates above.
+    nearPoint(snap.path[0], rotate(profile.point(0, detail)), profile.id);
+    nearPoint(snap.path.at(-1), rotate(profile.point(1, detail)), profile.id);
+    for (const particleIndex of [0, Math.floor(count / 2), count - 1]) {
+      const fraction = particleIndex / (count - 1);
+      const progress = ((time / loop + phase - fraction * trail) % 1 + 1) % 1;
+      nearPoint(snap.particles[particleIndex], rotate(profile.point(progress, detail)), profile.id);
+      const fade = (1 - fraction) ** .56;
+      near(snap.particles[particleIndex].radius, .9 + fade * 2.7);
+      near(Number(snap.particles[particleIndex].color.match(/,([0-9.]+)\)$/)[1]), .04 + fade * .96);
+    }
+  }
+}
 for (const id of ['butterfly-phase', 'heart-wave']) {
   const profile = curveProfiles.find((item) => item.id === id);
+  const detail = .52 + (Math.sin(.55) + 1) * .24;
   const snapshot = renderSnapshot({}, 0, id);
-  const error = screenInterpolationError(profile, snapshot.path, 0.5);
-  if (error >= 1.1) rendererGeometryFailures.push(`${id} path error: ${error.toFixed(3)}px`);
+  assert(screenInterpolationError(profile, snapshot.path, detail) < 1.1, id);
 }
 
-const stateCases = [
-  ['idle', 0.28, 0.32, 0.55],
-  ['thinking', 0.68, 0.64, 0.82],
-  ['executing', 0.82, 1.45, 1.55],
-  ['input_needed', 0.76, 0.72, 0.9],
-  ['completed', 0.58, 0.42, 0.7],
-  ['interrupted', 0.68, 0.58, 0.82],
-  ['compacting', 0.72, 0.88, 1.05],
-];
-for (const [state, alpha, speed, rotation] of stateCases) {
-  const settings = { stroke_width: 1, [`${state}_color`]: '#123456', rotation_duration_ms: 500 };
-  const snapshot = renderSnapshot(settings, 0, 'original-thinking', state);
-  assert.equal(snapshot.strokes.length, 3);
-  assert.deepEqual(snapshot.strokes.map(({ width, shadow }) => [width, shadow]), [[3, 10], [1.8, 4], [1, 0]]);
-  assert.deepEqual(snapshot.strokes[0].path, snapshot.strokes[1].path);
-  assert.deepEqual(snapshot.strokes[0].path, snapshot.strokes[2].path);
-  assert.equal(snapshot.strokes[2].color, `rgba(18,52,86,${alpha * 0.88})`);
-  assert.equal(snapshot.particles.length, 81);
-
-  const elapsed = 125;
-  const rotated = renderSnapshot(settings, elapsed, 'original-thinking', state).path[0];
-  const radius = 27.3 - 11.7 * (0.5 + 0.5 * Math.sin(2 * Math.PI * elapsed / 1200));
-  const angle = -2 * Math.PI * elapsed * speed / 500 * rotation;
-  assert(Math.hypot(rotated.x - (50 + radius * Math.cos(angle)), rotated.y - (50 + radius * Math.sin(angle))) < 1e-8);
-
-  const boundary = 500 / speed;
-  const before = renderSnapshot(settings, boundary - 0.001, 'original-thinking', state).path[0];
-  const after = renderSnapshot(settings, boundary + 0.001, 'original-thinking', state).path[0];
-  const jump = Math.hypot(before.x - after.x, before.y - after.y);
-  if (jump >= 0.01) rendererGeometryFailures.push(`${state} rotation boundary jump: ${jump.toFixed(3)}`);
+// Values matching Original Thinking defaults are still legal overrides on other curves.
+const overrides = { particle_count: 64, duration_ms: 4600, pulse_duration_ms: 4200, rotation_duration_ms: 28000, stroke_width: 5.5, trail_span: .38 };
+const overridden = renderSnapshot(overrides, 1150, 'heart-wave');
+assert.equal(overridden.particles.length, 64);
+assert.equal(overridden.strokes[0].width, 5.5);
+const heart = curveProfiles.find((profile) => profile.id === 'heart-wave');
+nearPoint(overridden.particles[0], heart.point(.25, .52 + (Math.sin(1150 / 4200 * 2 * Math.PI + .55) + 1) * .24), 'explicit loop');
+for (const [key, low, high] of [
+  ['duration_ms', 500, 12000], ['pulse_duration_ms', 500, 10000],
+  ['rotation_duration_ms', 500, 60000], ['particle_count', 24, 140],
+  ['trail_span', .12, .68], ['stroke_width', 1, 7.5],
+]) {
+  assert.deepEqual(renderSnapshot({ [key]: low / 2 }, 625), renderSnapshot({ [key]: low }, 625), key);
+  assert.deepEqual(renderSnapshot({ [key]: high * 2 }, 625), renderSnapshot({ [key]: high }, 625), key);
+  for (const invalid of [NaN, Infinity, -Infinity, null, 'bad']) {
+    assert.deepEqual(renderSnapshot({ [key]: invalid }, 625), renderSnapshot({}, 625), key);
+  }
 }
-assert.deepEqual(rendererGeometryFailures, []);
 
 const anchorAngle = (snapshot) => Math.atan2(snapshot.path[0].y - 50, snapshot.path[0].x - 50);
 const angleDelta = (before, after) => Math.atan2(Math.sin(after - before), Math.cos(after - before));
-
 function transitionRotation(startTime) {
-  const probe = createRenderProbe({ rotation_duration_ms: 3000 });
+  const probe = createRenderProbe();
   probe.frame(0);
   let angle = anchorAngle(probe.frame(startTime));
   probe.renderer.setState('thinking');
@@ -294,115 +269,62 @@ function transitionRotation(startTime) {
   probe.renderer.stop();
   return deltas;
 }
-
-checkGeometry('state transition rotation must not depend on uptime', () => {
-  const fresh = transitionRotation(0);
-  const aged = transitionRotation(60000);
-  const maxRateStep = 2 * Math.PI * 10 * 0.64 * 0.82 / 3000;
-  const difference = Math.max(...aged.map((step, index) => Math.abs(step - fresh[index])));
-  assert(difference < 1e-10, `60s transition differs by ${difference.toFixed(6)}rad/frame`);
-  assert(aged.every((step) => step <= 0 && Math.abs(step) <= maxRateStep + 1e-10));
-});
-
-checkGeometry('duration changes preserve rotation phase after 60s', () => {
-  const probe = createRenderProbe({ rotation_duration_ms: 3000 });
-  probe.frame(0);
-  const before = anchorAngle(probe.frame(60000));
-  probe.renderer.setSettings({ rotation_duration_ms: 500 });
-  const changed = anchorAngle(probe.frame(60000));
-  const next = anchorAngle(probe.frame(60016));
-  probe.renderer.stop();
-  assert(Math.abs(angleDelta(before, changed)) < 1e-10, 'changing duration rewound rotation');
-  assert(Math.abs(angleDelta(changed, next) + 2 * Math.PI * 16 * 0.32 * 0.55 / 500) < 1e-10);
-});
-
-for (const pause of ['stopped', 'disabled', 'non-rotating']) {
-  checkGeometry(`${pause} time must not accrue rotation`, () => {
-    const probe = createRenderProbe({ rotation_duration_ms: 3000 });
-    probe.frame(0);
-    const before = anchorAngle(probe.frame(60000));
-    if (pause === 'stopped') {
-      probe.renderer.stop();
-      probe.renderer.start();
-    } else if (pause === 'disabled') {
-      probe.renderer.setSettings({ enabled: false });
-      probe.frame(120000);
-      probe.renderer.setSettings({ enabled: true });
-    } else {
-      probe.renderer.setCurve('heart-wave');
-      probe.frame(120000);
-      probe.renderer.setCurve('original-thinking');
-    }
-    const resumed = anchorAngle(probe.frame(120000));
-    const next = anchorAngle(probe.frame(120016));
-    probe.renderer.stop();
-    assert(Math.abs(angleDelta(before, resumed)) < 1e-10, 'resuming rotation included paused time');
-    assert(Math.abs(angleDelta(resumed, next) + 2 * Math.PI * 16 * 0.32 * 0.55 / 3000) < 1e-10);
-  });
+const fresh = transitionRotation(0);
+const aged = transitionRotation(60000);
+for (let index = 0; index < aged.length; index++) {
+  near(aged[index], fresh[index], 'state transition depends on uptime');
+  near(aged[index], -2 * Math.PI * 10 / 28000);
 }
-assert.deepEqual(geometryFailures, []);
+const durationProbe = createRenderProbe();
+durationProbe.frame(0);
+const beforeDuration = durationProbe.frame(60000);
+durationProbe.renderer.setSettings({ rotation_duration_ms: 500, duration_ms: 500, pulse_duration_ms: 500 });
+const changedDuration = durationProbe.frame(60000);
+assert.deepEqual(changedDuration, beforeDuration, 'editing duration rewound phase');
+const nextDuration = durationProbe.frame(60016);
+near(angleDelta(anchorAngle(changedDuration), anchorAngle(nextDuration)), -2 * Math.PI * 16 / 500);
+durationProbe.renderer.stop();
+for (const pause of ['stopped', 'disabled', 'non-rotating']) {
+  const probe = createRenderProbe();
+  probe.frame(0);
+  const before = probe.frame(60000);
+  if (pause === 'stopped') {
+    probe.renderer.stop();
+    probe.renderer.start();
+  } else if (pause === 'disabled') {
+    probe.renderer.setSettings({ enabled: false });
+    assert.equal(probe.frame(120000).particles.length, 0);
+    probe.renderer.setSettings({ enabled: true });
+  } else {
+    probe.renderer.setCurve('heart-wave');
+    probe.frame(120000);
+    probe.renderer.setCurve('original-thinking');
+  }
+  const resumed = probe.frame(120000);
+  const next = probe.frame(120016);
+  near(angleDelta(anchorAngle(before), anchorAngle(resumed)), 0, `${pause} accrued rotation`);
+  near(angleDelta(anchorAngle(resumed), anchorAngle(next)), -2 * Math.PI * 16 / 28000);
+  if (pause !== 'non-rotating') assert.deepEqual(resumed, before, `${pause} accrued motion`);
+  probe.renderer.stop();
+}
 
-const transitionCalls = [];
-const transitionContext = {
-  setTransform: () => {},
-  clearRect: () => {},
-  beginPath: () => {},
-  moveTo: () => {},
-  lineTo: () => {},
-  stroke: () => {},
-  arc: () => {},
-  fill: () => {},
-};
-Object.defineProperty(transitionContext, 'strokeStyle', {
-  set: (value) => transitionCalls.push(value),
-});
-const transitionCanvas = {
-  width: 0,
-  height: 0,
-  style: {},
-  getContext: () => transitionContext,
-  getBoundingClientRect: () => ({ width: 112, height: 112 }),
-};
-let transitionFrame;
-let transitionNow = 0;
-const transitionRenderer = createHaloRenderer(transitionCanvas, {
-  settings: { particle_count: 2 },
-  now: () => transitionNow,
-  requestAnimationFrame: (callback) => { transitionFrame = callback; return 1; },
-  cancelAnimationFrame: () => {},
-});
-transitionRenderer.start();
-transitionFrame(0);
-transitionCalls.length = 0;
-transitionRenderer.setState('thinking');
-transitionNow = 100;
-transitionRenderer.setSettings({ opacity: 0.5 });
-transitionFrame(100);
-transitionNow = 420;
-transitionFrame(420);
-assert.match(transitionCalls.at(-1), /^rgba\(255,138,61,0\.5984/);
-transitionRenderer.stop();
+const transitionProbe = createRenderProbe({ idle_color: '#000000', thinking_color: '#FFFFFF' });
+transitionProbe.frame(0);
+transitionProbe.renderer.setState('thinking');
+transitionProbe.renderer.setSettings({ opacity: .5 });
+assert.equal(transitionProbe.frame(210).strokes[0].color, 'rgba(128,128,128,0.1)');
+assert.equal(transitionProbe.frame(420).strokes[0].color, 'rgba(255,255,255,0.1)');
+assert.equal(transitionProbe.canvas.style.opacity, '0.5');
+transitionProbe.renderer.stop();
+assert.match(renderSnapshot({ idle_color: 'not-a-color' }, 0).strokes[0].color, /^rgba\(167,173,181,/);
 
-const invalidColorCalls = [];
-const invalidColorContext = { ...context };
-Object.defineProperty(invalidColorContext, 'strokeStyle', {
-  set: (value) => invalidColorCalls.push(value),
-});
-const invalidColorCanvas = {
-  ...canvas,
-  getContext: () => invalidColorContext,
-};
-let invalidColorFrame;
-const invalidColorRenderer = createHaloRenderer(invalidColorCanvas, {
-  settings: { particle_count: 2, idle_color: 'not-a-color' },
-  now: () => 0,
-  requestAnimationFrame: (callback) => { invalidColorFrame = callback; return 1; },
-  cancelAnimationFrame: () => {},
-});
-invalidColorRenderer.start();
-invalidColorFrame(0);
-assert.match(invalidColorCalls.at(-1), /^rgba\(167,173,181,/);
-invalidColorRenderer.stop();
+const savedMatchMedia = globalThis.matchMedia;
+globalThis.matchMedia = () => ({ matches: true });
+try {
+  assert.deepEqual(renderSnapshot({}, 0), renderSnapshot({}, 1000), 'reduced motion must hold position');
+} finally {
+  globalThis.matchMedia = savedMatchMedia;
+}
 
 const warnings = [];
 const commandInvoker = createCommandInvoker(async () => {

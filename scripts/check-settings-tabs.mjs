@@ -48,12 +48,12 @@ const sliderSpecs = [
   ['opacity', 'opacity', '0.1', '1', '0.01'],
   ['offset-x', 'offset_x', '-2000', '2000', '1'],
   ['offset-y', 'offset_y', '-2000', '2000', '1'],
-  ['particle-count', 'particle_count', '80', '140', '1'],
+  ['particle-count', 'particle_count', '24', '140', '1'],
   ['trail-span', 'trail_span', '0.12', '0.68', '0.01'],
-  ['duration-ms', 'duration_ms', '500', '1500', '1'],
-  ['pulse-duration-ms', 'pulse_duration_ms', '500', '2000', '1'],
-  ['rotation-duration-ms', 'rotation_duration_ms', '500', '3000', '1'],
-  ['stroke-width', 'stroke_width', '1.0', '5.0', '0.1'],
+  ['duration-ms', 'duration_ms', '500', '12000', '1'],
+  ['pulse-duration-ms', 'pulse_duration_ms', '500', '10000', '1'],
+  ['rotation-duration-ms', 'rotation_duration_ms', '500', '60000', '1'],
+  ['stroke-width', 'stroke_width', '1.0', '7.5', '0.1'],
 ];
 for (const [id, name, min, max, step] of sliderSpecs) {
   assert.match(
