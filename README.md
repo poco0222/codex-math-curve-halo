@@ -21,6 +21,10 @@ The app starts with an idle overlay and a hidden settings window. Open settings
 from the tray or menu bar. Settings are stored as JSON in the Tauri app config
 directory.
 
+Hold `Command` on macOS or `Ctrl` on Windows and drag the halo with the left
+mouse button to move it. Releasing either the button or modifier saves the
+position. **Reset position** in Settings or the tray restores the default.
+
 ## Follow Codex lifecycle
 
 Enable **Follow Codex lifecycle** to let the native app manage the bundled

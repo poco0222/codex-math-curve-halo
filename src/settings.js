@@ -634,6 +634,19 @@ const settingsChangedSubscription = settingsBridge.subscribe(
   ({ payload }) => settingsStore.enqueue(() => applySettings(payload)),
 );
 settingsChangedSubscription?.catch?.(() => {});
+const positionSaveFailedSubscription = settingsBridge.subscribe('position-save-failed', ({ payload }) => settingsStore.enqueue(() => {
+  showSetupError('save_position', payload);
+  setSaveStatus('error');
+}));
+positionSaveFailedSubscription?.catch?.(() => {});
+const positionSavedSubscription = settingsBridge.subscribe('position-saved', () => settingsStore.enqueue(() => {
+  const { setupError } = settingsStore.getUiState();
+  if (setupError && setupError.command !== 'save_position') return;
+  clearSetupError();
+  renderDiagnostics();
+  setSaveStatus('saved');
+}));
+positionSavedSubscription?.catch?.(() => {});
 const pluginOperationSubscription = settingsBridge.subscribe('plugin-operation', ({ payload }) => {
   const status = pluginOperationStatuses[payload];
   if (status) renderPluginStatus(status);

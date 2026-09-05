@@ -46,8 +46,6 @@ for (const view of ['appearance', 'colors', 'integration', 'test']) {
 assert.match(html, /id="particle-count"/);
 const sliderSpecs = [
   ['opacity', 'opacity', '0.1', '1', '0.01'],
-  ['offset-x', 'offset_x', '-2000', '2000', '1'],
-  ['offset-y', 'offset_y', '-2000', '2000', '1'],
   ['particle-count', 'particle_count', '24', '140', '1'],
   ['trail-span', 'trail_span', '0.12', '0.68', '0.01'],
   ['duration-ms', 'duration_ms', '1', '12', '1'],
@@ -63,7 +61,8 @@ for (const [id, name, min, max, step] of sliderSpecs) {
   );
   assert.match(html, new RegExp(`id="${id}-value"[^>]*for="${id}"`), `${id} needs an associated value output`);
 }
-assert.doesNotMatch(html, /id="(?:offset-x|offset-y|particle-count|trail-span|duration-ms|pulse-duration-ms|rotation-duration-ms|stroke-width)"[^>]*type="number"/);
+assert.doesNotMatch(html, /id="(?:particle-count|trail-span|duration-ms|pulse-duration-ms|rotation-duration-ms|stroke-width)"[^>]*type="number"/);
+assert.doesNotMatch(html, /(?:id="offset-[xy](?:-value)?"|name="offset_[xy]")/);
 assert.match(html, /id="color-state-list"/);
 assert.match(html, /id="display-section"[^>]*>[\s\S]*?<\/fieldset>\s*<fieldset id="animation-section"/);
 assert.doesNotMatch(html, /data-section-target=/);

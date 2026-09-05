@@ -1,5 +1,7 @@
-use codex_halo_lib::state::{AppSettings, DisplayState, HaloState, SessionStore, Snapshot};
-use codex_halo_lib::{hook_protocol, hooks, lifecycle, platform, plugin};
+use codex_halo_lib::state::{
+    AppSettings, DisplayState, HaloState, OverlayPosition, SessionStore, Snapshot,
+};
+use codex_halo_lib::{hook_protocol, hooks, lifecycle, platform, plugin, positioning};
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -277,9 +279,6 @@ fn load_app_settings(app: &AppHandle) -> Result<AppSettings, String> {
 
 fn apply_settings_to_overlay(app: &AppHandle, settings: &AppSettings) {
     if let Some(overlay) = app.get_webview_window("main") {
-        if platform::position_overlay(&overlay, settings.offset_x, settings.offset_y).is_err() {
-            eprintln!("Codex Halo: unable to apply overlay position");
-        }
         if platform::set_overlay_visibility(&overlay, settings.enabled).is_err() {
             eprintln!("Codex Halo: unable to apply overlay visibility");
         }
@@ -434,9 +433,9 @@ fn get_settings(
 }
 
 fn save_settings_unlocked(app: AppHandle, settings: AppSettings) -> Result<(), String> {
-    let settings = settings.normalize()?;
     let path = app_config_path(&app)?;
     let current = load_settings_file(&path)?;
+    let settings = positioning::preserve_position(&current, settings).normalize()?;
 
     save_settings_transaction(
         &current,
@@ -468,6 +467,35 @@ fn save_settings(
     runtime: State<'_, ReducerRuntimeState>,
 ) -> Result<(), String> {
     save_settings_inner(app, settings, &runtime)
+}
+
+#[tauri::command]
+fn begin_overlay_drag(
+    window: tauri::WebviewWindow,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    positioning::begin(window, x, y, width, height)
+}
+
+fn save_overlay_position(app: &AppHandle, position: OverlayPosition) -> Result<(), String> {
+    let runtime = app.state::<ReducerRuntimeState>();
+    let _guard = runtime
+        .settings_transaction
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let path = app_config_path(app)?;
+    let mut settings = load_settings_file(&path)?;
+    settings.overlay_position = Some(position);
+    let settings = settings.normalize()?;
+    write_settings_file(&path, &settings)?;
+    for target in ["main", "settings"] {
+        let _ = app.emit_to(target, "settings-changed", settings.clone());
+    }
+    let _ = app.emit_to("settings", "position-saved", ());
+    Ok(())
 }
 
 #[tauri::command]
@@ -537,9 +565,21 @@ fn reset_position_inner(
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut settings = load_app_settings(&app)?;
+    let previous = settings.clone();
     settings.offset_x = AppSettings::default().offset_x;
     settings.offset_y = AppSettings::default().offset_y;
-    save_settings_unlocked(app, settings.clone())?;
+    settings.overlay_position = None;
+    let overlay = app
+        .get_webview_window("main")
+        .ok_or("Codex Halo overlay window not found")?;
+    positioning::cancel(&overlay);
+    settings.overlay_position = Some(positioning::restore(&overlay, &settings)?);
+    if let Err(error) = write_settings_file(&app_config_path(&app)?, &settings) {
+        let _ = positioning::restore(&overlay, &previous);
+        return Err(error);
+    }
+    apply_settings_to_overlay(&app, &settings);
+    let _ = app.emit_to("settings", "position-saved", ());
     Ok(settings)
 }
 
@@ -1041,12 +1081,31 @@ fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
         .skip_taskbar(true)
         .shadow(false)
         .resizable(false)
+        .focusable(false)
+        .focused(false)
+        .accept_first_mouse(true)
+        .initialization_script(r#"
+            document.addEventListener('pointerdown', (event) => {
+                if (event.button !== 0 || !(navigator.platform.includes('Mac') ? event.metaKey : event.ctrlKey)) return;
+                event.preventDefault();
+                window.__TAURI__.core.invoke('begin_overlay_drag', {
+                    x: event.clientX, y: event.clientY, width: innerWidth, height: innerHeight
+                }).catch((error) => console.error('Codex Halo drag:', error));
+            }, { capture: true });
+        "#)
         .visible(false)
         .build()?;
     platform::configure_overlay(&overlay)?;
-    if let Err(error) = platform::position_overlay(&overlay, settings.offset_x, settings.offset_y) {
+    if let Err(error) = positioning::restore(&overlay, &settings) {
         eprintln!("Codex Halo: unable to position overlay: {error}");
     }
+    let handle = app.handle().clone();
+    positioning::install(&overlay, move |position| {
+        if let Err(error) = save_overlay_position(&handle, position) {
+            eprintln!("Codex Halo: {error}");
+            let _ = handle.emit_to("settings", "position-save-failed", error);
+        }
+    });
 
     let settings_window =
         WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
@@ -1093,6 +1152,7 @@ fn main() {
             get_display_state,
             get_settings,
             save_settings,
+            begin_overlay_drag,
             simulate_state,
             install_plugin,
             uninstall_plugin,

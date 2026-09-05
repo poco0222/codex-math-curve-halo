@@ -13,6 +13,7 @@ export const DEFAULT_APP_SETTINGS = Object.freeze({
   opacity: 1,
   offset_x: 28,
   offset_y: 140,
+  overlay_position: null,
   curve_id: 'original-thinking',
   ...getCurveAnimationSettings('original-thinking'),
   idle_color: DEFAULT_STATE_COLORS.idle,

@@ -20,6 +20,9 @@ cargo tauri dev
 应用启动时显示空闲光环，并隐藏设置窗口。可从托盘或菜单栏打开设置。设置以
 JSON 格式保存在 Tauri 应用配置目录中。
 
+macOS 按住 `Command`、Windows 按住 `Ctrl`，用鼠标左键拖动光环即可调整位置。
+松开左键或修饰键后自动保存。设置页或托盘中的 **重置位置** 可恢复默认位置。
+
 ## 随 Codex 启停
 
 启用 **随 Codex 启停** 后，由原生 App 管理内置的 `codex-halo-watch` watcher，

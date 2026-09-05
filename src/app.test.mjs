@@ -1521,8 +1521,6 @@ test('settings language flow saves once and redraws raw setup errors', async () 
   const fields = [
     new FakeElement({ id: 'enabled', type: 'checkbox', checked: true }),
     new FakeElement({ id: 'opacity', type: 'range', value: '1' }),
-    new FakeElement({ id: 'offset-x', type: 'number', value: '28' }),
-    new FakeElement({ id: 'offset-y', type: 'number', value: '140' }),
     new FakeElement({ id: 'curve-id', type: 'select', value: 'rose-seven' }),
     new FakeElement({ id: 'particle-count', type: 'number', value: '64' }),
     new FakeElement({ id: 'trail-span', type: 'number', value: '0.4' }),
@@ -1554,11 +1552,14 @@ test('settings language flow saves once and redraws raw setup errors', async () 
   const listeners = new Map();
   const saveCalls = [];
   const warnings = [];
+  let blockNextSave = false;
+  let releaseBlockedSave;
   const invoke = async (command, args) => {
     if (command === 'get_settings') return { ...DEFAULT_APP_SETTINGS };
     if (command === 'get_display_state') return { state: 'idle', updated_at_ms: 0 };
     if (command === 'save_settings') {
       saveCalls.push(args);
+      if (blockNextSave) await new Promise((resolve) => { releaseBlockedSave = resolve; });
       throw 'start-at-login:permission';
     }
     return null;
@@ -1616,6 +1617,23 @@ test('settings language flow saves once and redraws raw setup errors', async () 
     assert.equal(pluginStatus.textContent, 'Plugin 已安装');
     assert.equal(elements.get('install-plugin').disabled, false);
     assert.equal(elements.get('uninstall-plugin').disabled, false);
+
+    await listeners.get('position-saved')({ payload: null });
+    assert.match(diagnostics.textContent, /启动时设置失败（权限）/);
+    await listeners.get('position-save-failed')({ payload: 'private native error details' });
+    assert.match(diagnostics.textContent, /设置错误: 位置未能保存/);
+    assert.deepEqual(warnings.at(-1), ['Codex Halo: Position could not be saved']);
+    await listeners.get('position-saved')({ payload: null });
+    assert.doesNotMatch(diagnostics.textContent, /位置未能保存/);
+
+    blockNextSave = true;
+    fields.at(-1).dispatch('change');
+    await new Promise((resolve) => setImmediate(resolve));
+    const earlierSuccess = listeners.get('position-saved')({ payload: null });
+    const laterFailure = listeners.get('position-save-failed')({ payload: 'private native error details' });
+    releaseBlockedSave();
+    await Promise.all([earlierSuccess, laterFailure]);
+    assert.match(diagnostics.textContent, /位置未能保存/);
   } finally {
     console.warn = originalWarn;
     delete globalThis.document;
@@ -1664,6 +1682,7 @@ test('renderer startup uses exact frontend defaults after get_settings fails', a
     opacity: 1,
     offset_x: 28,
     offset_y: 140,
+    overlay_position: null,
     curve_id: 'original-thinking',
     particle_count: 64,
     trail_span: 0.38,

@@ -19,8 +19,6 @@ const dictionaries = {
     'settings.curveSaveFailed': 'Curve not saved. Retry to save your changes.',
     'settings.retryCurveSave': 'Retry',
     'settings.opacity': 'Opacity',
-    'settings.offsetX': 'Offset X',
-    'settings.offsetY': 'Offset Y',
     'settings.renderer': 'Renderer',
     'settings.resetAnimation': 'Reset curve animation',
     'settings.colors': 'State colors',
@@ -47,6 +45,7 @@ const dictionaries = {
     'settings.diagnostics': 'Diagnostics',
     'settings.diagnosticsLive': 'Live',
     'settings.resetPosition': 'Reset position',
+    'errors.positionSave': 'Position could not be saved',
     'settings.simulateState': 'Simulate state',
     'settings.colorSelectionHint': 'Select a state to edit its color',
     'settings.stateCount': '7 states',
@@ -125,8 +124,6 @@ const dictionaries = {
     'settings.curveSaveFailed': '曲线未保存，请重试。',
     'settings.retryCurveSave': '重试',
     'settings.opacity': '不透明度',
-    'settings.offsetX': 'X 偏移',
-    'settings.offsetY': 'Y 偏移',
     'settings.renderer': '渲染器',
     'settings.resetAnimation': '恢复当前曲线动效',
     'settings.colors': '状态颜色',
@@ -153,6 +150,7 @@ const dictionaries = {
     'settings.diagnostics': '诊断',
     'settings.diagnosticsLive': '实时',
     'settings.resetPosition': '重置位置',
+    'errors.positionSave': '位置未能保存',
     'settings.simulateState': '模拟状态',
     'settings.colorSelectionHint': '选择状态后编辑颜色',
     'settings.stateCount': '7 个状态',
@@ -281,6 +279,7 @@ export function localeForLanguage(language) {
 }
 
 export function formatSetupError(command, error, language = DEFAULT_LANGUAGE) {
+  if (command === 'save_position') return getText(language, 'errors.positionSave');
   const match = typeof error === 'string' ? error.match(safeSetupError) : null;
   if (!match) return `${command} failed`;
 

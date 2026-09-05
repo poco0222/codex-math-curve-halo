@@ -169,6 +169,14 @@ impl SessionStore {
     }
 }
 
+/// Native screen coordinates: AppKit points on macOS, physical pixels on Windows.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OverlayPosition {
+    pub x: f64,
+    pub y: f64,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct AppSettings {
@@ -176,6 +184,7 @@ pub struct AppSettings {
     pub opacity: f32,
     pub offset_x: i32,
     pub offset_y: i32,
+    pub overlay_position: Option<OverlayPosition>,
     pub curve_id: String,
     pub particle_count: i32,
     pub trail_span: f32,
@@ -197,6 +206,12 @@ pub struct AppSettings {
 
 impl AppSettings {
     pub fn normalize(mut self) -> Result<Self, String> {
+        if self
+            .overlay_position
+            .is_some_and(|position| !position.x.is_finite() || !position.y.is_finite())
+        {
+            return Err("settings contain non-finite position coordinates".to_owned());
+        }
         const CURVE_IDS: [&str; 20] = [
             "original-thinking",
             "thinking-five",
@@ -317,6 +332,7 @@ impl Default for AppSettings {
             opacity: 1.0,
             offset_x: 28,
             offset_y: 140,
+            overlay_position: None,
             curve_id: "original-thinking".to_owned(),
             particle_count: 64,
             trail_span: 0.38,
@@ -341,6 +357,18 @@ impl Default for AppSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn persisted_drag_position_accepts_negative_and_large_screen_coordinates() {
+        let settings: AppSettings = serde_json::from_str(
+            r#"{"overlay_position":{"x":-5120.5,"y":3200.0},"offset_x":123,"opacity":0.6}"#,
+        )
+        .unwrap();
+        let value = serde_json::to_value(settings.normalize().unwrap()).unwrap();
+        assert_eq!(value["overlay_position"]["x"], -5120.5);
+        assert_eq!(value["overlay_position"]["y"], 3200.0);
+        assert_eq!(value["offset_x"], 123);
+    }
 
     #[test]
     fn uses_the_required_state_priority_order() {
@@ -688,6 +716,7 @@ mod tests {
                 opacity: 0.65,
                 offset_x: -123,
                 offset_y: 456,
+                overlay_position: None,
                 curve_id: curve_id.to_owned(),
                 particle_count: 80,
                 trail_span: 0.4,
@@ -817,6 +846,7 @@ mod tests {
             "opacity",
             "offset_x",
             "offset_y",
+            "overlay_position",
             "curve_id",
             "particle_count",
             "trail_span",
