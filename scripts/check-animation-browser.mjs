@@ -47,11 +47,11 @@ try {
   });
   assert.deepEqual(legacyDurations, { duration_ms: 4637, pulse_duration_ms: 4275, rotation_duration_ms: 28041 }, 'unrelated saves must preserve legacy millisecond precision');
   await page.click('#curve-picker-open');
-  await page.click('#curve-picker-grid button[data-curve-id="heart-wave"]');
+  await page.click('#curve-picker-families button[data-family-id="heart-wave"]');
   await page.waitForFunction(() => !document.getElementById('curve-picker-dialog').open);
   await page.waitForFunction(() => window.__haloSaves.at(-1)?.curve_id === 'heart-wave');
   const values = () => page.evaluate(() => Object.fromEntries(
-    [...document.querySelectorAll('#animation-section input[name]')].map((field) => [field.name, Number(field.value)]),
+    [...document.querySelectorAll('.curve-animation-controls input[name]')].map((field) => [field.name, Number(field.value)]),
   ));
   const heart = { particle_count: 104, trail_span: .18, duration_ms: 9, pulse_duration_ms: 6, rotation_duration_ms: 22, stroke_width: 3.9 };
   assert.deepEqual(await values(), heart, 'selecting a preset must load its actual animation values');

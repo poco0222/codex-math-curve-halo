@@ -444,6 +444,76 @@ summary:focus-visible {
   gap: 10px;
 }
 
+.curve-picker-family-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.curve-picker-family {
+  display: grid;
+  grid-template-rows: 64px minmax(18px, auto) 16px;
+  align-items: center;
+  justify-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 6px;
+  border-color: transparent;
+  background: transparent;
+  text-align: center;
+}
+
+.curve-picker-family:hover {
+  border-color: var(--line-strong);
+  background: var(--field);
+}
+
+.curve-picker-family[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: #29241e;
+}
+
+.curve-picker-family-thumbnail {
+  width: 64px;
+  height: 64px;
+}
+
+.curve-picker-family .curve-picker-picture {
+  width: 64px;
+  height: 64px;
+}
+
+#curve-picker-grid[hidden] {
+  display: none;
+}
+
+.curve-picker-family-name {
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.curve-picker-family-count {
+  color: var(--text-soft);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.curve-picker-variants-heading {
+  margin: 16px 0 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 650;
+}
+
+.curve-animation-controls {
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
 .curve-picker-item {
   display: grid;
   grid-template-rows: 96px 36px 16px;
@@ -455,6 +525,10 @@ summary:focus-visible {
   border-color: transparent;
   background: transparent;
   text-align: center;
+}
+
+.curve-picker-item[hidden] {
+  display: none;
 }
 
 .curve-picker-item:hover {
@@ -541,7 +615,8 @@ summary:focus-visible {
     padding: 14px;
   }
 
-  .curve-picker-grid {
+  .curve-picker-grid,
+  .curve-picker-family-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
   }
@@ -550,6 +625,10 @@ summary:focus-visible {
 @media (max-width: 480px) {
   .curve-picker-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .curve-picker-family-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 

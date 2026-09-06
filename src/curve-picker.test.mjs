@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DEFAULT_APP_SETTINGS } from './app.js';
-import { curveProfiles, getCurveAnimationSettings, sampleCurve } from './curves.js';
+import { curveFamilies, curveProfiles, getCurveAnimationSettings, getCurveFamily, sampleCurve } from './curves.js';
 import { createSettingsStore } from './settings-store.js';
 import { createCurveSelection, drawCurveThumbnail } from './curve-picker.js';
 
@@ -19,6 +19,27 @@ function selectionFixture(persist = async () => ({ ok: true })) {
   });
   return { store, selection, resets: () => resets };
 }
+
+test('curve families cover every retained preset exactly once in catalog order', () => {
+  const expected = [
+    ['thinking', 'original-thinking', 'thinking-five', 'thinking-nine'],
+    ['rose-orbit', 'rose-orbit'],
+    ['rose', 'rose-curve', 'rose-two', 'rose-three', 'rose-four'],
+    ['lissajous', 'lissajous-drift'],
+    ['lemniscate', 'lemniscate-bloom'],
+    ['hypotrochoid', 'hypotrochoid-loop', 'three-petal-spiral', 'four-petal-spiral', 'five-petal-spiral', 'six-petal-spiral'],
+    ['butterfly', 'butterfly-phase'],
+    ['cardioid', 'cardioid-glow', 'cardioid-heart'],
+    ['heart-wave', 'heart-wave'],
+    ['spiral-search', 'spiral-search'],
+  ];
+  assert.deepEqual(curveFamilies.map(({ id, profileIds }) => [id, ...profileIds]), expected);
+  assert.deepEqual(curveFamilies.flatMap(({ profileIds }) => profileIds), curveProfiles.map(({ id }) => id));
+  for (const family of curveFamilies) {
+    for (const id of family.profileIds) assert.equal(getCurveFamily(id), family);
+  }
+  assert.equal(getCurveFamily('unknown'), curveFamilies[0]);
+});
 
 test('selecting the current curve retains custom settings without saving', async () => {
   const fixture = selectionFixture(() => assert.fail('same curve must not save'));

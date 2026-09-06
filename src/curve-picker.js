@@ -1,4 +1,4 @@
-import { curveProfiles, getCurveAnimationSettings, getCurveProfile, sampleCurve } from './curves.js';
+import { curveFamilies, curveProfiles, getCurveAnimationSettings, getCurveFamily, getCurveProfile, sampleCurve } from './curves.js';
 import { createHaloRenderer } from './halo.js';
 import { getCurveLabel, getText } from './i18n.js';
 
@@ -58,6 +58,8 @@ export function createCurvePicker({ root, store, selection, isReady }) {
   const document = root.ownerDocument;
   const dialog = root.querySelector('#curve-picker-dialog');
   const grid = root.querySelector('#curve-picker-grid');
+  const familyGrid = root.querySelector('#curve-picker-families');
+  const variantsHeading = root.querySelector('#curve-picker-variants-heading');
   const closeButton = root.querySelector('#curve-picker-close');
   const retryButton = root.querySelector('#curve-picker-retry');
   const status = root.querySelector('#curve-picker-status');
@@ -72,6 +74,47 @@ export function createCurvePicker({ root, store, selection, isReady }) {
   let session = 0;
   let destroyed = false;
   let listening = false;
+  let browsingFamilyId = getCurveFamily(store.getSettings().curve_id).id;
+  const familyButtons = curveFamilies.map((family) => {
+    const single = family.profileIds.length === 1;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'curve-picker-family';
+    button.dataset.familyId = family.id;
+    if (single) button.dataset.curveId = family.profileIds[0];
+    button.tabIndex = family.id === browsingFamilyId ? 0 : -1;
+    const picture = document.createElement('span');
+    picture.className = 'curve-picker-picture';
+    const canvas = document.createElement('canvas');
+    canvas.className = 'curve-picker-family-thumbnail curve-picker-thumbnail';
+    canvas.width = 160;
+    canvas.height = 160;
+    canvas.setAttribute('aria-hidden', 'true');
+    drawCurveThumbnail(canvas, family.profileIds[0]);
+    const name = document.createElement('span');
+    name.className = 'curve-picker-family-name';
+    const count = document.createElement('span');
+    count.className = 'curve-picker-family-count';
+    picture.append(canvas);
+    button.append(picture, name, count);
+    button.addEventListener('pointerenter', () => { if (single) preview(button); else stopPreview(); });
+    button.addEventListener('pointerleave', () => { if (activeButton === button) stopPreview(); });
+    button.addEventListener('focus', () => {
+      for (const item of familyButtons) item.tabIndex = item === button ? 0 : -1;
+      if (single) preview(button);
+      else stopPreview();
+    });
+    button.addEventListener('blur', () => { if (activeButton === button) stopPreview(); });
+    button.addEventListener('click', () => {
+      if (single && selection.pending) return;
+      stopPreview();
+      browsingFamilyId = family.id;
+      render();
+      if (single) submit(() => selection.apply(family.profileIds[0]));
+    });
+    return button;
+  });
+  familyGrid.replaceChildren(...familyButtons);
   const buttons = curveProfiles.map((curve) => {
     const button = document.createElement('button');
     button.type = 'button';
@@ -114,7 +157,7 @@ export function createCurvePicker({ root, store, selection, isReady }) {
 
   function preview(button) {
     stopPreview();
-    if (!dialog.open || destroyed || document.hidden || media?.matches || selection.pending) return;
+    if (button.hidden || !dialog.open || destroyed || document.hidden || media?.matches || selection.pending) return;
     startListening();
     const settings = store.getSettings();
     const id = button.dataset.curveId;
@@ -172,13 +215,38 @@ export function createCurvePicker({ root, store, selection, isReady }) {
     if (destroyed) return;
     const settings = store.getSettings();
     const language = settings.language;
-    currentName.textContent = getCurveLabel(language, settings.curve_id);
+    const currentFamily = getCurveFamily(settings.curve_id);
+    const browsingFamily = curveFamilies.find(({ id }) => id === browsingFamilyId) ?? currentFamily;
+    browsingFamilyId = browsingFamily.id;
+    for (const [index, family] of curveFamilies.entries()) {
+      const button = familyButtons[index];
+      const single = family.profileIds.length === 1;
+      const current = family.profileIds[0] === settings.curve_id;
+      // Single cards apply a preset; multi-preset cards select the browsed family.
+      button.setAttribute('aria-pressed', String(single ? current : family.id === browsingFamilyId));
+      button.setAttribute('aria-disabled', String(single && selection.pending));
+      button.querySelector('.curve-picker-family-name').textContent = getText(language, `settings.curveFamilies.${family.id}`);
+      button.querySelector('.curve-picker-family-count').textContent = single
+        ? getText(language, 'settings.useCurveDirect')
+        : getText(language, 'settings.curveVariantCount').replace('{count}', family.profileIds.length);
+      if (single) drawCurveThumbnail(button.querySelector('.curve-picker-thumbnail'), family.profileIds[0], current ? settings : undefined);
+    }
+    grid.hidden = variantsHeading.hidden = browsingFamily.profileIds.length === 1;
+    variantsHeading.textContent = `${getText(language, `settings.curveFamilies.${browsingFamilyId}`)} · ${getText(language, 'settings.curveVariants')}`;
+    currentName.textContent = `${getText(language, `settings.curveFamilies.${currentFamily.id}`)} · ${getCurveLabel(language, settings.curve_id)}`;
     drawCurveThumbnail(currentCanvas, settings.curve_id, settings);
     openButton.disabled = !isReady();
     openButton.setAttribute('aria-label', `${getText(language, 'settings.changeCurve')}: ${currentName.textContent}`);
     dialog.setAttribute('aria-busy', String(selection.pending));
+    const visibleButtons = grid.hidden ? [] : buttons.filter((button) => browsingFamily.profileIds.includes(button.dataset.curveId));
+    const focusedButton = visibleButtons.includes(document.activeElement) ? document.activeElement : null;
+    const tabButton = focusedButton
+      ?? visibleButtons.find((button) => button.dataset.curveId === settings.curve_id)
+      ?? visibleButtons[0];
     for (const button of buttons) {
       const current = button.dataset.curveId === settings.curve_id;
+      button.hidden = !visibleButtons.includes(button);
+      button.tabIndex = button === tabButton ? 0 : -1;
       if (current || button.getAttribute('aria-pressed') === 'true') {
         drawCurveThumbnail(button.querySelector('.curve-picker-thumbnail'), button.dataset.curveId, current ? settings : undefined);
       }
@@ -195,6 +263,7 @@ export function createCurvePicker({ root, store, selection, isReady }) {
     retryButton.hidden = !selection.error;
     retryButton.disabled = selection.pending;
     if (selection.pending) stopPreview();
+    else if (activeButton?.hidden) stopPreview();
     else if (activeButton) preview(activeButton);
   }
 
@@ -211,10 +280,12 @@ export function createCurvePicker({ root, store, selection, isReady }) {
   function open() {
     if (destroyed || dialog.open || !isReady()) return;
     session += 1;
+    browsingFamilyId = getCurveFamily(store.getSettings().curve_id).id;
+    for (const button of familyButtons) button.tabIndex = button.dataset.familyId === browsingFamilyId ? 0 : -1;
     render();
     startListening();
     dialog.showModal();
-    const current = buttons.find((button) => button.dataset.curveId === store.getSettings().curve_id) ?? buttons[0];
+    const current = [...familyButtons, ...buttons].find((button) => button.dataset.curveId === store.getSettings().curve_id) ?? buttons[0];
     current.focus({ preventScroll: true });
     current.scrollIntoView({ block: 'nearest' });
   }
@@ -235,28 +306,31 @@ export function createCurvePicker({ root, store, selection, isReady }) {
     if (event.clientX < left || event.clientX > right || event.clientY < top || event.clientY > bottom) close();
   });
   dialog.addEventListener('keydown', (event) => {
-    const index = buttons.indexOf(document.activeElement);
+    const visibleButtons = buttons.filter((button) => !button.hidden);
+    const inFamilyGrid = familyButtons.includes(document.activeElement);
+    const gridButtons = inFamilyGrid ? familyButtons : visibleButtons;
+    const index = gridButtons.indexOf(document.activeElement);
     if (index >= 0) {
-      const columns = globalThis.getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length;
+      const columns = globalThis.getComputedStyle(inFamilyGrid ? familyGrid : grid).gridTemplateColumns.split(' ').filter(Boolean).length;
       const next = {
         ArrowLeft: index - 1,
         ArrowRight: index + 1,
         ArrowUp: index - columns,
         ArrowDown: index + columns,
         Home: 0,
-        End: buttons.length - 1,
+        End: gridButtons.length - 1,
       }[event.key];
       if (next !== undefined) {
         event.preventDefault();
-        buttons[Math.max(0, Math.min(buttons.length - 1, next))].focus();
+        gridButtons[Math.max(0, Math.min(gridButtons.length - 1, next))].focus();
       }
     }
     if (event.key === 'Tab') {
-      const focusable = [closeButton, ...buttons.filter((button) => button.tabIndex === 0), ...(!retryButton.hidden ? [retryButton] : [])];
-      const first = focusable[0];
-      const last = focusable.at(-1);
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      const focusable = [closeButton, ...familyButtons.filter((button) => button.tabIndex === 0), ...visibleButtons.filter((button) => button.tabIndex === 0), ...(!retryButton.hidden && !retryButton.disabled ? [retryButton] : [])];
+      const current = focusable.indexOf(document.activeElement);
+      const next = current < 0 ? (event.shiftKey ? focusable.length - 1 : 0) : (current + (event.shiftKey ? -1 : 1) + focusable.length) % focusable.length;
+      event.preventDefault();
+      focusable[next].focus();
     }
   });
 

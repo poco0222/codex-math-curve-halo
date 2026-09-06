@@ -210,6 +210,23 @@ export const curveProfiles = [
   ].join('\n')),
 ];
 
+export const curveFamilies = Object.freeze([
+  ['thinking', ['original-thinking', 'thinking-five', 'thinking-nine']],
+  ['rose-orbit', ['rose-orbit']],
+  ['rose', ['rose-curve', 'rose-two', 'rose-three', 'rose-four']],
+  ['lissajous', ['lissajous-drift']],
+  ['lemniscate', ['lemniscate-bloom']],
+  ['hypotrochoid', ['hypotrochoid-loop', 'three-petal-spiral', 'four-petal-spiral', 'five-petal-spiral', 'six-petal-spiral']],
+  ['butterfly', ['butterfly-phase']],
+  ['cardioid', ['cardioid-glow', 'cardioid-heart']],
+  ['heart-wave', ['heart-wave']],
+  ['spiral-search', ['spiral-search']],
+].map(([id, profileIds]) => Object.freeze({ id, profileIds: Object.freeze(profileIds) })));
+
+export function getCurveFamily(curveId) {
+  return curveFamilies.find(({ profileIds }) => profileIds.includes(curveId)) ?? curveFamilies[0];
+}
+
 export function getCurveProfile(id) {
   return curveProfiles.find((item) => item.id === id) ?? curveProfiles[0];
 }

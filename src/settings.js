@@ -787,6 +787,8 @@ function bindSettingsFields(root) {
   });
   for (const field of root.querySelectorAll('input, select')) {
     if (field.dataset.colorInput || field.dataset.colorHex || field.dataset.curveParameter) continue;
+    // Browsing controls have no persisted setting and must not trigger a save.
+    if (!Object.hasOwn(settingsStore.getSettings(), settingKey(field))) continue;
     const event = field.type === 'number' || field.type === 'range' ? 'input' : 'change';
     field.addEventListener(event, () => {
       updateSettingsModel(field, true);

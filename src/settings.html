@@ -54,9 +54,8 @@
 
         <template data-view-template="appearance">
           <fieldset id="display-section" class="settings-panel settings-panel-display" data-section="display">
-            <legend data-i18n="settings.display">Display</legend>
+            <legend data-i18n="settings.curveProfile">Curve scheme</legend>
             <div class="field-stack">
-              <label for="curve-picker-open" data-i18n="settings.curveProfile">Curve profile</label>
               <div class="curve-picker-entry">
                 <canvas id="curve-picker-current" width="160" height="160" aria-hidden="true"></canvas>
                 <strong id="curve-picker-name">Original Thinking</strong>
@@ -85,6 +84,15 @@
                 <option value="spiral-search" data-i18n="settings.curves.spiralSearch">Spiral Search</option>
               </select>
             </div>
+            <div class="subsection-heading">
+              <h2 data-i18n="settings.curveParameters">Curve parameters</h2>
+              <button id="reset-curve-parameters" type="button" data-i18n="settings.resetCurveParameters">Reset curve parameters</button>
+            </div>
+            <div id="curve-parameters" class="two-column"></div>
+            <output id="formula" class="formula" aria-label="Active formula" data-i18n-aria-label="settings.activeFormula"></output>
+          </fieldset>
+          <fieldset id="animation-section" class="settings-panel settings-panel-animation" data-section="animation">
+            <legend data-i18n="settings.renderer">Renderer</legend>
             <div class="range-field">
               <div class="field-label-row">
                 <label for="opacity" data-i18n="settings.opacity">Opacity</label>
@@ -92,10 +100,7 @@
               </div>
               <input id="opacity" name="opacity" type="range" min="0.1" max="1" step="0.01" value="1" />
             </div>
-          </fieldset>
-          <fieldset id="animation-section" class="settings-panel settings-panel-animation" data-section="animation">
-            <legend data-i18n="settings.renderer">Renderer</legend>
-            <div class="two-column">
+            <div class="two-column curve-animation-controls">
               <div class="range-field">
                 <div class="field-label-row">
                   <label for="particle-count" data-i18n="settings.particleCount">Particle count</label>
@@ -142,19 +147,15 @@
             <div class="section-heading-row">
               <button id="reset-animation" type="button" data-i18n="settings.resetAnimation">Reset curve animation</button>
             </div>
-            <div class="subsection-heading">
-              <h2 data-i18n="settings.curveParameters">Curve parameters</h2>
-              <button id="reset-curve-parameters" type="button" data-i18n="settings.resetCurveParameters">Reset curve parameters</button>
-            </div>
-            <div id="curve-parameters" class="two-column"></div>
-            <output id="formula" class="formula" aria-label="Active formula" data-i18n-aria-label="settings.activeFormula"></output>
           </fieldset>
           <dialog id="curve-picker-dialog" class="curve-picker-dialog" aria-labelledby="curve-picker-title">
             <div class="curve-picker-header">
               <h2 id="curve-picker-title" data-i18n="settings.chooseCurve">Choose a curve</h2>
               <button id="curve-picker-close" type="button" data-i18n="settings.closeCurvePicker">Close</button>
             </div>
-            <div id="curve-picker-grid" class="curve-picker-grid"></div>
+            <div id="curve-picker-families" class="curve-picker-family-grid" role="group" aria-label="Curve family" data-i18n-aria-label="settings.curveFamily"></div>
+            <h3 id="curve-picker-variants-heading" class="curve-picker-variants-heading" aria-live="polite" data-i18n="settings.curveVariants">Preset variants</h3>
+            <div id="curve-picker-grid" class="curve-picker-grid" role="group" aria-labelledby="curve-picker-variants-heading"></div>
             <div class="curve-picker-feedback">
               <p id="curve-picker-status" role="status" aria-live="polite"></p>
               <button id="curve-picker-retry" type="button" hidden data-i18n="settings.retryCurveSave">Retry</button>
