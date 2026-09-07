@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
+  applyRendererDisplayState,
   createDisplayStateBridge,
   createSerialTaskQueue,
   DEFAULT_APP_SETTINGS,
@@ -1078,6 +1079,76 @@ test('settings bridge reports rejected listen failures without leaking raw error
   await assert.doesNotReject(bridge.subscribe('settings-changed', () => {}));
   assert.deepEqual(warnings, [['Codex Halo: settings-changed failed']]);
   assert.deepEqual(failures, [['settings-changed', rawError]]);
+});
+
+test('overlay forwards every session instead of the priority summary', () => {
+  const calls = [];
+  const renderer = { setSessions: (sessions) => calls.push(['sessions', sessions]), setState: (state) => calls.push(['state', state]) };
+  const sessions = [
+    { session_key: 'a', state: 'thinking', updated_at_ms: 1 },
+    { session_key: 'b', state: 'executing', updated_at_ms: 2 },
+    { session_key: 'c', state: 'input_needed', updated_at_ms: 3 },
+  ];
+  applyRendererDisplayState(renderer, { state: 'input_needed', sessions, simulated: false });
+  applyRendererDisplayState(renderer, null);
+  applyRendererDisplayState(null, { sessions });
+  applyRendererDisplayState(renderer, { state: 'idle', sessions: [] });
+  assert.deepEqual(calls, [['sessions', sessions], ['sessions', []]]);
+});
+
+test('overlay uses single-color simulation then restores the real session collection', () => {
+  const calls = [];
+  const renderer = { setSessions: (sessions) => calls.push(['sessions', sessions]), setState: (state) => calls.push(['state', state]) };
+  const sessions = [{ session_key: 'real', state: 'thinking', updated_at_ms: 1 }];
+  applyRendererDisplayState(renderer, { state: 'thinking', sessions });
+  applyRendererDisplayState(renderer, { state: 'completed', sessions: [{ session_key: 'simulation', state: 'completed', updated_at_ms: 2 }], simulated: true });
+  applyRendererDisplayState(renderer, { state: 'thinking', sessions });
+  applyRendererDisplayState(renderer, { state: 'executing' });
+  assert.deepEqual(calls, [['sessions', sessions], ['state', 'completed'], ['sessions', sessions], ['state', 'executing']]);
+});
+
+test('out-of-order polls cannot roll back a newer complete session collection', async () => {
+  const pending = [];
+  const applied = [];
+  const bridge = createDisplayStateBridge(() => new Promise((resolve) => pending.push(resolve)), (display) => applied.push(display));
+  const oldPoll = bridge.pollDisplayState();
+  const newPoll = bridge.pollDisplayState();
+  const latest = { state: 'executing', sessions: [{ session_key: 'a', state: 'executing', updated_at_ms: 2 }, { session_key: 'b', state: 'thinking', updated_at_ms: 1 }] };
+  pending[1](latest);
+  await newPoll;
+  pending[0]({ state: 'thinking', sessions: [{ session_key: 'a', state: 'thinking', updated_at_ms: 1 }] });
+  await oldPoll;
+  assert.deepEqual(applied, [latest]);
+});
+
+test('slow polling still applies results while a newer request is pending', async () => {
+  const pending = [];
+  const applied = [];
+  const bridge = createDisplayStateBridge(() => new Promise((resolve) => pending.push(resolve)), (display) => applied.push(display));
+  const first = bridge.pollDisplayState();
+  const second = bridge.pollDisplayState();
+  const current = { state: 'thinking', sessions: [{ session_key: 'a', state: 'thinking', updated_at_ms: 1 }] };
+  pending[0](current);
+  await first;
+  assert.deepEqual(applied, [current], 'a pending request is not a newer received state');
+  const latest = { state: 'executing', sessions: [{ session_key: 'a', state: 'executing', updated_at_ms: 2 }] };
+  pending[1](latest);
+  await second;
+  assert.deepEqual(applied, [current, latest]);
+});
+
+test('a failed newer poll does not suppress an older valid response', async () => {
+  const pending = [];
+  const applied = [];
+  const bridge = createDisplayStateBridge(() => new Promise((resolve) => pending.push(resolve)), (display) => applied.push(display));
+  const first = bridge.pollDisplayState();
+  const second = bridge.pollDisplayState();
+  pending[1](null);
+  await second;
+  const current = { state: 'thinking', sessions: [{ session_key: 'a', state: 'thinking', updated_at_ms: 1 }] };
+  pending[0](current);
+  await first;
+  assert.deepEqual(applied, [current]);
 });
 
 test('an in-flight poll cannot overwrite a newer simulated display event', async () => {

@@ -61,8 +61,19 @@ export function createDisplayStatePoller(invokeCommand, applyDisplayState) {
   return createDisplayStateBridge(invokeCommand, applyDisplayState).pollDisplayState;
 }
 
+export function applyRendererDisplayState(renderer, displayState) {
+  if (!renderer || !displayState) return;
+  // Simulation must not replace the renderer's real session identities.
+  if (!displayState.simulated && Array.isArray(displayState.sessions)) {
+    renderer.setSessions(displayState.sessions);
+  } else if (displayState.state) {
+    renderer.setState(displayState.state);
+  }
+}
+
 export function createDisplayStateBridge(invokeCommand, applyDisplayState, options = {}) {
   let latestGeneration = 0;
+  let appliedGeneration = 0;
   let simulatedUntil = 0;
   const now = options.now ?? (() => globalThis.performance?.now?.() ?? Date.now());
   const simulationDurationMs = options.simulationDurationMs ?? SIMULATION_DURATION_MS;
@@ -70,7 +81,9 @@ export function createDisplayStateBridge(invokeCommand, applyDisplayState, optio
   async function requestDisplayState(command, args, supersedeSimulation = false) {
     const generation = ++latestGeneration;
     const displayState = await invokeCommand(command, args);
-    if (generation === latestGeneration && (supersedeSimulation || now() >= simulatedUntil)) {
+    // Slow polls may finish after the next one starts; only received state can supersede them.
+    if (displayState && generation > appliedGeneration && (supersedeSimulation || now() >= simulatedUntil)) {
+      appliedGeneration = generation;
       simulatedUntil = 0;
       applyDisplayState(displayState);
     }
@@ -79,12 +92,12 @@ export function createDisplayStateBridge(invokeCommand, applyDisplayState, optio
 
   return {
     showDisplayState(displayState) {
-      latestGeneration += 1;
+      appliedGeneration = ++latestGeneration;
       simulatedUntil = 0;
       applyDisplayState(displayState);
     },
     showSimulatedDisplayState(displayState) {
-      latestGeneration += 1;
+      appliedGeneration = ++latestGeneration;
       simulatedUntil = now() + simulationDurationMs;
       applyDisplayState(displayState);
     },
@@ -101,7 +114,7 @@ async function boot() {
   const invokeCommand = createCommandInvoker(invoke);
 
   function applyDisplayState(displayState) {
-    if (displayState?.state) renderer?.setState(displayState.state);
+    applyRendererDisplayState(renderer, displayState);
   }
 
   function applySettings(settings) {

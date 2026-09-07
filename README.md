@@ -72,6 +72,23 @@ order. `PostToolUse` maps back to `thinking`; `Interrupt` maps to
 `source: "compact"` maps to `thinking`; the source field is not stored. State
 simulation uses the Rust reducer and does not add to the real session count.
 
+## Multiple sessions
+
+Each valid session has its own bright core and fading trail on the selected
+curve, using the configured color for its current state. Sessions in the same
+state remain separate. Color changes travel from core to tail; larger session
+counts shorten the trails. Reduced motion keeps a static multicolor view.
+
+Thinking, executing, compacting, and input-needed sessions retain their last
+reported state without a 60-second timeout. Completed and interrupted states
+last three seconds; idle lasts 60 seconds. `SessionEnd` removes its session.
+Restarting restores snapshots under the same rules. These are last-known
+states, not a liveness check: a crash without an end event can leave a trail.
+
+Coverage includes independent sessions that emit this plugin's hooks under the
+same `CODEX_HOME`. Subagents appear separately only when they supply their own
+`session_id` and hook events.
+
 ## Settings and diagnostics
 
 Settings includes a local **Export diagnostics** control. It downloads

@@ -103,11 +103,11 @@ fn priority(state: HaloState) -> u8 {
 fn expiry_ms(state: HaloState) -> Option<i64> {
     match state {
         HaloState::Completed | HaloState::Interrupted => Some(COMPLETED_EXPIRY_MS),
-        HaloState::Thinking | HaloState::Executing | HaloState::Compacting => {
-            Some(ACTIVE_EXPIRY_MS)
-        }
         HaloState::Idle => Some(ACTIVE_EXPIRY_MS),
-        HaloState::InputNeeded => None,
+        HaloState::Thinking
+        | HaloState::Executing
+        | HaloState::Compacting
+        | HaloState::InputNeeded => None,
     }
 }
 
@@ -132,6 +132,8 @@ pub struct DisplayState {
     pub state: HaloState,
     pub session_count: usize,
     pub updated_at_ms: i64,
+    pub sessions: Vec<Snapshot>,
+    pub simulated: bool,
 }
 
 impl DisplayState {
@@ -140,6 +142,8 @@ impl DisplayState {
             state: HaloState::Idle,
             session_count: 0,
             updated_at_ms: 0,
+            sessions: Vec::new(),
+            simulated: false,
         }
     }
 }
@@ -151,20 +155,27 @@ impl Default for DisplayState {
 }
 
 pub fn reduce_snapshots(snapshots: &[Snapshot], now_ms: i64) -> DisplayState {
-    let current = snapshots
+    let mut current = snapshots
         .iter()
         .filter(|snapshot| is_current(snapshot, now_ms))
+        .cloned()
         .collect::<Vec<_>>();
+    current.sort_by(|left, right| left.session_key.cmp(&right.session_key));
 
     let selected = current
         .iter()
         .max_by_key(|snapshot| (priority(snapshot.state), snapshot.updated_at_ms));
 
-    selected.map_or_else(DisplayState::idle, |snapshot| DisplayState {
-        state: snapshot.state,
+    let (state, updated_at_ms) = selected
+        .map(|snapshot| (snapshot.state, snapshot.updated_at_ms))
+        .unwrap_or((HaloState::Idle, 0));
+    DisplayState {
+        state,
         session_count: current.len(),
-        updated_at_ms: snapshot.updated_at_ms,
-    })
+        updated_at_ms,
+        sessions: current,
+        simulated: false,
+    }
 }
 
 #[derive(Default)]
@@ -192,13 +203,26 @@ impl SessionStore {
         now_ms: i64,
     ) -> DisplayState {
         let real = self.display_state(now_ms);
-        let Some(simulation) = simulation.filter(|snapshot| is_current(snapshot, now_ms)) else {
+        let Some(simulation) = simulation.filter(|snapshot| {
+            // Preview timeouts stay bounded even when real running sessions persist.
+            let expiry = match snapshot.state {
+                HaloState::Thinking | HaloState::Executing | HaloState::Compacting => {
+                    Some(ACTIVE_EXPIRY_MS)
+                }
+                state => expiry_ms(state),
+            };
+            snapshot.updated_at_ms <= now_ms
+                && expiry
+                    .is_none_or(|expiry| now_ms.saturating_sub(snapshot.updated_at_ms) <= expiry)
+        }) else {
             return real;
         };
         DisplayState {
             state: simulation.state,
             session_count: real.session_count,
             updated_at_ms: simulation.updated_at_ms,
+            sessions: vec![simulation.clone()],
+            simulated: true,
         }
     }
 
@@ -897,19 +921,132 @@ mod tests {
     }
 
     #[test]
-    fn expires_active_states_older_than_sixty_seconds() {
+    fn keeps_running_states_until_another_event() {
         let now = 1_000_000;
         let cases = [
-            HaloState::Idle,
             HaloState::Thinking,
             HaloState::Executing,
             HaloState::Compacting,
+            HaloState::InputNeeded,
         ];
 
         for state in cases {
             assert_eq!(
-                reduce_snapshots(&[Snapshot::new("a", state, now - 60_001)], now,).state,
-                HaloState::Idle,
+                reduce_snapshots(&[Snapshot::new("a", state, now - 86_400_000)], now).state,
+                state,
+            );
+        }
+    }
+
+    #[test]
+    fn display_serializes_every_current_session_in_stable_key_order() {
+        let now = 1_000_000;
+        let mut snapshots = vec![
+            Snapshot::new("d", HaloState::InputNeeded, now - 100),
+            Snapshot::new("b", HaloState::Thinking, now - 300),
+            Snapshot::new("c", HaloState::Executing, now - 200),
+            Snapshot::new("a", HaloState::Thinking, now - 400),
+            Snapshot::new("expired-idle", HaloState::Idle, now - 60_001),
+            Snapshot::new("expired-terminal", HaloState::Completed, now - 3_001),
+            Snapshot::new("future", HaloState::Compacting, now + 1),
+        ];
+        let display = serde_json::to_value(reduce_snapshots(&snapshots, now)).unwrap();
+        assert_eq!(
+            display["sessions"],
+            serde_json::json!([
+                {"session_key":"a", "state":"thinking", "updated_at_ms":999600},
+                {"session_key":"b", "state":"thinking", "updated_at_ms":999700},
+                {"session_key":"c", "state":"executing", "updated_at_ms":999800},
+                {"session_key":"d", "state":"input_needed", "updated_at_ms":999900},
+            ])
+        );
+        assert_eq!(display["state"], "input_needed");
+        assert_eq!(display["session_count"], 4);
+        assert_eq!(display["updated_at_ms"], 999900);
+        assert_eq!(display["simulated"], false);
+        snapshots.reverse();
+        assert_eq!(
+            serde_json::to_value(reduce_snapshots(&snapshots, now)).unwrap(),
+            display
+        );
+        assert_eq!(
+            serde_json::to_value(DisplayState::idle()).unwrap()["sessions"],
+            serde_json::json!([])
+        );
+    }
+
+    #[test]
+    fn session_updates_and_removals_preserve_all_other_sessions() {
+        let mut store = SessionStore::default();
+        for key in 0..13 {
+            store.upsert(Snapshot::new(format!("{key:02}"), HaloState::Thinking, 100));
+        }
+        let before = serde_json::to_value(store.display_state(1_000)).unwrap();
+        assert_eq!(before["session_count"], 13);
+        assert_eq!(before["sessions"].as_array().map(Vec::len), Some(13));
+        store.upsert(Snapshot::new("00", HaloState::Completed, 1_000));
+        store.remove("01");
+        store.clear_expired(4_001);
+        let after = serde_json::to_value(store.display_state(4_001)).unwrap();
+        assert_eq!(after["session_count"], 11);
+        assert_eq!(
+            after["sessions"],
+            serde_json::json!(&before["sessions"].as_array().unwrap()[2..])
+        );
+    }
+
+    #[test]
+    fn simulation_replaces_only_display_and_restores_full_real_collection() {
+        let mut store = SessionStore::default();
+        store.upsert(Snapshot::new("a", HaloState::Thinking, 100));
+        store.upsert(Snapshot::new("b", HaloState::Executing, 200));
+        let simulation = Snapshot::new("simulation", HaloState::Completed, 300);
+        let simulated =
+            serde_json::to_value(store.display_state_with_override(Some(&simulation), 400))
+                .unwrap();
+        assert_eq!(simulated["session_count"], 2);
+        assert_eq!(simulated["simulated"], true);
+        assert_eq!(
+            simulated["sessions"],
+            serde_json::json!([
+                {"session_key":"simulation", "state":"completed", "updated_at_ms":300}
+            ])
+        );
+        let restored =
+            serde_json::to_value(store.display_state_with_override(Some(&simulation), 3_301))
+                .unwrap();
+        assert_eq!(restored["session_count"], 2);
+        assert_eq!(restored["simulated"], false);
+        assert_eq!(
+            restored["sessions"],
+            serde_json::json!([
+                {"session_key":"a", "state":"thinking", "updated_at_ms":100},
+                {"session_key":"b", "state":"executing", "updated_at_ms":200}
+            ])
+        );
+    }
+
+    #[test]
+    fn running_simulations_still_expire_after_sixty_seconds() {
+        let mut store = SessionStore::default();
+        store.upsert(Snapshot::new("real", HaloState::Executing, 100));
+        for state in [
+            HaloState::Thinking,
+            HaloState::Executing,
+            HaloState::Compacting,
+        ] {
+            let simulation = Snapshot::new("simulation", state, 200);
+            assert_eq!(
+                store
+                    .display_state_with_override(Some(&simulation), 60_200)
+                    .updated_at_ms,
+                200
+            );
+            assert_eq!(
+                store
+                    .display_state_with_override(Some(&simulation), 60_201)
+                    .updated_at_ms,
+                100
             );
         }
     }

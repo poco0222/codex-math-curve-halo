@@ -82,7 +82,9 @@ impl ReducerRuntimeState {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
 
-        if let Some(Ok(snapshots)) = scan {
+        if let Some(Ok(mut snapshots)) = scan {
+            // Validate at application time so updates arriving during the scan survive.
+            snapshots.retain(|snapshot| snapshot.updated_at_ms <= now_ms);
             if simulation.as_ref().is_some_and(|simulated| {
                 snapshots
                     .iter()
@@ -124,14 +126,12 @@ async fn get_display_state(
     if !runtime.try_start_scan() {
         return Ok(runtime.display_after_scan(None, now_ms()));
     }
-    let scan_now_ms = now_ms();
-
     let scan = match scan_state_dir(&app) {
-        Some(state_dir) => tauri::async_runtime::spawn_blocking(move || {
-            read_runtime_snapshots(&state_dir, scan_now_ms)
-        })
-        .await
-        .ok(),
+        Some(state_dir) => {
+            tauri::async_runtime::spawn_blocking(move || read_runtime_snapshots(&state_dir))
+                .await
+                .ok()
+        }
         None => None,
     };
     let display = runtime.display_after_scan(scan, now_ms());
@@ -386,16 +386,11 @@ fn read_snapshots(path: &Path) -> io::Result<Vec<Snapshot>> {
     read_snapshot_entries(entries, |path| fs::read_to_string(path))
 }
 
-fn read_runtime_snapshots(path: &Path, cutoff_ms: i64) -> io::Result<Vec<Snapshot>> {
-    let snapshots = match read_snapshots(path) {
-        Ok(snapshots) => snapshots,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(error) => return Err(error),
-    };
-    Ok(snapshots
-        .into_iter()
-        .filter(|snapshot| snapshot.updated_at_ms <= cutoff_ms)
-        .collect())
+fn read_runtime_snapshots(path: &Path) -> io::Result<Vec<Snapshot>> {
+    match read_snapshots(path) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
+        result => result,
+    }
 }
 
 fn read_snapshot_entries<I, F>(entries: I, mut read_file: F) -> io::Result<Vec<Snapshot>>
@@ -1213,14 +1208,103 @@ mod scan_tests {
             1,
             Snapshot::new("runtime-session", HaloState::Executing, 10),
         );
-        let snapshots = read_runtime_snapshots(&runtime, 25).unwrap();
+        let snapshots = read_runtime_snapshots(&runtime).unwrap();
 
         assert_eq!(snapshots.len(), 1);
         assert!(snapshots.iter().any(|snapshot| {
             snapshot.session_key == "runtime-session" && snapshot.updated_at_ms == 10
         }));
-        assert!(read_runtime_snapshots(&missing, 25).unwrap().is_empty());
+        assert!(read_runtime_snapshots(&missing).unwrap().is_empty());
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn scan_keeps_updates_created_after_scan_start() {
+        let root = std::env::temp_dir().join(format!(
+            "codex-halo-scan-update-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        write_scan_snapshot(
+            &root,
+            1,
+            Snapshot::new("updated-during-scan", HaloState::Executing, 20),
+        );
+        write_scan_snapshot(
+            &root,
+            2,
+            Snapshot::new("future", HaloState::InputNeeded, 31),
+        );
+        let snapshots = read_runtime_snapshots(&root).unwrap();
+        fs::remove_dir_all(root).unwrap();
+        let runtime = ReducerRuntimeState::default();
+        let display = runtime.display_after_scan(Some(Ok(snapshots)), 30);
+        assert_eq!(
+            display.sessions,
+            vec![Snapshot::new(
+                "updated-during-scan",
+                HaloState::Executing,
+                20
+            )]
+        );
+    }
+
+    #[test]
+    fn fresh_runtime_restores_old_running_snapshots_and_isolates_invalid_files() {
+        let root = std::env::temp_dir().join(format!(
+            "codex-halo-restart-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        for (id, state) in [
+            (1, HaloState::Thinking),
+            (2, HaloState::Executing),
+            (3, HaloState::Compacting),
+            (4, HaloState::InputNeeded),
+            (5, HaloState::Idle),
+            (6, HaloState::Completed),
+            (7, HaloState::Interrupted),
+        ] {
+            write_scan_snapshot(&root, id, Snapshot::new(format!("{id}"), state, 100));
+        }
+        fs::write(root.join(format!("{:064x}.json", 8)), b"{").unwrap();
+        let snapshots = read_runtime_snapshots(&root).unwrap();
+        fs::remove_dir_all(root).unwrap();
+        let runtime = ReducerRuntimeState::default();
+        let display = runtime.display_after_scan(Some(Ok(snapshots)), 86_400_100);
+        assert_eq!(
+            display
+                .sessions
+                .iter()
+                .map(|snapshot| snapshot.session_key.as_str())
+                .collect::<Vec<_>>(),
+            ["1", "2", "3", "4"]
+        );
+        assert_eq!(display.session_count, 4);
+        assert!(!display.simulated);
+    }
+
+    #[test]
+    fn rejected_future_snapshots_do_not_cancel_simulation() {
+        let runtime = ReducerRuntimeState::default();
+        runtime.simulate_state(HaloState::Completed, 100);
+        let display = runtime.display_after_scan(
+            Some(Ok(vec![
+                Snapshot::new("real", HaloState::Thinking, 90),
+                Snapshot::new("future", HaloState::Executing, 201),
+            ])),
+            200,
+        );
+        assert!(display.simulated);
+        assert_eq!(
+            display.sessions,
+            vec![Snapshot::new(
+                SIMULATION_SESSION_KEY,
+                HaloState::Completed,
+                100
+            )]
+        );
+        assert_eq!(display.session_count, 1);
     }
 
     #[test]
