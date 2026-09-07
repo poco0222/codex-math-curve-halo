@@ -1,0 +1,344 @@
+schema: comet.native.v4
+name: multi-session-halo
+language: zh-CN
+phase: archive
+status: done
+state_version: 13
+brief: brief.md
+shape_confirmation_hash: 491fda8f9fa63940ee3b079b9c09c6fce0a7c59cdc064dcaccce0a6c50c0c5a8
+spec_changes:
+  - capability: multi-session-display
+    operation: create
+    source: specs/multi-session-display/spec.md
+workspace:
+  isolation: current
+  change_branch: main
+  target_branch: main
+  finish: null
+loop:
+  stage: done
+  goal_cycle: 3
+  iteration: 1
+  attempt: 1
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: null
+acceptance:
+  - id: A1
+    source: brief.md
+    text: A1：两个不同会话分别思考和执行时，同一光环同时出现各状态的配置颜色；等待输入的第三个会话出现后，已有两种状态仍可见。
+    result: passed
+    reason:
+      text: state.rs::reduce_snapshots 输出完整 sessions；app.js::applyRendererDisplayState
+        将集合传给 renderer。Runtime 前端 overlay forwards every session
+        和多曲线混色测试通过；dark-mixed.png 显示混合状态同时呈现。
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: A2：一个会话从执行切换到完成或结束时，另一个仍在思考的会话保持其状态，不被前者覆盖或清空。
+    result: passed
+    reason:
+      text: SessionStore 按 session_key 更新和删除；Runtime
+        session_updates_and_removals_preserve_all_other_sessions 与 renderer
+        terminal exit 测试通过，单会话完成、移除或过期后保留其他会话。
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: A3：调整某一状态的配置颜色后，所有处于该状态的显示部分同步更新，其他状态保持自身配色；单会话仍呈现对应状态颜色。
+    result: passed
+    reason:
+      text: halo.js::styleFor 读取各状态配置色，setSettings 逐会话更新对应颜色；Runtime 自定义颜色、单会话换色、13
+        条同色流光同步改色及既有颜色配置检查通过。
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: A4：事件推送与轮询响应交错时，较旧响应不能覆盖已经应用的新显示；非法或无效快照不能破坏其他有效会话状态。
+    result: passed
+    reason:
+      text: app.js::createDisplayStateBridge 用 appliedGeneration 防止旧响应回滚已应用状态。Runtime
+        乱序轮询、推送覆盖进行中轮询、慢轮询和失败响应检查通过；Rust
+        mixed_valid_and_corrupt_files_keep_valid_snapshots、未来时间戳拒绝及扫描错误保留集合检查通过。
+      truncated: false
+  - id: A5
+    source: brief.md
+    text: A5：两个思考中、一个执行中、一个等待输入的会话同时存在时，显示四条独立流光，颜色分别读取
+      thinking_color、thinking_color、executing_color、input_needed_color；其中一个会话变更状态只改变自身流光颜色。不得硬编码为默认颜色。
+    result: passed
+    reason:
+      text: Runtime display_serializes_every_current_session_in_stable_key_order 验证两个
+        thinking、一个 executing、一个 input_needed 独立输出；halo.js 按会话创建亮芯并通过
+        STATE_COLOR_KEYS 取色，不按状态合并。混色与同色四会话浏览器截图支持对应显示。
+      truncated: false
+  - id: A6
+    source: brief.md
+    text: A6：thinking、executing、compacting 会话超过 60 秒没有新事件仍显示最后状态；input_needed
+      同样保留。重新启动 Halo 后，只要对应合法快照仍在，也继续显示这些最后已知状态；不将其计数描述为经存活探测确认的在线数。
+    result: passed
+    reason:
+      text: state.rs::expiry_ms 对 thinking、executing、compacting、input_needed
+        不设时间失效；Runtime keeps_running_states_until_another_event 和
+        fresh_runtime_restores_old_running_snapshots_and_isolates_invalid_files
+        验证跨一天及新建 Runtime 恢复。中英文 README 明确计数与显示属于最后已知状态，无存活探测。
+      truncated: false
+  - id: A7
+    source: brief.md
+    text: A7：completed 和 interrupted 在 3 秒保留期内显示各自颜色，超过 3 秒移除；SessionEnd 移除自身流光；idle
+      继续采用原有 60 秒失效规则。最后一条有效流光移除后显示原有空闲光环。
+    result: passed
+    reason:
+      text: Runtime 终态三秒失效、精确有效期边界、SessionEnd 删除对应快照、SessionStore 过期清理检查通过；renderer
+        按原事件时间移除终态，空集合恢复原 idle 渲染，运行中同伴保持。
+      truncated: false
+  - id: A8
+    source: brief.md
+    text: A8：重复轮询或改变会话遍历顺序不交换流光的会话身份；新增、移除和切换状态不重置其他流光动画。2、4、13
+      个有效会话均逐一呈现，不按状态合并或静默截断。
+    result: passed
+    reason:
+      text: halo.js::updateSessions 以 session_key 保留对象和 offset，只分配新会话位置；Runtime
+        重排、新增、删除、模拟恢复位置保持检查，以及全部内置曲线下 2、4、13 独立亮芯检查通过；无集合截断。
+      truncated: false
+  - id: A9
+    source: brief.md
+    text: A9：状态模拟暂时呈现模拟颜色，不修改真实会话集合或增加真实会话计数；模拟结束后恢复完整多会话流光。关闭动画偏好时仍同时呈现各条流光的状态颜色。
+    result: passed
+    reason:
+      text: SessionStore::display_state_with_override 保留真实计数，app.js 模拟分支不覆盖真实 renderer
+        集合。Runtime 模拟隔离、完整恢复、运行模拟独立失效及 reduced motion
+        静态同色亮芯检查通过；浏览器证据包含模拟往返恢复四会话和减少动态效果截图。
+      truncated: false
+  - id: A10
+    source: brief.md
+    text: A10：多会话采用独立亮芯与渐隐细尾，流动节奏轻微错开且不随机跳位或无界追尾；换状态时新配置颜色从亮芯沿尾部传播，并在 420ms
+      内完成。新线程从短光芽展开；完成或中断在原有 3 秒反馈期末收束淡出。增多至 13
+      线程时缩短尾迹、收敛光晕，保留各亮芯和可见暗隙；降低动态效果时保持静态多色辨识。
+    result: passed
+    reason:
+      text: Runtime
+        验证亮芯先换色、尾迹于420ms内完成、高频换色连续、420ms进入展开、按原三秒期限退出、13条同色交叉暗隙、动态交叉连续性、8逻辑像素位移上界及亮芯最后绘制。112px明暗截图覆盖默认、玫瑰与开放曲线，显示独立亮芯、渐隐细尾和密度缩尾；reduced
+        motion 保持静态辨识。
+      truncated: false
+builder_handoff:
+  candidate_id: 8c20a5c6-1fcf-4d92-af3c-46a27d30bd61
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:732035e4-59a0-4d9f-970e-f3ad9af48c20
+  iteration: 1
+  summary:
+    text: 完整会话输出、模拟隔离与独立TTL、持续运行状态、慢轮询及乱序保护；游丝共舞包括配置色420ms传播、身份保持、终态收束、弧长定位和8px有界交叉避让；亮芯统一最后绘制，更新中英文README。
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A2
+    - A3
+    - A4
+    - A5
+    - A6
+    - A7
+    - A8
+    - A9
+    - A10
+  checks:
+    - name:
+        text: Rust all targets
+        truncated: false
+      result: passed
+      note:
+        text: 125 passed,1 existing ignored fixture
+        truncated: false
+    - name:
+        text: Renderer sessions
+        truncated: false
+      result: passed
+      note:
+        text: 12 tests passed including crossing and core layering
+        truncated: false
+    - name:
+        text: Legacy renderer
+        truncated: false
+      result: passed
+      note:
+        text: 20 profiles,80 reference points; max112px interpolation0.981px
+        truncated: false
+    - name:
+        text: App polling
+        truncated: false
+      result: passed
+      note:
+        text: Independent review targeted9 app tests passed
+        truncated: false
+    - name:
+        text: Browser
+        truncated: false
+      result: passed
+      note:
+        text: .comet/runtime/multi-session-qa/browser-evidence.json and two screenshots;
+          actual modules with IPC fixture
+        truncated: false
+  checks_truncated: false
+  known_limits:
+    - text: Independent hooked sessions under one CODEX_HOME; last-known states can
+        persist after missing end events.
+      truncated: false
+    - text: Extreme geometry outside the canvas retains original clipping; local
+        avoidance is limited to8 logical pixels.
+      truncated: false
+    - text: Installed native app and live Codex hook emission were not exercised;
+        browser uses IPC fixtures.
+      truncated: false
+  known_limits_truncated: false
+  review:
+    status: passed
+    summary:
+      text: Read-only reviewer verified P2 crossing fix over20 default curves x100
+        phases, core paint order, and polling fixes; no unresolved findings.
+      truncated: false
+    reviewer_execution_ref: /root/review_multi_session_candidate
+  submitted_at: 2026-09-07T13:57:47.425Z
+blockers: []
+verification:
+  candidate_id: 8c20a5c6-1fcf-4d92-af3c-46a27d30bd61
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:14194d06-4884-4e5b-b004-7fedf68ea338
+  iteration: 1
+  attempt: 1
+  assurance: skill-coordinated
+  verdict: pass
+  checks:
+    - id: frontend-tests
+      name:
+        text: Frontend behavior tests
+        truncated: false
+      argv_display:
+        - text: --test
+          truncated: false
+        - text: src/*.test.mjs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 1447
+    - id: renderer-reference
+      name:
+        text: Legacy renderer reference checks
+        truncated: false
+      argv_display:
+        - text: scripts/check-renderer.mjs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 110
+    - id: rust-all-targets
+      name:
+        text: Rust all-target tests
+        truncated: false
+      argv_display:
+        - text: test
+          truncated: false
+        - text: --manifest-path
+          truncated: false
+        - text: src-tauri/Cargo.toml
+          truncated: false
+        - text: --all-targets
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 4319
+    - id: rust-format
+      name:
+        text: Rust formatting
+        truncated: false
+      argv_display:
+        - text: --edition
+          truncated: false
+        - text: "2021"
+          truncated: false
+        - text: --check
+          truncated: false
+        - text: src-tauri/src/state.rs
+          truncated: false
+        - text: src-tauri/src/main.rs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 63
+    - id: diff-format
+      name:
+        text: Patch whitespace
+        truncated: false
+      argv_display:
+        - text: diff
+          truncated: false
+        - text: --check
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 34
+  summary:
+    text: 当前候选 A1–A10 全部通过。Runtime 自动检查、源码审阅和与候选哈希一致的浏览器视觉证据相互支持；无需补充
+      request-checks。验收不扩展为安装版或宿主全来源端到端验证。
+    truncated: false
+  risks:
+    - text: 浏览器证据使用实际前端模块与本地 IPC fixture；未覆盖安装版 Tauri 悬浮窗口或宿主真实 Hook
+        发射，不能据此宣称全部子代理来源已接入。
+      truncated: false
+    - text: 合法运行快照可长期保留；异常退出且缺少结束事件可能残留流光。这是已确认的产品限制。
+      truncated: false
+    - text: 极端自定义几何延续既有画布裁剪；局部避让限制为8逻辑像素。当前证据不承诺任意几何或数百会话仍具有同等可辨认性。
+      truncated: false
+  risks_truncated: false
+  completed_at: 2026-09-07T14:03:23.648Z
+history:
+  - goal_cycle: 1
+    iteration: 0
+    attempt: 0
+    outcome: recovery
+    unresolved_ids: []
+    summary:
+      text: Native confirmed acceptance criteria changed
+      truncated: false
+    completed_at: 2026-09-07T13:38:37.603Z
+  - goal_cycle: 2
+    iteration: 1
+    attempt: 0
+    outcome: recovery
+    unresolved_ids: []
+    summary:
+      text: Native Shape artifacts changed
+      truncated: false
+    completed_at: 2026-09-07T13:57:01.599Z
+  - goal_cycle: 3
+    iteration: 1
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: 当前候选 A1–A10 全部通过。Runtime 自动检查、源码审阅和与候选哈希一致的浏览器视觉证据相互支持；无需补充
+        request-checks。验收不扩展为安装版或宿主全来源端到端验证。
+      truncated: false
+    completed_at: 2026-09-07T14:03:23.648Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: true
+created_at: 2026-09-07T13:13:10.207Z
