@@ -60,8 +60,8 @@ fn curve_control_catalog() -> &'static CurveControlCatalog {
             .strip_prefix("export default ")
             .and_then(|value| value.strip_suffix(';'))
             .expect("curve controls must wrap a JSON object in a default export");
-        let catalog: CurveControlCatalog = serde_json::from_str(source)
-            .expect("embedded curve controls must match their schema");
+        let catalog: CurveControlCatalog =
+            serde_json::from_str(source).expect("embedded curve controls must match their schema");
         assert!(
             catalog
                 .profiles

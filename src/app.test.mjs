@@ -1166,6 +1166,159 @@ test('autostart errors keep only a fixed safe category for settings UI', () => {
   assert.equal(formatSetupError('save_settings', 'raw path and payload'), 'save_settings failed');
 });
 
+test('plugin errors show localized safe reasons and reject unknown details', () => {
+  const cases = [
+    ['Codex CLI is unavailable', /Codex CLI.*unavailable/i, /Codex CLI.*不可用/],
+    ['Codex CLI timed out', /timed out/i, /超时/],
+    ['Codex marketplace could not be registered', /marketplace.*registered/i, /市场.*注册/],
+    ['Codex marketplace could not be inspected', /marketplace.*inspected/i, /市场.*查询/],
+    ['A different Codex marketplace already uses the Codex Halo name', /different.*marketplace/i, /同名.*市场/],
+    ['Codex Halo marketplace is not owned by this app', /marketplace.*not owned/i, /市场.*不属于/],
+    ['Codex Halo Plugin could not be installed', /Plugin.*not be installed/i, /Plugin.*安装失败/],
+    ['Codex Halo legacy hooks could not be migrated', /legacy hooks.*migrated/i, /旧版 Hook.*迁移/],
+    ['Codex Halo Plugin installation is incomplete', /installation.*incomplete/i, /安装未完成/],
+    ['Codex Halo Plugin could not be uninstalled', /Plugin.*not be uninstalled/i, /Plugin.*卸载失败/],
+    ['Codex Halo Plugin uninstall is incomplete', /uninstall.*incomplete/i, /卸载未完成/],
+    ['Codex marketplace could not be removed', /marketplace.*removed/i, /市场.*移除/],
+    ['Codex Halo Plugin package is unavailable', /Plugin package.*unavailable/i, /Plugin 安装资源.*不可用/],
+    ['Codex Halo Plugin operation failed', /Plugin operation failed/i, /Plugin 操作失败/],
+  ];
+  for (const command of ['install_plugin', 'uninstall_plugin']) {
+    for (const [error, english, chinese] of cases) {
+      assert.match(formatLocalizedSetupError(command, error, 'en'), english, error);
+      assert.match(formatLocalizedSetupError(command, error, 'zh-CN'), chinese, error);
+    }
+    for (const error of [
+      undefined,
+      new Error('private native error'),
+      { message: 'Codex CLI is unavailable', token: 'private-token' },
+      'Codex CLI is unavailable: C:\\private\\config.json private-token',
+      'toString',
+      '__proto__',
+    ]) {
+      assert.equal(formatLocalizedSetupError(command, error, 'en'), 'Plugin operation failed');
+      assert.equal(formatLocalizedSetupError(command, error, 'zh-CN'), 'Plugin 操作失败');
+    }
+  }
+});
+
+test('plugin failures survive language saves and view changes until a successful retry', async () => {
+  class Element {
+    constructor(id, dataset = {}) {
+      Object.assign(this, { id, dataset, children: [], listeners: new Map(), attributes: {}, disabled: false });
+      this.classList = { toggle() {} };
+    }
+    addEventListener(type, listener) {
+      const listeners = this.listeners.get(type) ?? [];
+      listeners.push(listener);
+      this.listeners.set(type, listeners);
+    }
+    dispatch(type) {
+      return Promise.all((this.listeners.get(type) ?? []).map((listener) => listener({ target: this })));
+    }
+    setAttribute(name, value) { this.attributes[name] = value; }
+    toggleAttribute(name, enabled) {
+      if (name === 'disabled') this.disabled = enabled;
+    }
+    replaceChildren(fragment) { this.children = fragment.children; }
+    querySelectorAll() { return []; }
+    focus() {}
+  }
+  const panel = new Element('settings-panel-host');
+  const language = Object.assign(new Element('language'), { value: 'en', type: 'select' });
+  const tabs = ['appearance', 'integration'].map((view) => new Element(`settings-tab-${view}`, { viewTarget: view }));
+  const element = (id) => [panel, language, ...panel.children].find((node) => node.id === id) ?? null;
+  const calls = [];
+  const warnings = [];
+  let finishOperation;
+  const invoke = async (command) => {
+    if (command === 'get_settings') return { ...DEFAULT_APP_SETTINGS };
+    if (command === 'get_display_state') return { state: 'idle', updated_at_ms: 0 };
+    if (command === 'install_plugin' || command === 'uninstall_plugin') {
+      calls.push(command);
+      return new Promise((resolve, reject) => { finishOperation = { resolve, reject }; });
+    }
+    if (command === 'save_settings') return null;
+    throw new Error(`Unexpected command: ${command}`);
+  };
+  const document = {
+    documentElement: { lang: 'en' },
+    getElementById: element,
+    querySelectorAll(selector) {
+      if (selector === '[data-view-target]') return tabs;
+      if (selector === 'input, select') return [language];
+      if (selector === '[data-i18n]') return panel.children.filter((node) => node.dataset.i18n);
+      return [];
+    },
+    querySelector(selector) {
+      const view = selector.match(/^\[data-view-template="(.+)"\]$/)?.[1];
+      if (!view) return null;
+      return { content: { cloneNode: () => ({ children: view === 'integration' ? [
+        new Element('install-plugin'), new Element('uninstall-plugin'),
+        new Element('plugin-status', { i18n: 'settings.pluginReady' }),
+        new Element('diagnostics', { i18n: 'settings.diagnosticsLoading' }),
+      ] : [] }) } };
+    },
+  };
+  const original = { document: globalThis.document, window: globalThis.window, warn: console.warn };
+  globalThis.document = document;
+  globalThis.window = { __TAURI__: { core: { invoke }, event: { listen: async () => {} } }, setInterval: () => 1 };
+  console.warn = (message) => warnings.push(message);
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+  try {
+    await import(`./settings.js?plugin-failure-test=${Date.now()}`);
+    await settle();
+    await tabs[1].dispatch('click');
+    const failed = element('install-plugin').dispatch('click');
+    assert.equal(element('install-plugin').disabled, true);
+    assert.equal(element('uninstall-plugin').disabled, true);
+    await tabs[0].dispatch('click');
+    await tabs[1].dispatch('click');
+    assert.equal(element('install-plugin').disabled, true);
+    await element('uninstall-plugin').dispatch('click');
+    assert.deepEqual(calls, ['install_plugin']);
+    finishOperation.reject('Codex CLI is unavailable');
+    await failed;
+    assert.match(element('plugin-status').textContent, /Codex CLI.*unavailable.*retry/i);
+    assert.match(element('diagnostics').textContent, /Codex CLI.*unavailable/i);
+    assert.equal(element('install-plugin').disabled, false);
+    assert.equal(element('uninstall-plugin').disabled, false);
+
+    language.value = 'zh-CN';
+    await language.dispatch('change');
+    await settle();
+    await tabs[0].dispatch('click');
+    await tabs[1].dispatch('click');
+    assert.match(element('plugin-status').textContent, /Codex CLI.*不可用.*重试/);
+
+    const timedOut = element('install-plugin').dispatch('click');
+    assert.equal(element('plugin-status').textContent, '处理中…');
+    finishOperation.reject('Codex CLI timed out');
+    await timedOut;
+    assert.match(element('plugin-status').textContent, /超时.*重试/);
+    assert.match(element('diagnostics').textContent, /超时/);
+    const retried = element('install-plugin').dispatch('click');
+    finishOperation.resolve(null);
+    await retried;
+    assert.equal(element('plugin-status').textContent, 'Plugin 已安装');
+    assert.doesNotMatch(element('diagnostics').textContent, /超时|设置错误/);
+    assert.equal(element('install-plugin').disabled, false);
+    assert.equal(element('uninstall-plugin').disabled, false);
+
+    const unknown = element('uninstall-plugin').dispatch('click');
+    finishOperation.reject('private-token C:\\private\\config.json');
+    await unknown;
+    assert.equal(element('plugin-status').textContent, 'Plugin 操作失败');
+    assert.doesNotMatch(element('diagnostics').textContent, /private/);
+    assert.ok(warnings.every((warning) => !warning.includes('private')));
+  } finally {
+    globalThis.document = original.document;
+    globalThis.window = original.window;
+    console.warn = original.warn;
+  }
+});
+
 test('localization defaults and falls back to English', () => {
   assert.equal(DEFAULT_LANGUAGE, 'en');
   assert.deepEqual(SUPPORTED_LANGUAGES, ['en', 'zh-CN']);
@@ -1753,11 +1906,11 @@ test('macOS lifecycle setup has one watcher start owner', async () => {
   );
 
   assert(macStartSource);
-  assert.doesNotMatch(macStartSource[0], /process_listing|Command::new/);
+  assert.doesNotMatch(macStartSource[0], /process_listing|Command::new|platform::background_command/);
   assert(nonMacStartSource);
   assert.match(nonMacStartSource[0], /process_listing/);
   assert.match(nonMacStartSource[0], /WATCHER_PROCESS_NAMES/);
-  assert.match(nonMacStartSource[0], /Command::new/);
+  assert.match(nonMacStartSource[0], /platform::background_command\(watcher_path\)/);
 });
 
 test('settings page exposes state color tabs and one active editor', async () => {
@@ -2159,7 +2312,7 @@ test('lifecycle handoff and single-instance stop use a managed PID and token', a
   assert.match(lifecycle, /adopted_pid/);
   assert.match(lifecycle, /--lifecycle-stop/);
   assert.match(lifecycle, /\.arg\(pid\.to_string\(\)\)[\s\S]*?\.arg\(token\)/);
-  assert.match(lifecycle, /Command::new\([^)]*halo_path/);
+  assert.match(lifecycle, /platform::background_command\([^)]*halo_path/);
   assert.match(main, /lifecycle_stop_targets/);
   assert.match(main, /lifecycle_stop_targets\([\s\S]*?std::process::id\(\)[\s\S]*?lifecycle::current_managed_token\(\)[\s\S]*?\)/);
   assert.match(main, /app\.exit\(0\)/);

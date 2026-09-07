@@ -1,4 +1,4 @@
-use crate::hooks;
+use crate::{hooks, platform};
 use serde::Deserialize;
 use std::env;
 use std::ffi::OsString;
@@ -6,7 +6,7 @@ use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -269,14 +269,16 @@ fn is_missing_removal(step: Step, stderr: &[u8]) -> bool {
 
 fn run_codex(args: &[OsString]) -> Result<Output, PluginError> {
     for candidate in codex_candidates() {
-        let mut child = match Command::new(&candidate)
+        let mut child = match platform::background_command(&candidate)
             .args(args)
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
         {
             Ok(child) => child,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            // A spawn failure cannot have changed plugin config; a started command must not retry.
+            Err(error) if cfg!(windows) || error.kind() == io::ErrorKind::NotFound => continue,
             Err(_) => return Err(PluginError::CodexUnavailable),
         };
         let deadline = Instant::now() + COMMAND_TIMEOUT;
@@ -310,6 +312,27 @@ fn codex_candidates() -> Vec<PathBuf> {
         candidates.push(PathBuf::from(path));
     }
     candidates.push(PathBuf::from("codex"));
+    #[cfg(windows)]
+    if let Some(local_app_data) = env::var_os("LOCALAPPDATA").filter(|path| !path.is_empty()) {
+        let bin = PathBuf::from(local_app_data).join("OpenAI/Codex/bin");
+        let mut desktop_candidates = fs::read_dir(bin)
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter_map(|entry| {
+                let path = entry.path().join("codex.exe");
+                let metadata = fs::metadata(&path).ok()?;
+                metadata.is_file().then(|| (metadata.modified().ok(), path))
+            })
+            .collect::<Vec<_>>();
+        // Version directories are hashes; prefer the newest binary, then a stable path order.
+        desktop_candidates.sort_by(|(left_time, left_path), (right_time, right_path)| {
+            right_time
+                .cmp(left_time)
+                .then_with(|| left_path.cmp(right_path))
+        });
+        candidates.extend(desktop_candidates.into_iter().map(|(_, path)| path));
+    }
     #[cfg(target_os = "macos")]
     {
         candidates.push(PathBuf::from(
@@ -325,6 +348,162 @@ fn codex_candidates() -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    use std::process::Command;
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "CLI subprocess fixture, called by the discovery test"]
+    fn windows_codex_stub() {
+        if env::var("CODEX_HALO_CLI_PROBE").as_deref() == Ok("stdin") {
+            use std::io::Read;
+            let mut input = Vec::new();
+            std::io::stdin().read_to_end(&mut input).unwrap();
+            assert!(
+                input.is_empty(),
+                "Plugin CLI must not inherit interactive stdin"
+            );
+        }
+        if env::var("CODEX_HALO_CLI_PROBE").as_deref() == Ok("failed-command") {
+            use std::io::Write;
+            fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open("calls.txt")
+                .unwrap()
+                .write_all(b"call\n")
+                .unwrap();
+            std::process::exit(17);
+        }
+        println!("CLI_PATH={}", env::current_exe().unwrap().display());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_cli_discovery_preserves_priority_and_retries_only_spawn_failures() {
+        const PROBE: &str = "CODEX_HALO_CLI_PROBE";
+        if let Ok(scenario) = env::var(PROBE) {
+            let output = run_codex(&[
+                "--exact".into(),
+                "plugin::tests::windows_codex_stub".into(),
+                "--ignored".into(),
+                "--nocapture".into(),
+            ]);
+            if scenario == "unavailable" {
+                assert_eq!(output.unwrap_err(), PluginError::CodexUnavailable);
+            } else {
+                let output = output.unwrap();
+                if scenario == "failed-command" {
+                    assert_eq!(output.status.code(), Some(17));
+                    assert_eq!(fs::read_to_string("calls.txt").unwrap(), "call\n");
+                } else {
+                    assert!(output.status.success(), "{output:?}");
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let path = stdout
+                        .lines()
+                        .find_map(|line| line.strip_prefix("CLI_PATH="))
+                        .unwrap();
+                    assert_eq!(
+                        Path::new(path),
+                        PathBuf::from(env::var_os("CODEX_HALO_EXPECTED_CLI").unwrap())
+                    );
+                }
+            }
+            return;
+        }
+
+        let root = env::temp_dir().join(format!(
+            "codex halo cli-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let local_app_data = root.join("Local App Data");
+        let desktop_bin = local_app_data.join("OpenAI/Codex/bin");
+        let older = desktop_bin.join("old build/codex.exe");
+        let current = desktop_bin.join("new build/codex.exe");
+        let broken = desktop_bin.join("broken build/codex.exe");
+        let path_cli = root.join("Path Bin/codex.exe");
+        let explicit = root.join("Explicit Bin/codex.exe");
+        let test_executable = env::current_exe().unwrap();
+        for (index, path) in [&older, &current, &broken, &path_cli, &explicit]
+            .into_iter()
+            .enumerate()
+        {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            if path == &broken {
+                fs::write(path, b"not an executable").unwrap();
+            } else {
+                fs::copy(&test_executable, path).unwrap();
+            }
+            fs::File::options()
+                .write(true)
+                .open(path)
+                .unwrap()
+                .set_times(fs::FileTimes::new().set_modified(
+                    std::time::UNIX_EPOCH + Duration::from_secs(1_700_000_000 + index as u64),
+                ))
+                .unwrap();
+        }
+
+        // Child environments isolate PATH changes from concurrent tests and real Codex config.
+        let mut failures = Vec::new();
+        for (scenario, override_path, use_path, expected) in [
+            ("desktop", None, false, &current),
+            ("denied-override", Some(root.as_path()), false, &current),
+            ("path-priority", None, true, &path_cli),
+            (
+                "explicit-priority",
+                Some(explicit.as_path()),
+                true,
+                &explicit,
+            ),
+            ("stdin", Some(explicit.as_path()), true, &explicit),
+            ("failed-command", Some(explicit.as_path()), true, &explicit),
+            ("unavailable", None, false, &current),
+        ] {
+            let mut command = Command::new(env::current_exe().unwrap());
+            command
+                .args([
+                    "--exact",
+                    "plugin::tests::windows_cli_discovery_preserves_priority_and_retries_only_spawn_failures",
+                    "--nocapture",
+                ])
+                .current_dir(&root)
+                .env(PROBE, scenario)
+                .env("CODEX_HALO_EXPECTED_CLI", expected)
+                .env("CODEX_HOME", root.join("Codex Home"))
+                .env("PATH", if use_path { path_cli.parent().unwrap() } else { &root })
+                .env("LOCALAPPDATA", if scenario == "unavailable" { &root } else { &local_app_data })
+                .env_remove("CODEX_BIN");
+            if let Some(path) = override_path {
+                command.env("CODEX_BIN", path);
+            }
+            let mut child = command
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap();
+            if scenario == "stdin" {
+                use std::io::Write;
+                child
+                    .stdin
+                    .take()
+                    .unwrap()
+                    .write_all(b"interactive input")
+                    .unwrap();
+            }
+            let output = child.wait_with_output().unwrap();
+            if !output.status.success() {
+                failures.push(format!("{scenario}: {output:?}"));
+            }
+        }
+        fs::remove_dir_all(&root).unwrap();
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
 
     fn strings(args: &[OsString]) -> Vec<String> {
         args.iter()

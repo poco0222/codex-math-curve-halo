@@ -5,7 +5,7 @@ use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
 use std::thread;
@@ -222,7 +222,7 @@ fn spawn_watcher_if_missing(watcher_path: &Path, config_path: &Path) -> Result<(
     let listing =
         platform::process_listing().map_err(|error| process_list_error(error).to_string())?;
     if !process_present_from_listing(&listing, &WATCHER_PROCESS_NAMES) {
-        Command::new(watcher_path)
+        platform::background_command(watcher_path)
             .arg("--config")
             .arg(config_path)
             .stdin(Stdio::null())
@@ -720,7 +720,7 @@ where
 }
 
 fn spawn_halo(path: &Path) -> Result<Child, LifecycleError> {
-    Command::new(path)
+    platform::background_command(path)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -733,7 +733,7 @@ fn stop_adopted_halo_process(
     pid: u32,
     token: &str,
 ) -> Result<(), LifecycleError> {
-    let status = Command::new(halo_path)
+    let status = platform::background_command(halo_path)
         .arg("--lifecycle-stop")
         .arg(pid.to_string())
         .arg(token)

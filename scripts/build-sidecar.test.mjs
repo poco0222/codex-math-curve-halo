@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { join } from 'node:path';
 import {
   sidecarFilename,
   sidecarOutputPath,
@@ -20,10 +21,10 @@ test('build script parses an explicit target and computes the release output', (
   assert.equal(target, 'x86_64-pc-windows-msvc');
   assert.equal(
     sidecarOutputPath('/repo', target),
-    '/repo/src-tauri/binaries/codex-halo-hook-x86_64-pc-windows-msvc.exe',
+    join('/repo', 'src-tauri', 'binaries', 'codex-halo-hook-x86_64-pc-windows-msvc.exe'),
   );
   assert.equal(
     sidecarOutputPath('/repo', 'x86_64-pc-windows-msvc', 'codex-halo-watch'),
-    '/repo/src-tauri/binaries/codex-halo-watch-x86_64-pc-windows-msvc.exe',
+    join('/repo', 'src-tauri', 'binaries', 'codex-halo-watch-x86_64-pc-windows-msvc.exe'),
   );
 });

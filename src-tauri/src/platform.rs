@@ -5,14 +5,25 @@ use std::io;
 use std::path::Path;
 #[cfg(target_os = "macos")]
 use std::path::PathBuf;
-#[cfg(any(target_os = "macos", target_os = "windows"))]
 use std::process::Command;
 use tauri::{AppHandle, Runtime, WebviewWindow};
 #[cfg(target_os = "macos")]
 use tauri_plugin_autostart::ManagerExt;
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 pub(crate) static PROCESS_COMMAND_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+pub fn background_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    #[allow(unused_mut)]
+    let mut command = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // Redirecting streams alone still lets desktop launches create a console.
+        command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    command
+}
 
 pub fn configure_overlay(window: &WebviewWindow) -> tauri::Result<()> {
     window.set_ignore_cursor_events(true)
@@ -129,7 +140,7 @@ fn mac_process_listing() -> io::Result<String> {
 
 #[cfg(target_os = "windows")]
 fn windows_process_listing() -> io::Result<String> {
-    let output = Command::new("tasklist")
+    let output = background_command("tasklist")
         .args(["/FO", "CSV", "/NH"])
         .output()?;
     if !output.status.success() {
@@ -540,6 +551,42 @@ pub fn atomic_replace(source: &Path, target: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn background_process_has_no_console_and_keeps_pipes() {
+        use std::io::Write;
+        use std::process::Stdio;
+
+        // Run this check from a terminal too, so accidental console inheritance is observable.
+        let powershell = std::path::PathBuf::from(std::env::var_os("SystemRoot").unwrap())
+            .join("System32/WindowsPowerShell/v1.0/powershell.exe");
+        let mut child = background_command(powershell)
+            .args(["-NoProfile", "-NonInteractive", "-Command", r#"
+                Add-Type 'using System; using System.Runtime.InteropServices; public static class HaloConsole { [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow(); }';
+                [Console]::Out.WriteLine([HaloConsole]::GetConsoleWindow().ToInt64());
+                [Console]::Out.Write([Console]::In.ReadToEnd());
+                [Console]::Error.Write('diagnostic');
+            "#])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(b"hook input")
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n"),
+            "0\nhook input"
+        );
+        assert_eq!(output.stderr, b"diagnostic");
+    }
     #[cfg(target_os = "macos")]
     use std::env;
     #[cfg(target_os = "macos")]

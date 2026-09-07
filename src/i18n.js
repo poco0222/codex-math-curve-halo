@@ -58,6 +58,20 @@ const dictionaries = {
     'settings.pluginInstalled': 'Plugin installed',
     'settings.pluginUninstalled': 'Plugin uninstalled',
     'settings.pluginOperationFailed': 'Plugin operation failed',
+    'errors.pluginCliUnavailable': 'Codex CLI is unavailable. Open or update Codex, then retry.',
+    'errors.pluginCliTimeout': 'Codex CLI timed out. Check Codex, then retry.',
+    'errors.pluginMarketplaceInstall': 'Codex marketplace could not be registered. Check Codex configuration access, then retry.',
+    'errors.pluginMarketplaceQuery': 'Codex marketplace could not be inspected. Open or update Codex, then retry.',
+    'errors.pluginMarketplaceConflict': 'A different marketplace uses the Codex Halo name. Check that marketplace in Codex before retrying.',
+    'errors.pluginMarketplaceNotOwned': 'Codex Halo marketplace is not owned by this app. Manage it in Codex.',
+    'errors.pluginInstall': 'Codex Halo Plugin could not be installed. Open or update Codex, then retry.',
+    'errors.pluginLegacyCleanup': 'Codex Halo legacy hooks could not be migrated. Check Codex configuration access, then retry.',
+    'errors.pluginPartialInstall': 'Codex Halo Plugin installation is incomplete. Check the Codex marketplace, then retry installation.',
+    'errors.pluginRemove': 'Codex Halo Plugin could not be uninstalled. Check Codex configuration access, then retry.',
+    'errors.pluginPartialUninstall': 'Codex Halo Plugin uninstall is incomplete. Check the Codex marketplace, then retry uninstalling.',
+    'errors.pluginMarketplaceRemove': 'Codex marketplace could not be removed. Check Codex configuration access, then retry.',
+    'errors.pluginPackageUnavailable': 'Codex Halo Plugin package is unavailable. Repair or reinstall Halo, then retry.',
+    'errors.pluginOperation': 'Plugin operation failed. Restart Halo, then retry.',
     'settings.diagnostics': 'Diagnostics',
     'settings.diagnosticsLive': 'Live',
     'settings.resetPosition': 'Reset position',
@@ -179,6 +193,20 @@ const dictionaries = {
     'settings.pluginInstalled': 'Plugin 已安装',
     'settings.pluginUninstalled': 'Plugin 已卸载',
     'settings.pluginOperationFailed': 'Plugin 操作失败',
+    'errors.pluginCliUnavailable': 'Codex CLI 不可用。请打开或更新 Codex 后重试。',
+    'errors.pluginCliTimeout': 'Codex CLI 操作超时。请检查 Codex 后重试。',
+    'errors.pluginMarketplaceInstall': 'Codex 市场注册失败。请检查 Codex 配置访问权限后重试。',
+    'errors.pluginMarketplaceQuery': 'Codex 市场查询失败。请打开或更新 Codex 后重试。',
+    'errors.pluginMarketplaceConflict': '存在同名的其他 Codex 市场。请在 Codex 中检查该市场后重试。',
+    'errors.pluginMarketplaceNotOwned': 'Codex Halo 市场不属于当前应用。请在 Codex 中管理该市场。',
+    'errors.pluginInstall': 'Codex Halo Plugin 安装失败。请打开或更新 Codex 后重试。',
+    'errors.pluginLegacyCleanup': 'Codex Halo 旧版 Hook 迁移失败。请检查 Codex 配置访问权限后重试。',
+    'errors.pluginPartialInstall': 'Codex Halo Plugin 安装未完成。请检查 Codex 市场后重试安装。',
+    'errors.pluginRemove': 'Codex Halo Plugin 卸载失败。请检查 Codex 配置访问权限后重试。',
+    'errors.pluginPartialUninstall': 'Codex Halo Plugin 卸载未完成。请检查 Codex 市场后重试卸载。',
+    'errors.pluginMarketplaceRemove': 'Codex 市场移除失败。请检查 Codex 配置访问权限后重试。',
+    'errors.pluginPackageUnavailable': 'Codex Halo Plugin 安装资源不可用。请修复或重新安装 Halo 后重试。',
+    'errors.pluginOperation': 'Plugin 操作失败。请重启 Halo 后重试。',
     'settings.diagnostics': '诊断',
     'settings.diagnosticsLive': '实时',
     'settings.resetPosition': '重置位置',
@@ -289,6 +317,24 @@ const safeSetupErrorKeys = {
 
 const safeSetupError = /^(?:(start-at-login):(permission|launch-agent|registry|unsupported|reconciliation)|(codex-lifecycle):(permission|launch-agent|registry|unsupported))$/;
 
+// Only exact backend messages are safe; appended CLI output must use the generic fallback.
+const safePluginErrorKeys = {
+  'Codex CLI is unavailable': 'errors.pluginCliUnavailable',
+  'Codex CLI timed out': 'errors.pluginCliTimeout',
+  'Codex marketplace could not be registered': 'errors.pluginMarketplaceInstall',
+  'Codex marketplace could not be inspected': 'errors.pluginMarketplaceQuery',
+  'A different Codex marketplace already uses the Codex Halo name': 'errors.pluginMarketplaceConflict',
+  'Codex Halo marketplace is not owned by this app': 'errors.pluginMarketplaceNotOwned',
+  'Codex Halo Plugin could not be installed': 'errors.pluginInstall',
+  'Codex Halo legacy hooks could not be migrated': 'errors.pluginLegacyCleanup',
+  'Codex Halo Plugin installation is incomplete': 'errors.pluginPartialInstall',
+  'Codex Halo Plugin could not be uninstalled': 'errors.pluginRemove',
+  'Codex Halo Plugin uninstall is incomplete': 'errors.pluginPartialUninstall',
+  'Codex marketplace could not be removed': 'errors.pluginMarketplaceRemove',
+  'Codex Halo Plugin package is unavailable': 'errors.pluginPackageUnavailable',
+  'Codex Halo Plugin operation failed': 'errors.pluginOperation',
+};
+
 export function normalizeLanguage(value) {
   return SUPPORTED_LANGUAGES.includes(value) ? value : DEFAULT_LANGUAGE;
 }
@@ -312,6 +358,12 @@ export function localeForLanguage(language) {
 
 export function formatSetupError(command, error, language = DEFAULT_LANGUAGE) {
   if (command === 'save_position') return getText(language, 'errors.positionSave');
+  if (command === 'install_plugin' || command === 'uninstall_plugin') {
+    const key = typeof error === 'string' && Object.hasOwn(safePluginErrorKeys, error)
+      ? safePluginErrorKeys[error]
+      : 'settings.pluginOperationFailed';
+    return getText(language, key);
+  }
   const match = typeof error === 'string' ? error.match(safeSetupError) : null;
   if (!match) return `${command} failed`;
 

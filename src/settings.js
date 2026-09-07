@@ -585,7 +585,9 @@ function renderPluginStatus(status) {
   if (status !== undefined) settingsStore.setUi({ pluginStatus: nextStatus });
   const language = getCurrentLanguage();
   const pluginStatus = document.getElementById('plugin-status');
-  if (pluginStatus) pluginStatus.textContent = getText(language, nextStatus);
+  if (pluginStatus) pluginStatus.textContent = typeof nextStatus === 'string'
+    ? getText(language, nextStatus)
+    : formatSetupError(nextStatus.command, nextStatus.error, language);
 }
 
 function renderDiagnostics(displayState = {}) {
@@ -753,9 +755,11 @@ async function runPluginAction(command, successStatus) {
     const result = await invokeCommand(command);
     if (result.ok) {
       clearSetupError();
+      renderDiagnostics();
       renderPluginStatus(successStatus);
     } else {
-      renderPluginStatus('settings.pluginOperationFailed');
+      // Keep the error translatable after a language save clears the shared setup error.
+      renderPluginStatus(settingsStore.getUiState().setupError ?? 'settings.pluginOperationFailed');
     }
   } finally {
     settingsStore.setUi({ pluginOperationInFlight: false });
