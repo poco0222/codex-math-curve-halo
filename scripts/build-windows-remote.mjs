@@ -23,7 +23,7 @@ export function sshTarget({ user, host }) {
 
 export function localArtifactName({ productName, version }) {
   if (!productName || !version) throw new Error('missing Tauri product name or version');
-  return `${productName}_${version}_x64-setup.exe`;
+  return `${productName}_${version}_x64_en-US.msi`;
 }
 
 export function scpDownloadSource(target, remotePath) {
@@ -71,8 +71,8 @@ export function buildRemoteBatch({ remoteRoot, buildId, artifactName, target = d
   const sourceRoot = win32.join(workspace, buildId);
   const targetRoot = win32.join(remoteRoot, 'src-tauri', 'target');
   const archive = win32.join(workspace, 'codex-halo-source.tar.gz');
-  const artifact = win32.join(targetRoot, target, 'release', 'bundle', 'nsis', artifactName);
-  const remoteArtifact = win32.join(workspace, 'codex-halo-windows-setup.exe');
+  const artifact = win32.join(targetRoot, target, 'release', 'bundle', 'msi', artifactName);
+  const remoteArtifact = win32.join(workspace, 'codex-halo-windows-setup.msi');
   return `@echo off
 setlocal EnableExtensions EnableDelayedExpansion
 if exist "${sourceRoot}" exit /b 1
@@ -89,13 +89,14 @@ cd /d "${sourceRoot}"
 if errorlevel 1 exit /b 1
 call "C:\\Program Files (x86)\\Microsoft Visual Studio\\18\\BuildTools\\Common7\\Tools\\VsDevCmd.bat" -arch=x64 -host_arch=x64
 if errorlevel 1 exit /b 1
-set "PATH=D:\\Program Files\\nodejs;C:\\Program Files (x86)\\NSIS;C:\\Program Files (x86)\\WiX Toolset v3.14\\bin;!USERPROFILE!\\.cargo\\bin;!PATH!"
+set "PATH=D:\\Program Files\\nodejs;C:\\Program Files (x86)\\WiX Toolset v3.14\\bin;!USERPROFILE!\\.cargo\\bin;!PATH!"
 set "CARGO_TARGET_DIR=${targetRoot}"
 echo Source snapshot: ${sourceRoot}
-cargo tauri build --target ${target} --bundles nsis
+rem Tauri logs WiX stdout and stderr at debug level; verbose exposes the actual MSI errors.
+cargo tauri build --target ${target} --bundles msi --verbose
 if errorlevel 1 exit /b 1
 if not exist "${artifact}" (
-  echo Expected NSIS installer not found.
+  echo Expected MSI installer not found.
   exit /b 1
 )
 copy /y "${artifact}" "${remoteArtifact}" >nul
@@ -151,7 +152,7 @@ function main() {
   const localPath = join(localDir, artifactName);
   const remoteWorkspace = win32.dirname(options.remoteRoot);
   const remoteScript = win32.join(remoteWorkspace, 'codex-halo-build.cmd');
-  const remoteArtifact = win32.join(remoteWorkspace, 'codex-halo-windows-setup.exe').replaceAll('\\', '/');
+  const remoteArtifact = win32.join(remoteWorkspace, 'codex-halo-windows-setup.msi').replaceAll('\\', '/');
   const tempDir = mkdtempSync(join(tmpdir(), 'codex-halo-'));
   const tempScript = join(tempDir, 'codex-halo-build.cmd');
   const tempArchive = join(tempDir, 'codex-halo-source.tar.gz');

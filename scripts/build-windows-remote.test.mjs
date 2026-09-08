@@ -12,23 +12,24 @@ const {
   sshTarget,
 } = windowsBuild;
 
-test('build command targets the configured Windows host and NSIS bundle', () => {
+test('build command targets the configured Windows host and MSI bundle', () => {
   assert.equal(sshTarget({ user: 'Lenovo', host: '192.168.10.114', port: 22 }), 'Lenovo@192.168.10.114');
-  assert.equal(localArtifactName({ productName: 'Codex Halo', version: '0.1.0' }), 'Codex Halo_0.1.0_x64-setup.exe');
+  assert.equal(localArtifactName({ productName: 'Codex Halo', version: '0.1.0' }), 'Codex Halo_0.1.0_x64_en-US.msi');
 
   const batch = buildRemoteBatch({
     remoteRoot: 'D:\\BuildWorkspace\\codex-math-curve-halo',
     buildId: 'codex-halo-test123',
-    artifactName: 'Codex Halo_0.1.0_x64-setup.exe',
+    artifactName: 'Codex Halo_0.1.0_x64_en-US.msi',
   });
   assert.doesNotMatch(batch, /git pull/);
   assert.match(batch, /tar -xzf/);
   assert.match(batch, /mklink \/J/);
-  assert.match(batch, /cargo tauri build --target x86_64-pc-windows-msvc --bundles nsis/);
+  assert.match(batch, /cargo tauri build --target x86_64-pc-windows-msvc --bundles msi/);
+  assert.ok(batch.includes('bundle\\msi\\Codex Halo_0.1.0_x64_en-US.msi'));
   assert.match(batch, /VsDevCmd\.bat/);
   assert.match(batch, /EnableDelayedExpansion/);
-  assert.match(batch, /Codex Halo_0\.1\.0_x64-setup\.exe/);
-  assert.match(batch, /codex-halo-windows-setup\.exe/);
+  assert.match(batch, /Codex Halo_0\.1\.0_x64_en-US\.msi/);
+  assert.match(batch, /codex-halo-windows-setup\.msi/);
 });
 
 test('source archive contains current build inputs, including edits and new files, without local state', (t) => {
@@ -83,7 +84,7 @@ test('remote build rejects path traversal and Windows shell expansion in generat
   const options = {
     remoteRoot: 'D:\\BuildWorkspace\\codex-math-curve-halo',
     buildId: 'codex-halo-test123',
-    artifactName: 'Codex Halo_0.1.0_x64-setup.exe',
+    artifactName: 'Codex Halo_0.1.0_x64_en-US.msi',
   };
   for (const invalid of [
     { remoteRoot: 'relative\\checkout' },
@@ -103,8 +104,8 @@ test('installer download passes real legacy SCP filename validation with a space
   t.after(() => rmSync(temp, { recursive: true, force: true }));
   const remoteDir = join(temp, 'remote directory');
   mkdirSync(remoteDir);
-  const source = join(remoteDir, 'codex-halo-windows-setup.exe');
-  const destination = join(temp, 'Codex Halo_0.1.0_x64-setup.exe');
+  const source = join(remoteDir, 'codex-halo-windows-setup.msi');
+  const destination = join(temp, 'Codex Halo_0.1.0_x64_en-US.msi');
   writeFileSync(source, Buffer.from([0x4d, 0x5a, 0, 0xff, 0x0a, 0x80]));
   // Replace only SSH transport; both SCP protocol endpoints are the real client.
   const transport = join(temp, 'local-ssh');

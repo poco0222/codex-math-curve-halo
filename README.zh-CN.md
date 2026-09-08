@@ -57,17 +57,17 @@ npm run build:windows
 
 源码在 Windows 独立临时目录解包，复用
 `D:\BuildWorkspace\codex-math-curve-halo\src-tauri\target` 编译缓存，原仓库源码保留。
-成功后清理临时源码，失败时保留供排查。安装包下载到本地 `dist/windows/`，版本取自
+成功后清理临时源码，失败时保留供排查。MSI 安装包下载到本地 `dist/windows/`（如 `Codex Halo_0.1.0_x64_en-US.msi`），版本取自
 本地 `src-tauri/tauri.conf.json`。
 
-Windows 需要可用的 SSH、传统 SCP、`tar` 和原有的 Rust、Tauri、MSVC、Node.js、NSIS
+Windows 需要可用的 SSH、传统 SCP、`tar` 和原有的 Rust、Tauri、MSVC、Node.js、WiX Toolset v3.14
 构建环境。脚本使用 `scp -O`；密码登录时，上传、构建、下载可能各提示一次密码。
 同一台设备同时只运行一个构建。
 
 若构建已完成、只需重试下载，可直接取回远端最新成功生成的安装包：
 
 ```bash
-scp -O Lenovo@192.168.10.114:D:/BuildWorkspace/codex-halo-windows-setup.exe dist/windows/
+scp -O Lenovo@192.168.10.114:D:/BuildWorkspace/codex-halo-windows-setup.msi dist/windows/
 ```
 
 可通过 `WIN_BUILD_HOST`、`WIN_BUILD_USER`、`WIN_BUILD_PORT`、`WIN_BUILD_ROOT` 和
