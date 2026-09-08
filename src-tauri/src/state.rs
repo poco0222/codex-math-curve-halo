@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::OnceLock,
 };
 
@@ -74,18 +74,50 @@ fn curve_control_catalog() -> &'static CurveControlCatalog {
     })
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct Snapshot {
     pub session_key: String,
     pub state: HaloState,
     pub updated_at_ms: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_session_key: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for Snapshot {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Fields {
+            session_key: String,
+            state: HaloState,
+            updated_at_ms: i64,
+            #[serde(default)]
+            parent_session_key: Option<String>,
+        }
+        let fields = Fields::deserialize(deserializer)?;
+        if fields.parent_session_key.as_ref().is_some_and(|parent| {
+            parent == &fields.session_key
+                || parent.len() != 64
+                || !parent
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        }) {
+            return Err(serde::de::Error::custom("invalid parent session key"));
+        }
+        Ok(Self {
+            session_key: fields.session_key,
+            state: fields.state,
+            updated_at_ms: fields.updated_at_ms,
+            parent_session_key: fields.parent_session_key,
+        })
+    }
 }
 
 impl Snapshot {
     pub fn new(session_key: impl Into<String>, state: HaloState, updated_at_ms: i64) -> Self {
         Self {
             session_key: session_key.into(),
+            parent_session_key: None,
             state,
             updated_at_ms,
         }
@@ -119,6 +151,24 @@ fn is_expired(snapshot: &Snapshot, now_ms: i64) -> bool {
 
 fn is_current(snapshot: &Snapshot, now_ms: i64) -> bool {
     snapshot.updated_at_ms <= now_ms && !is_expired(snapshot, now_ms)
+}
+
+fn current_parent_keys<'a>(
+    snapshots: impl Iterator<Item = &'a Snapshot>,
+    now_ms: i64,
+) -> HashSet<String> {
+    snapshots
+        .filter(|snapshot| is_current(snapshot, now_ms))
+        .filter_map(|snapshot| snapshot.parent_session_key.clone())
+        .collect()
+}
+
+fn is_retained(snapshot: &Snapshot, now_ms: i64, current_parents: &HashSet<String>) -> bool {
+    is_current(snapshot, now_ms)
+        // Expired parent state remains context, never a new timestamp or inferred status.
+        || (snapshot.parent_session_key.is_none()
+            && snapshot.updated_at_ms <= now_ms
+            && current_parents.contains(&snapshot.session_key))
 }
 
 impl Default for HaloState {
@@ -155,15 +205,17 @@ impl Default for DisplayState {
 }
 
 pub fn reduce_snapshots(snapshots: &[Snapshot], now_ms: i64) -> DisplayState {
+    let current_parents = current_parent_keys(snapshots.iter(), now_ms);
     let mut current = snapshots
         .iter()
-        .filter(|snapshot| is_current(snapshot, now_ms))
+        .filter(|snapshot| is_retained(snapshot, now_ms, &current_parents))
         .cloned()
         .collect::<Vec<_>>();
     current.sort_by(|left, right| left.session_key.cmp(&right.session_key));
 
     let selected = current
         .iter()
+        .filter(|snapshot| is_current(snapshot, now_ms))
         .max_by_key(|snapshot| (priority(snapshot.state), snapshot.updated_at_ms));
 
     let (state, updated_at_ms) = selected
@@ -171,7 +223,16 @@ pub fn reduce_snapshots(snapshots: &[Snapshot], now_ms: i64) -> DisplayState {
         .unwrap_or((HaloState::Idle, 0));
     DisplayState {
         state,
-        session_count: current.len(),
+        session_count: current
+            .iter()
+            .map(|snapshot| {
+                snapshot
+                    .parent_session_key
+                    .as_deref()
+                    .unwrap_or(&snapshot.session_key)
+            })
+            .collect::<HashSet<_>>()
+            .len(),
         updated_at_ms,
         sessions: current,
         simulated: false,
@@ -189,7 +250,9 @@ impl SessionStore {
     }
 
     pub fn remove(&mut self, session_key: &str) {
-        self.sessions.remove(session_key);
+        self.sessions.retain(|key, snapshot| {
+            key != session_key && snapshot.parent_session_key.as_deref() != Some(session_key)
+        });
     }
 
     pub fn display_state(&self, now_ms: i64) -> DisplayState {
@@ -227,8 +290,9 @@ impl SessionStore {
     }
 
     pub fn clear_expired(&mut self, now_ms: i64) {
+        let current_parents = current_parent_keys(self.sessions.values(), now_ms);
         self.sessions
-            .retain(|_, snapshot| is_current(snapshot, now_ms));
+            .retain(|_, snapshot| is_retained(snapshot, now_ms, &current_parents));
     }
 }
 
@@ -452,6 +516,139 @@ impl Default for AppSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn family_child(key: &str, parent: &str, state: HaloState, updated_at_ms: i64) -> Snapshot {
+        serde_json::from_value(
+            serde_json::json!({"session_key":key, "parent_session_key":parent,
+            "state":state, "updated_at_ms":updated_at_ms}),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn expired_parent_context_never_overrides_current_child_summary() {
+        let parent = "a".repeat(64);
+        let display = reduce_snapshots(
+            &[
+                Snapshot::new(&parent, HaloState::Interrupted, 100),
+                family_child("child", &parent, HaloState::Completed, 10_000),
+            ],
+            10_100,
+        );
+        assert_eq!(display.sessions.len(), 2);
+        assert_eq!(display.state, HaloState::Completed);
+        assert_eq!(display.updated_at_ms, 10_000);
+    }
+
+    #[test]
+    fn family_count_tracks_parents_and_keeps_every_child() {
+        let parent = "a".repeat(64);
+        let mut store = SessionStore::default();
+        store.upsert(Snapshot::new(&parent, HaloState::Thinking, 100));
+        store.upsert(Snapshot::new("other", HaloState::Thinking, 100));
+        for key in ["child-a", "child-b", "child-a"] {
+            store.upsert(family_child(key, &parent, HaloState::Executing, 100));
+        }
+        let display = store.display_state(200);
+        assert_eq!(display.session_count, 2);
+        assert_eq!(display.sessions.len(), 4);
+        assert_eq!(display.state, HaloState::Executing);
+    }
+
+    #[test]
+    fn family_preserves_expired_parent_context_only_while_children_are_current() {
+        let parent = "a".repeat(64);
+        for parent_state in [
+            HaloState::Completed,
+            HaloState::Interrupted,
+            HaloState::Idle,
+        ] {
+            let mut store = SessionStore::default();
+            store.upsert(Snapshot::new(&parent, parent_state, 100));
+            store.upsert(family_child("child", &parent, HaloState::Thinking, 200));
+            store.clear_expired(100_000);
+            let display = store.display_state(100_000);
+            assert_eq!(display.session_count, 1);
+            assert_eq!(display.sessions.len(), 2);
+            assert_eq!(
+                display
+                    .sessions
+                    .iter()
+                    .find(|s| s.session_key == parent)
+                    .unwrap()
+                    .state,
+                parent_state
+            );
+            store.upsert(family_child(
+                "child",
+                &parent,
+                HaloState::Completed,
+                100_000,
+            ));
+            store.clear_expired(103_000);
+            assert_eq!(store.display_state(103_000).sessions.len(), 2);
+            store.clear_expired(103_001);
+            assert!(store.display_state(103_001).sessions.is_empty());
+        }
+    }
+
+    #[test]
+    fn family_orphans_do_not_invent_parent_or_revive_future_parent() {
+        let parent = "a".repeat(64);
+        let mut snapshots = vec![family_child("child", &parent, HaloState::Thinking, 100)];
+        assert_eq!(reduce_snapshots(&snapshots, 200).sessions.len(), 1);
+        snapshots.push(Snapshot::new(&parent, HaloState::Completed, 201));
+        let display = reduce_snapshots(&snapshots, 200);
+        assert_eq!(display.session_count, 1);
+        assert_eq!(display.sessions.len(), 1);
+        snapshots[0].updated_at_ms = 201;
+        snapshots[1].updated_at_ms = -10_000;
+        assert!(reduce_snapshots(&snapshots, 200).sessions.is_empty());
+    }
+
+    #[test]
+    fn family_removal_is_scoped_to_parent_or_single_child() {
+        let parent = "a".repeat(64);
+        let mut store = SessionStore::default();
+        store.upsert(Snapshot::new(&parent, HaloState::Thinking, 100));
+        store.upsert(Snapshot::new("other", HaloState::Thinking, 100));
+        for key in ["child-a", "child-b"] {
+            store.upsert(family_child(key, &parent, HaloState::Executing, 100));
+        }
+        store.remove("child-a");
+        assert_eq!(store.display_state(100).sessions.len(), 3);
+        store.remove(&parent);
+        let display = store.display_state(100);
+        assert_eq!(
+            display.sessions,
+            vec![Snapshot::new("other", HaloState::Thinking, 100)]
+        );
+    }
+
+    #[test]
+    fn child_snapshot_wire_contract_accepts_only_anonymous_nonself_parent() {
+        let parent_key = "a".repeat(64);
+        let child_key = "b".repeat(64);
+        let raw = serde_json::json!({"session_key":child_key, "parent_session_key":parent_key,
+            "state":"thinking", "updated_at_ms":100});
+        let snapshot: Snapshot = serde_json::from_value(raw.clone()).unwrap();
+        assert_eq!(serde_json::to_value(snapshot).unwrap(), raw);
+        for parent in [
+            "".to_owned(),
+            "private-session".into(),
+            "A".repeat(64),
+            "b".repeat(64),
+        ] {
+            let mut invalid = raw.clone();
+            invalid["parent_session_key"] = parent.into();
+            assert!(serde_json::from_value::<Snapshot>(invalid).is_err());
+        }
+        let legacy = r#"{"session_key":"legacy","state":"thinking","updated_at_ms":100}"#;
+        assert_eq!(
+            serde_json::to_string(&serde_json::from_str::<Snapshot>(legacy).unwrap()).unwrap(),
+            legacy
+        );
+    }
 
     #[test]
     fn persisted_drag_position_accepts_negative_and_large_screen_coordinates() {
