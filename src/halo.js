@@ -212,9 +212,9 @@ export function createHaloRenderer(canvas, options = {}) {
         y: points[lo].y + (points[hi].y - points[lo].y) * fraction };
     }
     const outlineColor = active.length === 1 ? sessionColorAt(active[0], 0, time) : styleFor('idle', settings);
-    drawPath(points, angle, outlineColor, Math.min(animation.stroke_width, 1.2), 0.08);
+    drawPath(points, angle, outlineColor, animation.stroke_width, 0.08);
     const density = 1 / Math.sqrt(Math.max(1, active.length / 4));
-    const width = clamp(animation.stroke_width * 0.44, 0.65, 2.4) * density;
+    const width = animation.stroke_width * density;
     const segments = Math.ceil(animation.particle_count / 2);
     const heads = active.map((item) => {
       const entered = reducedMotion?.matches ? 1 : clamp((time - item.enteredAt) / MORPH_DURATION_MS, 0, 1);
@@ -225,7 +225,8 @@ export function createHaloRenderer(canvas, options = {}) {
       // A monotone, bounded warp gives each head a rhythm without overtaking peers.
       const head = base + 0.012 * Math.sin(TAU * (base + pulsePhase));
       const span = Math.min(animation.trail_span, gaps.get(item) * 0.65) * growth;
-      const radius = Math.max(0.7, width * 0.88) * Math.sqrt(growth);
+      // Match the restored body's half-width so larger cores still fit at crossings.
+      const radius = Math.max(0.7, width / 2) * Math.sqrt(growth);
       const anchor = rotatePoint(pointAt(head), angle);
       const recovery = reducedMotion?.matches ? 0 : Math.exp(-Math.max(0, time - (item.shift?.time ?? time)) / 180);
       return { item, head, span, radius, exit, anchor,
@@ -265,7 +266,8 @@ export function createHaloRenderer(canvas, options = {}) {
       }
       if (!moved) break;
     }
-    for (const { item, head, span, exit, anchor, x, y } of heads) {
+    for (const core of heads) {
+      const { item, head, span, exit, anchor, x, y } = core;
       const shift = { x: x - anchor.x, y: y - anchor.y, time };
       item.shift = shift;
       function tailPoint(progress, fraction) {
@@ -282,11 +284,26 @@ export function createHaloRenderer(canvas, options = {}) {
         const fade = (1 - fraction) ** 0.7;
         const color = sessionColorAt(item, fraction, time);
         const segment = [tailPoint(start, fraction), tailPoint(end, (i - 1) / segments)];
-        drawPath(segment, 0, color, width * (2.2 + fade), fade * 0.09 * density * exit);
+        if (i === 1) core.connectionAngle = Math.atan2(segment[0].y - y, segment[0].x - x);
+        if (settings.glow_enabled === true) {
+          drawPath(segment, 0, color, width * (2.2 + fade), fade * 0.09 * density * exit);
+        }
         drawPath(segment, 0, color, width * (0.2 + fade * 0.8), fade * 0.94 * exit);
       }
       if (item.transition && time - item.transition.startedAt >= MORPH_DURATION_MS) item.transition = null;
     }
+    // Clear crossing tails around each core, leaving its own tail connected through an opening.
+    context.globalCompositeOperation = 'destination-out';
+    for (const { x, y, radius, exit, connectionAngle } of heads) {
+      const start = connectionAngle === undefined ? 0 : connectionAngle + Math.PI / 3;
+      const end = connectionAngle === undefined ? TAU : connectionAngle + TAU - Math.PI / 3;
+      context.beginPath();
+      context.moveTo(x, y);
+      context.arc(x, y, radius + 0.6, start, end);
+      context.fillStyle = rgba('#000000', exit);
+      context.fill();
+    }
+    context.globalCompositeOperation = 'source-over';
     // Every opaque color core sits above every translucent tail, including other sessions'.
     for (const { item, x, y, radius, exit } of heads) {
       drawParticle({ x, y }, 0, sessionColorAt(item, 0, time), radius, exit);

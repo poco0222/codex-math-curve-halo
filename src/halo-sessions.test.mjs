@@ -14,13 +14,14 @@ function probe(options = {}) {
   let strokeAfterCore = false;
   const strokes = [];
   const cores = [];
+  const clearances = [];
   const context = {
     setTransform() {}, clearRect() {},
     beginPath() { path = []; },
     moveTo(x, y) { path.push([x, y]); }, lineTo(x, y) { path.push([x, y]); },
     stroke() { if (cores.length) strokeAfterCore = true; strokes.push({ path, color: this.strokeStyle, width: this.lineWidth }); },
-    arc(x, y, radius) { circle = { x, y, radius }; },
-    fill() { cores.push({ ...circle, color: this.fillStyle }); },
+    arc(x, y, radius, startAngle, endAngle) { circle = { x, y, radius, startAngle, endAngle }; },
+    fill() { (this.globalCompositeOperation === 'destination-out' ? clearances : cores).push({ ...circle, color: this.fillStyle }); },
   };
   const canvas = { style: {}, clientWidth: 112, clientHeight: 112, getContext: () => context };
   const renderer = createHaloRenderer(canvas, {
@@ -29,8 +30,8 @@ function probe(options = {}) {
   });
   renderer.start();
   return { renderer, frame(nextTime) {
-    time = nextTime; strokes.length = 0; cores.length = 0; strokeAfterCore = false; callback(time);
-    return { strokes: structuredClone(strokes), cores: structuredClone(cores), strokeAfterCore };
+    time = nextTime; strokes.length = 0; cores.length = 0; clearances.length = 0; strokeAfterCore = false; callback(time);
+    return { strokes: structuredClone(strokes), cores: structuredClone(cores), clearances: structuredClone(clearances), strokeAfterCore };
   } };
 }
 
@@ -122,6 +123,42 @@ test('saved stroke width and particle density still control silk rendering', () 
   assert(thick.cores[0].radius > thin.cores[0].radius);
 });
 
+test('fusion preserves configured outline and substantial trail width at 1, 4 and 13 sessions', () => {
+  for (const stroke_width of [1, 4.3, 7.5]) for (const count of [1, 4, 13]) {
+    const p = probe({ settings: { ...palette, stroke_width } });
+    p.renderer.setSessions(Array.from({ length: count }, (_, i) => session(`s${i}`)));
+    p.frame(0);
+    const { strokes, cores } = p.frame(420);
+    assert.equal(strokes[0].width, stroke_width, 'fusion must keep the configured curve outline');
+    const bodies = strokes.slice(1);
+    const widestBody = Math.max(...bodies.map(({ width }) => width));
+    assert(widestBody >= stroke_width * (count <= 4 ? 0.95 : 0.5), 'visible trail must not collapse into a thin thread');
+    assert(widestBody <= stroke_width * (count <= 4 ? 1 : 0.6), 'dense sessions still adapt their trail width');
+    assert.equal(cores.length, count);
+    assertCoreGaps(cores, `${stroke_width}/${count}`);
+    p.renderer.stop();
+  }
+});
+
+test('glow is opt-in and toggling preserves the body, cores and idle rendering', () => {
+  const p = probe({ settings: { ...palette, stroke_width: 4.3 } });
+  p.renderer.setSessions([session('a'), session('b', 'executing')]);
+  p.frame(0);
+  const off = p.frame(420);
+  assert(off.strokes.every(({ width }) => width <= 4.3), 'missing setting must not add wide glow strokes');
+  p.renderer.setSettings({ glow_enabled: true });
+  const on = p.frame(420);
+  assert(on.strokes.some(({ width }) => width > 4.3), 'enabled glow adds its wider layer');
+  assert.deepEqual(on.cores, off.cores, 'toggling must preserve head color, size and phase');
+  assert.deepEqual(on.strokes.filter(({ width }) => width <= 4.3), off.strokes);
+  p.renderer.setSettings({ glow_enabled: false });
+  assert.deepEqual(p.frame(420), off);
+  p.renderer.setSessions([]);
+  const idle = p.frame(420);
+  p.renderer.setSettings({ glow_enabled: true });
+  assert.deepEqual(p.frame(420), idle, 'idle appearance is independent of the glow switch');
+});
+
 test('a restored terminal snapshot expires at its original event deadline', () => {
   const p = probe();
   p.renderer.setSessions([session('a', 'completed', 97500), session('b')]);
@@ -151,11 +188,11 @@ test('13 same-color cores keep a visible gap at curve crossings in reduced motio
   const previous = globalThis.matchMedia;
   globalThis.matchMedia = () => ({ matches: true });
   try {
-    for (const curve of curveProfiles) for (const phaseOffset of [0.96, 0, 0.13, 0.37, 0.61]) {
-      const p = probe({ curve: curve.id, phaseOffset });
+    for (const stroke_width of [4.3, 7.5]) for (const curve of curveProfiles) for (const phaseOffset of [0.96, 0, 0.13, 0.37, 0.61]) {
+      const p = probe({ curve: curve.id, phaseOffset, settings: { ...palette, stroke_width } });
       p.renderer.setSessions(Array.from({ length: 13 }, (_, i) => session(`s${i}`)));
       const first = p.frame(420);
-      assertCoreGaps(first.cores, `${curve.id}/${phaseOffset}`);
+      assertCoreGaps(first.cores, `${stroke_width}/${curve.id}/${phaseOffset}`);
       assert.deepEqual(p.frame(5420), first, 'stationary placement cannot drift');
       assert(first.cores.every(({ x, y, radius }) => x >= radius && x <= 100 - radius && y >= radius && y <= 100 - radius));
     }
@@ -163,14 +200,14 @@ test('13 same-color cores keep a visible gap at curve crossings in reduced motio
 });
 
 test('moving heads retain their visible gap through crossings without abrupt displacement', () => {
-  for (const curve of ['original-thinking', 'rose-four', 'lissajous-drift']) {
-    const p = probe({ curve, phaseOffset: 0.96 });
+  for (const stroke_width of [4.3, 7.5]) for (const curve of ['original-thinking', 'rose-four', 'lissajous-drift']) {
+    const p = probe({ curve, phaseOffset: 0.96, settings: { ...palette, stroke_width } });
     p.renderer.setSessions(Array.from({ length: 13 }, (_, i) => session(`s${i}`)));
     p.frame(0);
     let previous = p.frame(420).cores;
     for (let time = 436; time <= 5000; time += 16) {
       const current = p.frame(time).cores;
-      assertCoreGaps(current, `${curve}/${time}`);
+      assertCoreGaps(current, `${stroke_width}/${curve}/${time}`);
       assert(current.every((core, i) => Math.hypot(core.x - previous[i].x, core.y - previous[i].y) < 5), `${curve}/${time}: abrupt head jump`);
       previous = current;
     }
@@ -203,4 +240,17 @@ test('all configured-color cores are painted above every translucent tail', () =
   p.renderer.setSessions([session('a'), session('b', 'executing'), session('c', 'input_needed')]);
   p.frame(0);
   assert.equal(p.frame(420).strokeAfterCore, false, 'another session tail must not tint an already painted core');
+});
+
+test('same-color cores retain a transparent gap from crossing tails', () => {
+  const p = probe({ curve: 'rose-four', settings: { ...palette, stroke_width: 7.5 } });
+  p.renderer.setSessions(Array.from({ length: 13 }, (_, i) => session(`s${i}`)));
+  p.frame(0);
+  const { cores, clearances } = p.frame(420);
+  assert.equal(clearances.length, cores.length, 'each core needs clearance from other sessions\' tails');
+  for (const [i, core] of cores.entries()) {
+    assert.deepEqual([clearances[i].x, clearances[i].y], [core.x, core.y]);
+    assert(clearances[i].radius - core.radius >= 0.6 - 1e-5, 'the background must show around each core');
+    assert(clearances[i].endAngle - clearances[i].startAngle < Math.PI * 1.5, 'leave an opening that connects the core to its own tail');
+  }
 });

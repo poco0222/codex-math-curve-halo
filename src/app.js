@@ -17,6 +17,7 @@ export const DEFAULT_APP_SETTINGS = Object.freeze({
   curve_id: 'original-thinking',
   curve_parameters: Object.freeze({}),
   ...getCurveAnimationSettings('original-thinking'),
+  glow_enabled: false,
   idle_color: DEFAULT_STATE_COLORS.idle,
   thinking_color: DEFAULT_STATE_COLORS.thinking,
   executing_color: DEFAULT_STATE_COLORS.executing,

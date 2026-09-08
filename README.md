@@ -78,12 +78,16 @@ Each valid session has its own bright core and fading trail on the selected
 curve, using the configured color for its current state. Sessions in the same
 state remain separate. Color changes travel from core to tail; larger session
 counts shorten the trails. Reduced motion keeps a static multicolor view.
+The **Glow** switch under Appearance adds an optional outer glow. It is off by
+default, including for older settings, and your choice saves automatically.
 
 Thinking, executing, compacting, and input-needed sessions retain their last
 reported state without a 60-second timeout. Completed and interrupted states
 last three seconds; idle lasts 60 seconds. `SessionEnd` removes its session.
-Restarting restores snapshots under the same rules. These are last-known
-states, not a liveness check: a crash without an end event can leave a trail.
+Each Halo launch starts idle and accepts only events timestamped after that
+launch. Older snapshots stay on disk but do not restore trails; a task already
+running must emit another event to appear. These are last-known states, not a
+liveness check: a missing end event can still leave a trail until Halo restarts.
 
 Coverage includes independent sessions that emit this plugin's hooks under the
 same `CODEX_HOME`. Subagents appear separately only when they supply their own

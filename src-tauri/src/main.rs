@@ -33,6 +33,7 @@ static SETTINGS_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Default)]
 struct ReducerRuntimeState {
+    started_at_ms: i64,
     store: Mutex<SessionStore>,
     simulation: Mutex<Option<Snapshot>>,
     scan_in_progress: AtomicBool,
@@ -83,8 +84,10 @@ impl ReducerRuntimeState {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         if let Some(Ok(mut snapshots)) = scan {
-            // Validate at application time so updates arriving during the scan survive.
-            snapshots.retain(|snapshot| snapshot.updated_at_ms <= now_ms);
+            // Fix the boundary at launch, not at scan time: new events during a scan survive.
+            snapshots.retain(|snapshot| {
+                snapshot.updated_at_ms > self.started_at_ms && snapshot.updated_at_ms <= now_ms
+            });
             if simulation.as_ref().is_some_and(|simulated| {
                 snapshots
                     .iter()
@@ -1134,11 +1137,16 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn main() {
-    let builder = tauri::Builder::default()
-        .manage(ReducerRuntimeState::default())
-        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            handle_single_instance(app, args);
-        }));
+    let runtime = ReducerRuntimeState {
+        started_at_ms: now_ms(),
+        ..Default::default()
+    };
+    let builder =
+        tauri::Builder::default()
+            .manage(runtime)
+            .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+                handle_single_instance(app, args);
+            }));
     #[cfg(target_os = "macos")]
     let builder = builder.plugin(tauri_plugin_autostart::init(
         MacosLauncher::LaunchAgent,
@@ -1235,9 +1243,13 @@ mod scan_tests {
             2,
             Snapshot::new("future", HaloState::InputNeeded, 31),
         );
+        write_scan_snapshot(&root, 3, Snapshot::new("old", HaloState::Thinking, 9));
         let snapshots = read_runtime_snapshots(&root).unwrap();
         fs::remove_dir_all(root).unwrap();
-        let runtime = ReducerRuntimeState::default();
+        let runtime = ReducerRuntimeState {
+            started_at_ms: 10,
+            ..Default::default()
+        };
         let display = runtime.display_after_scan(Some(Ok(snapshots)), 30);
         assert_eq!(
             display.sessions,
@@ -1250,7 +1262,7 @@ mod scan_tests {
     }
 
     #[test]
-    fn fresh_runtime_restores_old_running_snapshots_and_isolates_invalid_files() {
+    fn fresh_runtime_ignores_old_snapshots_until_new_events_arrive() {
         let root = std::env::temp_dir().join(format!(
             "codex-halo-restart-{}-{}",
             std::process::id(),
@@ -1269,19 +1281,46 @@ mod scan_tests {
         }
         fs::write(root.join(format!("{:064x}.json", 8)), b"{").unwrap();
         let snapshots = read_runtime_snapshots(&root).unwrap();
-        fs::remove_dir_all(root).unwrap();
-        let runtime = ReducerRuntimeState::default();
-        let display = runtime.display_after_scan(Some(Ok(snapshots)), 86_400_100);
+        let runtime = ReducerRuntimeState {
+            started_at_ms: 100,
+            ..Default::default()
+        };
+        for now in [100, 86_400_100] {
+            let display = runtime.display_after_scan(Some(Ok(snapshots.clone())), now);
+            assert_eq!(display.state, HaloState::Idle);
+            assert!(display.sessions.is_empty());
+            assert_eq!(display.session_count, 0);
+            assert!(!display.simulated);
+        }
+        assert_eq!(read_runtime_snapshots(&root).unwrap(), snapshots);
+
+        // A later event revives only its own identity, even on the first scan.
+        write_scan_snapshot(&root, 1, Snapshot::new("1", HaloState::Thinking, 101));
+        write_scan_snapshot(&root, 9, Snapshot::new("9", HaloState::Executing, 102));
+        write_scan_snapshot(&root, 10, Snapshot::new("future", HaloState::Thinking, 201));
+        let snapshots = read_runtime_snapshots(&root).unwrap();
+        let display = runtime.display_after_scan(Some(Ok(snapshots)), 200);
         assert_eq!(
             display
                 .sessions
                 .iter()
-                .map(|snapshot| snapshot.session_key.as_str())
+                .map(|s| s.session_key.as_str())
                 .collect::<Vec<_>>(),
-            ["1", "2", "3", "4"]
+            ["1", "9"]
         );
-        assert_eq!(display.session_count, 4);
-        assert!(!display.simulated);
+        assert_eq!(
+            runtime.display_after_scan(None, 86_400_200).session_count,
+            2
+        );
+
+        let restarted = ReducerRuntimeState {
+            started_at_ms: 300,
+            ..Default::default()
+        };
+        let display = restarted.display_after_scan(Some(read_runtime_snapshots(&root)), 400);
+        assert_eq!(display.state, HaloState::Idle);
+        assert!(display.sessions.is_empty());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -1542,7 +1581,7 @@ mod scan_tests {
     }
 
     #[test]
-    fn legacy_settings_are_backfilled_with_state_colors() {
+    fn legacy_settings_are_backfilled_and_glow_choice_survives_disk_reload() {
         let root = std::env::temp_dir().join(format!(
             "codex-halo-legacy-settings-{}-{}",
             std::process::id(),
@@ -1553,6 +1592,7 @@ mod scan_tests {
 
         let mut legacy = serde_json::to_value(AppSettings::default()).unwrap();
         let object = legacy.as_object_mut().unwrap();
+        object.remove("glow_enabled");
         for key in [
             "idle_color",
             "thinking_color",
@@ -1571,6 +1611,7 @@ mod scan_tests {
             serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
 
         assert_eq!(settings, AppSettings::default());
+        assert_eq!(persisted["glow_enabled"], false);
         for key in [
             "idle_color",
             "thinking_color",
@@ -1581,6 +1622,17 @@ mod scan_tests {
             "compacting_color",
         ] {
             assert!(persisted.get(key).is_some(), "missing {key}");
+        }
+        for glow_enabled in [true, false] {
+            let selected = AppSettings {
+                glow_enabled,
+                ..settings.clone()
+            };
+            write_settings_file(&path, &selected).unwrap();
+            assert_eq!(
+                load_settings_file(&path).unwrap().glow_enabled,
+                glow_enabled
+            );
         }
         fs::remove_dir_all(root).unwrap();
     }

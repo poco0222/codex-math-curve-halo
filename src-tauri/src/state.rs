@@ -256,6 +256,7 @@ pub struct AppSettings {
     pub pulse_duration_ms: f32,
     pub rotation_duration_ms: f32,
     pub stroke_width: f32,
+    pub glow_enabled: bool,
     pub idle_color: String,
     pub thinking_color: String,
     pub executing_color: String,
@@ -433,6 +434,7 @@ impl Default for AppSettings {
             pulse_duration_ms: 5_000.0,
             rotation_duration_ms: 28_000.0,
             stroke_width: 5.5,
+            glow_enabled: false,
             idle_color: DEFAULT_IDLE_COLOR.to_owned(),
             thinking_color: DEFAULT_THINKING_COLOR.to_owned(),
             executing_color: DEFAULT_EXECUTING_COLOR.to_owned(),
@@ -1224,6 +1226,7 @@ mod tests {
                 pulse_duration_ms: 1_200.0,
                 rotation_duration_ms: 3_000.0,
                 stroke_width: 4.0,
+                glow_enabled: true,
                 idle_color: "#123456".to_owned(),
                 thinking_color: "#234567".to_owned(),
                 executing_color: "#345678".to_owned(),
@@ -1331,6 +1334,23 @@ mod tests {
     }
 
     #[test]
+    fn glow_defaults_off_and_round_trips_explicit_choices() {
+        let legacy: AppSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(serde_json::to_value(legacy).unwrap()["glow_enabled"], false);
+        for enabled in [false, true] {
+            let settings: AppSettings =
+                serde_json::from_value(serde_json::json!({"glow_enabled": enabled})).unwrap();
+            let saved = serde_json::to_vec(&settings.normalize().unwrap()).unwrap();
+            let restored: AppSettings = serde_json::from_slice(&saved).unwrap();
+            assert_eq!(
+                serde_json::to_value(restored).unwrap()["glow_enabled"],
+                enabled
+            );
+        }
+        assert!(serde_json::from_str::<AppSettings>(r#"{"glow_enabled":"false"}"#).is_err());
+    }
+
+    #[test]
     fn rejects_non_finite_settings_numbers() {
         let mut settings = AppSettings::default();
         settings.trail_span = f32::NAN;
@@ -1355,6 +1375,7 @@ mod tests {
             "pulse_duration_ms",
             "rotation_duration_ms",
             "stroke_width",
+            "glow_enabled",
             "idle_color",
             "thinking_color",
             "executing_color",

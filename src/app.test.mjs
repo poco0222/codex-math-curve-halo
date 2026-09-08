@@ -20,6 +20,24 @@ import {
 import { createSettingsBridge } from './settings-bridge.js';
 import { createSettingsStore } from './settings-store.js';
 
+test('legacy settings keep glow off until the user saves an enabled choice', async () => {
+  let persisted;
+  const store = createSettingsStore({
+    defaults: DEFAULT_APP_SETTINGS,
+    persist: (settings) => { persisted = settings; },
+  });
+  store.replaceSettings({ opacity: 0.8 });
+  await store.save();
+  assert.equal(persisted.glow_enabled, false);
+  store.patchSetting('glow_enabled', true);
+  store.mergeSettings({ opacity: 0.7 });
+  await store.save();
+  const reloaded = createSettingsStore({ defaults: DEFAULT_APP_SETTINGS, persist: () => {} });
+  reloaded.replaceSettings(persisted);
+  assert.equal(reloaded.getSettings().glow_enabled, true);
+  assert.equal(reloaded.getSettings().opacity, 0.7);
+});
+
 test('settings store merges partial external updates without erasing inactive values', async () => {
   const calls = [];
   const store = createSettingsStore({
@@ -1933,6 +1951,7 @@ test('renderer startup uses exact frontend defaults after get_settings fails', a
     pulse_duration_ms: 5000,
     rotation_duration_ms: 28000,
     stroke_width: 5.5,
+    glow_enabled: false,
     idle_color: '#A7ADB5',
     thinking_color: '#FF8A3D',
     executing_color: '#339CFF',
