@@ -5,6 +5,9 @@ function cloneUiState(value) {
   if (value.diagnosticsSnapshot && typeof value.diagnosticsSnapshot === 'object') {
     snapshot.diagnosticsSnapshot = { ...value.diagnosticsSnapshot };
   }
+  if (value.audioFrame && typeof value.audioFrame === 'object') {
+    snapshot.audioFrame = { ...value.audioFrame };
+  }
   if (value.invalidColorDrafts && typeof value.invalidColorDrafts === 'object') {
     snapshot.invalidColorDrafts = { ...value.invalidColorDrafts };
   }

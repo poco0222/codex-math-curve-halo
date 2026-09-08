@@ -1,3 +1,4 @@
+pub mod audio;
 pub mod hook_protocol;
 pub mod hooks;
 pub mod lifecycle;

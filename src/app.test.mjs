@@ -1952,6 +1952,8 @@ test('renderer startup uses exact frontend defaults after get_settings fails', a
     rotation_duration_ms: 28000,
     stroke_width: 5.5,
     glow_enabled: false,
+    audio_enabled: false,
+    audio_intensity: 0.5,
     idle_color: '#A7ADB5',
     thinking_color: '#FF8A3D',
     executing_color: '#339CFF',

@@ -1,5 +1,6 @@
 import { getCurveAnimationSettings, getCurveProfile, prepareCurveSettings, sampleCurve } from './curves.js';
 import { DEFAULT_STATE_COLORS, normalizeHexColor, STATE_COLOR_KEYS } from './colors.js';
+import { AUDIO_STALE_MS, createAudioFrameReceiver } from './audio.js';
 
 const MORPH_DURATION_MS = 420;
 const LOGICAL_SIZE = 100;
@@ -63,6 +64,31 @@ export function createHaloRenderer(canvas, options = {}) {
   let rotationPhase = phaseOffset;
   let sessionMode = false;
   const sessions = new Map();
+  let audioFrame = null;
+  let audioReceivedAt = -Infinity;
+  const audio = { low: 0, mid: 0, high: 0 };
+  let audioScale = 1;
+  const setAudioFrame = createAudioFrameReceiver((frame) => {
+    audioFrame = frame;
+    audioReceivedAt = clock();
+  }, { now: wallClock });
+
+  function updateAudio(time, deltaTime) {
+    const intensity = settings.audio_enabled === true && settings.enabled !== false && !reducedMotion?.matches
+      ? clamp(Number.isFinite(settings.audio_intensity) ? settings.audio_intensity : 0.5, 0, 1) : 0;
+    const fresh = time - audioReceivedAt <= AUDIO_STALE_MS && wallClock() - (audioFrame?.timestamp_ms ?? 0) <= AUDIO_STALE_MS;
+    for (const key of Object.keys(audio)) {
+      const target = fresh && audioFrame?.status === 'capturing' ? audioFrame[key] * intensity : 0;
+      if (reducedMotion?.matches || intensity === 0) audio[key] = 0;
+      else audio[key] += (target - audio[key]) * (1 - Math.exp(-deltaTime / (target > audio[key] ? 65 : 140)));
+      if (target === 0 && audio[key] < 0.001) audio[key] = 0;
+    }
+  }
+
+  function audioPoint(point, progress) {
+    const scale = audioScale * (1 + audio.high * 0.018 * Math.sin(TAU * (progress * 6 + progressPhase)));
+    return { x: 50 + (point.x - 50) * scale, y: 50 + (point.y - 50) * scale };
+  }
 
   function validUntil(item) {
     if (!item) return -Infinity;
@@ -284,7 +310,7 @@ export function createHaloRenderer(canvas, options = {}) {
     const outlineColor = active.length === 1 ? sessionColorAt(active[0], 0, time) : styleFor('idle', settings);
     drawPath(points, angle, outlineColor, animation.stroke_width, 0.08);
     const density = 1 / Math.sqrt(Math.max(1, active.length / 4));
-    const width = animation.stroke_width * density;
+    const width = animation.stroke_width * density * (1 + audio.high * 0.12);
     const heads = active.map((item) => {
       const entered = reducedMotion?.matches ? 1 : clamp((time - item.enteredAt) / MORPH_DURATION_MS, 0, 1);
       const terminal = [item.parent, ...item.children].some((member) => member && validUntil(member) === item.until
@@ -389,15 +415,31 @@ export function createHaloRenderer(canvas, options = {}) {
     context.clearRect(0, 0, LOGICAL_SIZE, LOGICAL_SIZE);
     if (settings.enabled === false) return;
 
+    updateAudio(time, deltaTime);
     // Accumulate each phase so edits and pause/resume never replay prior elapsed time.
-    progressPhase = normalize(progressPhase + deltaTime / animation.duration_ms);
+    progressPhase = normalize(progressPhase + deltaTime * (1 + audio.mid * 1.4) / animation.duration_ms);
     pulsePhase = normalize(pulsePhase + deltaTime / animation.pulse_duration_ms);
     const detailScale = 0.52 + ((Math.sin(TAU * pulsePhase + 0.55) + 1) / 2) * 0.48;
     if (curve.rotate(1) !== 0) {
       rotationPhase = normalize(rotationPhase + deltaTime / animation.rotation_duration_ms);
     }
     const angle = curve.rotate(rotationPhase, settings);
-    const points = sampleCurve(curve, 0, detailScale, curveSettings);
+    let points = sampleCurve(curve, 0, detailScale, curveSettings);
+    audioScale = 1;
+    if (audio.low || audio.high) {
+      points = points.map((point, index) => audioPoint(point, index / (points.length - 1)));
+      const extent = points.reduce((max, point) => {
+        const rotated = rotatePoint(point, angle);
+        return Math.max(max, Math.abs(rotated.x - 50), Math.abs(rotated.y - 50));
+      }, 0);
+      // Reserve real stroke/core space, including glow, before expanding any preset.
+      const margin = settings.glow_enabled ? Math.max(5, animation.stroke_width * 1.85) : Math.max(5, animation.stroke_width * 0.65);
+      const fit = (50 - margin) / (extent || 1);
+      // Oversized saved geometry returns to its original bounds as input fades, without a final snap.
+      const inset = fit < 1 ? 1 + (fit - 1) * Math.min(1, Math.max(audio.low, audio.high) / 0.08) : fit;
+      audioScale = Math.min(1 + audio.low * 0.16, inset);
+      points = points.map(point => ({ x: 50 + (point.x - 50) * audioScale, y: 50 + (point.y - 50) * audioScale }));
+    }
     if (sessionMode && drawSessions(time, points, angle)) return;
     const color = sessionMode ? styleFor('idle', settings) : styleAt(time);
 
@@ -407,9 +449,9 @@ export function createHaloRenderer(canvas, options = {}) {
     for (let index = 0; index < particleCount; index += 1) {
       const fraction = index / (particleCount - 1);
       const particleProgress = normalize(progressPhase - animation.trail_span * fraction);
-      const point = curve.point(particleProgress, detailScale, curveSettings);
+      const point = audioPoint(curve.point(particleProgress, detailScale, curveSettings), particleProgress);
       const fade = (1 - fraction) ** 0.56;
-      drawParticle(point, angle, color, 0.9 + fade * 2.7, 0.04 + fade * 0.96);
+      drawParticle(point, angle, color, (0.9 + fade * 2.7) * (1 + audio.high * 0.12), 0.04 + fade * 0.96);
     }
   }
 
@@ -420,6 +462,7 @@ export function createHaloRenderer(canvas, options = {}) {
   }
 
   return {
+    setAudioFrame,
     setSessions: updateSessions,
     setState(nextState) {
       if (Object.hasOwn(STATE_COLOR_KEYS, nextState)) sessionMode = false;

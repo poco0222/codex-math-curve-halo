@@ -151,6 +151,30 @@
             <div class="section-heading-row">
               <button id="reset-animation" type="button" data-i18n="settings.resetAnimation">Reset curve animation</button>
             </div>
+            <section class="audio-settings" aria-labelledby="audio-heading">
+              <div class="subsection-heading">
+                <h2 id="audio-heading" data-i18n="settings.audio.title">Audio visualization</h2>
+              </div>
+              <label class="switch-row" for="audio-enabled">
+                <span data-i18n="settings.audio.enabled">System audio</span>
+                <input id="audio-enabled" name="audio_enabled" type="checkbox" aria-describedby="audio-source" />
+              </label>
+              <p id="audio-source" class="audio-help" data-i18n="settings.audio.source">Follow sound from your default output. Processed on this device, never recorded or uploaded.</p>
+              <div class="range-field">
+                <div class="field-label-row">
+                  <label for="audio-intensity" data-i18n="settings.audio.intensity">Intensity</label>
+                  <output id="audio-intensity-value" for="audio-intensity" aria-live="off">50%</output>
+                </div>
+                <input id="audio-intensity" name="audio_intensity" type="range" min="0" max="100" step="1" value="50" data-unit="percent" aria-describedby="audio-mapping" disabled />
+                <p id="audio-mapping" class="audio-help" data-i18n="settings.audio.mapping">Bass scales the curve; mids and highs animate particles and detail. At 0%, only the level meter responds.</p>
+              </div>
+              <div class="audio-feedback">
+                <p id="audio-status" class="audio-status" role="status" aria-live="polite">Off</p>
+                <meter id="audio-level" min="0" max="1" value="0" aria-label="System audio level" data-i18n-aria-label="settings.audio.level" aria-live="off"></meter>
+              </div>
+              <p id="audio-help" class="audio-help" hidden></p>
+              <button id="audio-retry" class="audio-retry" type="button" hidden data-i18n="settings.audio.retry">Retry capture</button>
+            </section>
           </fieldset>
           <dialog id="curve-picker-dialog" class="curve-picker-dialog" aria-labelledby="curve-picker-title">
             <div class="curve-picker-header">

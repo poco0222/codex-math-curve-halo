@@ -308,6 +308,8 @@ pub struct OverlayPosition {
 #[serde(default, deny_unknown_fields)]
 pub struct AppSettings {
     pub enabled: bool,
+    pub audio_enabled: bool,
+    pub audio_intensity: f64,
     pub opacity: f32,
     pub offset_x: i32,
     pub offset_y: i32,
@@ -335,6 +337,10 @@ pub struct AppSettings {
 
 impl AppSettings {
     pub fn normalize(mut self) -> Result<Self, String> {
+        if !self.audio_intensity.is_finite() {
+            return Err("settings contain non-finite audio intensity".to_owned());
+        }
+        self.audio_intensity = self.audio_intensity.clamp(0.0, 1.0);
         if !self
             .curve_parameters
             .values()
@@ -486,6 +492,8 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             enabled: true,
+            audio_enabled: false,
+            audio_intensity: 0.5,
             opacity: 1.0,
             offset_x: 28,
             offset_y: 140,
@@ -516,6 +524,24 @@ impl Default for AppSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn audio_settings_default_off_and_reject_nonfinite_intensity() {
+        let legacy: AppSettings = serde_json::from_str("{}").unwrap();
+        let value = serde_json::to_value(&legacy).unwrap();
+        assert_eq!(value["audio_enabled"], false);
+        assert_eq!(value["audio_intensity"], 0.5);
+        let high: AppSettings =
+            serde_json::from_value(serde_json::json!({"audio_enabled":true,"audio_intensity":2.0}))
+                .unwrap();
+        let normalized = serde_json::to_value(high.normalize().unwrap()).unwrap();
+        assert_eq!(normalized["audio_intensity"], 1.0);
+        let invalid = AppSettings {
+            audio_intensity: f64::NAN,
+            ..AppSettings::default()
+        };
+        assert!(invalid.normalize().is_err());
+    }
 
     fn family_child(key: &str, parent: &str, state: HaloState, updated_at_ms: i64) -> Snapshot {
         serde_json::from_value(
@@ -778,6 +804,8 @@ mod tests {
             let settings = AppSettings {
                 curve_id: curve_id.to_owned(),
                 curve_parameters: BTreeMap::from([("baseRadius".to_owned(), 8.0)]),
+                audio_enabled: false,
+                audio_intensity: 0.5,
                 opacity: 0.65,
                 offset_x: 99,
                 language: "zh-CN".to_owned(),
@@ -1411,6 +1439,8 @@ mod tests {
         for (curve_id, (particles, trail, duration, pulse, rotation, stroke)) in cases {
             let settings = AppSettings {
                 enabled: false,
+                audio_enabled: false,
+                audio_intensity: 0.5,
                 opacity: 0.65,
                 offset_x: -123,
                 offset_y: 456,

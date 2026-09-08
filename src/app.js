@@ -18,6 +18,8 @@ export const DEFAULT_APP_SETTINGS = Object.freeze({
   curve_parameters: Object.freeze({}),
   ...getCurveAnimationSettings('original-thinking'),
   glow_enabled: false,
+  audio_enabled: false,
+  audio_intensity: 0.5,
   idle_color: DEFAULT_STATE_COLORS.idle,
   thinking_color: DEFAULT_STATE_COLORS.thinking,
   executing_color: DEFAULT_STATE_COLORS.executing,
@@ -126,19 +128,34 @@ async function boot() {
 
   const displayBridge = createDisplayStateBridge(invokeCommand, applyDisplayState);
   const listen = window.__TAURI__?.event?.listen;
+  const audioListeners = [];
   if (typeof listen === 'function') {
     listen('display-state', ({ payload }) => displayBridge.showDisplayState(payload)).catch(() => {});
     listen('simulated-display-state', ({ payload }) => displayBridge.showSimulatedDisplayState(payload)).catch(() => {});
     listen('settings-changed', ({ payload }) => applySettings(payload)).catch(() => {});
+    audioListeners.push(listen('audio-state', ({ payload }) => renderer?.setAudioFrame(payload)).catch(() => null));
   }
 
   if (!renderer) return;
   const settings = await invokeCommand('get_settings') ?? DEFAULT_APP_SETTINGS;
   applySettings(settings);
+  const motionPreference = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');
+  const reportMotion = () => invokeCommand('set_audio_motion_preference', { reducedMotion: motionPreference?.matches === true });
+  motionPreference?.addEventListener?.('change', reportMotion);
+  await Promise.all(audioListeners);
+  renderer.setAudioFrame(await reportMotion());
+  renderer.setAudioFrame(await invokeCommand('get_audio_state'));
   renderer.start();
   await invokeCommand('set_overlay_visible', { visible: settings.enabled });
   displayBridge.pollDisplayState();
-  window.setInterval(displayBridge.pollDisplayState, POLL_INTERVAL_MS);
+  const pollTimer = window.setInterval(displayBridge.pollDisplayState, POLL_INTERVAL_MS);
+  window.addEventListener('pagehide', () => {
+    renderer.stop();
+    window.clearInterval(pollTimer);
+    motionPreference?.removeEventListener?.('change', reportMotion);
+    for (const listener of audioListeners) listener.then(unlisten => unlisten?.());
+    void invokeCommand('set_audio_motion_preference', { reducedMotion: true });
+  }, { once: true });
 }
 
 if (typeof document !== 'undefined' && typeof window !== 'undefined' && document.body?.classList.contains('overlay-page')) boot();

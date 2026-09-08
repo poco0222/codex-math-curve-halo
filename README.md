@@ -25,6 +25,27 @@ Hold `Command` on macOS or `Ctrl` on Windows and drag the halo with the left
 mouse button to move it. Releasing either the button or modifier saves the
 position. **Reset position** in Settings or the tray restores the default.
 
+## System audio visualization
+
+In **Appearance → Renderer → Audio visualization**, enable **System audio**
+to animate the current curve from your default sound output. Bass scales the
+curve; mids change particle speed; highs add bounded detail. **Intensity** is
+0-100% (50% by default). At 0%, the level meter still shows the input.
+
+Capture is off by default. It uses Core Audio taps on macOS 14.2+ and WASAPI
+loopback on Windows 10 version 1703+ / Windows 11. Allow system audio capture
+when macOS asks. If access is denied, follow the permission help in settings
+and retry. Other output devices and protected audio may not be captured.
+
+Audio stays in memory on this device; Halo does not record or upload it.
+Hiding the overlay or enabling Reduce Motion pauses capture. Showing the
+overlay again resumes an enabled capture; silence and interrupted input
+smoothly return the curve to its normal animation.
+
+Windows capture is implemented, but Windows runtime acceptance is deferred
+until a Windows test environment is available. macOS checks do not establish
+Windows runtime behavior.
+
 ## Follow Codex lifecycle
 
 Enable **Follow Codex lifecycle** to let the native app manage the bundled

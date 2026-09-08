@@ -1,0 +1,350 @@
+schema: comet.native.v4
+name: system-audio-visualization
+language: zh-CN
+phase: archive
+status: done
+state_version: 12
+brief: brief.md
+spec_changes:
+  - capability: system-audio-visualization
+    operation: create
+    source: specs/system-audio-visualization/spec.md
+workspace:
+  isolation: current
+  change_branch: main
+  target_branch: main
+  finish: null
+loop:
+  stage: done
+  goal_cycle: 2
+  iteration: 1
+  attempt: 1
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: null
+acceptance:
+  - id: A1
+    source: brief.md
+    text: A1：首次打开及加载旧配置时，音频开关默认关闭、强度默认
+      50%；未开启前不采集、不请求音频权限。保存开启后重启，在平台支持、权限允许且悬浮层显示时恢复采集。
+    result: passed
+    reason:
+      text: 保留未变化场景的既有通过结论；本轮 Runtime 回归通过。配置默认关闭、强度 50%
+        与采集门控有代码及测试证据；native-observations.json 记录首次关闭及保存开启、强度后重启恢复。
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: A2：macOS 真实采集能取得系统播放的频段特征，真实 App 能反映播放/静音状态；事件接线复核及受控 renderer
+      检查确认特征进入曲线响应。真实悬浮层播放/停播直接对照观察经用户接受延期，保留 NOT RUN /
+      deferred，不将链路分段证据描述为原生视觉端到端验收。
+    result: passed
+    reason:
+      text: 按当前 brief/spec 的证据门禁通过。native-capture.txt 记录真实 macOS
+        系统采集取得低中高频；native-observations.json 记录真实 App 播放后进入采集、停播后静音归零。main.rs 的
+        audio-state 发送、app.js 的监听及 halo.js 的 setAudioFrame 接收链相符，Runtime
+        renderer 测试通过。真实悬浮层播放/停播直接对照观察仍 NOT RUN/deferred；不构成原生视觉端到端通过。
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: A3：分别输入低频、中频、高频测试信号时，低频主要改变曲线围绕中心的尺度，中频主要改变粒子行进速度，高频主要改变有界细节；全目录曲线保持辨识度、边界内绘制及粒子贴合路径。
+    result: passed
+    reason:
+      text: 保留既有通过结论；本轮 src/audio.test.mjs 随 Runtime Node
+        检查通过，覆盖独立低中高频在单曲线及会话路径中的响应、全目录边界及数量保持。合成频段曲线截图与映射实现一致。
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: A4：强度滑块为 0～100%，默认 50%；0% 不叠加音频动效，100% 仍不裁切、闪烁或改变状态色。连续拖动不造成相位跳变或覆盖原始动画参数。
+    result: passed
+    reason:
+      text: 保留既有通过结论；Runtime 测试覆盖 0% 原始输出、100% 全目录边界、强度范围及持久化。renderer 使用瞬时调制与累计相位；真实
+        App 观察记录强度调整、保存和重启保留。
+      truncated: false
+  - id: A5
+    source: brief.md
+    text: A5：静音或音频帧超过 500 ms 未更新时，旧特征失效，额外动效在随后 1
+      秒内平滑归零。关闭、隐藏悬浮层、应用退出均释放采集资源；重新显示按已保存意图恢复，不重复创建采集器。
+    result: passed
+    reason:
+      text: 保留既有通过结论；Control、renderer 与 Runtime 测试覆盖 500 ms 过期、平滑释放和采集门控。真实 UI
+        记录停播归零、隐藏暂停及恢复；native-capture.txt 确认停止后 25 ms 内 tap/aggregate 注销。单采集器及退出
+        shutdown 接线有代码复核证据。
+      truncated: false
+  - id: A6
+    source: brief.md
+    text: A6：受控测试及代码复核覆盖权限/不支持/故障状态区分、拒绝后阻断重复请求、适用帮助及重试、输出切换/睡眠后的有界重连。macOS
+      真实权限拒绝/撤销、物理输出切换/拔插及系统睡眠唤醒经用户接受延期，保留 NOT RUN / deferred，不把受控证据描述为这些 OS
+      交互已实测。
+    result: passed
+    reason:
+      text: 按当前 brief/spec 的受控证据门禁通过。control.rs 测试覆盖权限拒绝在隐藏/恢复后保持阻断；mod.rs
+        区分权限、不支持、设备故障及需重启状态，并实现最多三次自动失败尝试、退避及设备/唤醒重连路径。设置测试覆盖平台帮助、手动重试和需重启提示。真实
+        macOS 权限拒绝/撤销、输出切换/拔插及睡眠唤醒仍 NOT RUN/deferred，不计作 OS 交互实测通过。
+      truncated: false
+  - id: A7
+    source: brief.md
+    text: A7：Appearance 的 Renderer 区域新增音频子区，包含开关、强度和真实状态/音量反馈；沿用既有严格单 View 挂载、完整
+      settingsStore 和串行保存。切页、切换曲线、重启以及两个既有重置动作均保留音频配置和其他未涉及设置。
+    result: passed
+    reason:
+      text: 保留既有通过结论；Runtime 设置与浏览器检查通过，覆盖 Appearance
+        音频子区、真实状态接收、严格切页、共享设置保存、重置保留及单事件订阅。真实 App 观察补充设置保存和重启保留证据。
+      truncated: false
+  - id: A8
+    source: brief.md
+    text: A8：新增 UI 支持 en/zh-CN、键盘、清晰焦点和 390px
+      窄窗口；实时读数不高频播报。减少动态效果时停止新增音频动效并明确提示，仍可关闭功能。
+    result: passed
+    reason:
+      text: 保留既有通过结论；本轮浏览器检查及中英文 390px
+        截图支持窄窗口与键盘交互，实时读数和离散状态播报分离。native-observations.json 记录真实系统 Reduce Motion
+        开启后暂停、归零、显示说明并保留强度，恢复系统偏好后自动恢复等待。
+      truncated: false
+  - id: A9
+    source: brief.md
+    text: A9：音频开启时，现有主会话/子代理的颜色、数量、生命周期和状态过渡语义保持有效；不因音乐产生新的会话或虚假工作状态。
+    result: passed
+    reason:
+      text: 保留未变化场景的既有通过结论；本轮 Runtime 会话及音频回归通过。音频只进入 renderer
+        瞬时调制，独立频段测试确认不新增粒子/会话且状态颜色不变；会话生命周期继续由既有显示状态链处理。
+      truncated: false
+  - id: A10
+    source: brief.md
+    text: A10：采集只用于本机内存内短时特征分析，无音频文件、上传或原始音频日志；停止后不再发出旧运行的特征，后到的过期回调不得重新启用响应。
+    result: passed
+    reason:
+      text: 保留既有代码复核结论；采集经内存内分析只发送有界特征，瞬时数据与设置隔离。Runtime 测试覆盖停止后的 generation
+        门控、过期帧及乱序拒绝；macOS 回调停用和异常注销保留上下文的边界有明确实现。证据未将生成的测试音源文件描述为采集录音。
+      truncated: false
+builder_handoff:
+  candidate_id: 8caf4875-7658-438e-aa71-8b19b086d195
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:e0340a94-4610-4a85-9b33-cd5e68671598
+  iteration: 1
+  summary:
+    text: 代码与已复核实现保持一致；用户接受A2/A6指定macOS真机部分延期，已同步brief与完整Spec且独立文档复核passed。完整功能目标保留，未实测项目继续NOT
+      RUN/deferred。
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A2
+    - A3
+    - A4
+    - A5
+    - A6
+    - A7
+    - A8
+    - A9
+    - A10
+  checks:
+    - name:
+        text: prior Runtime Node/Rust/browser/fmt/diff checks
+        truncated: false
+      result: passed
+      note:
+        text: 134 Node,149 Rust；代码未修改，下一步由Runtime按同一检查计划重验。
+        truncated: false
+    - name:
+        text: macOS real capture and native UI
+        truncated: false
+      result: passed
+      note:
+        text: 原有真实采集/释放与UI观察证据保留；不扩大其覆盖。
+        truncated: false
+    - name:
+        text: deferred macOS A2/A6 and Windows runtime checks
+        truncated: false
+      result: not-run
+      note:
+        text: 用户明确接受延期；不计为实测通过。
+        truncated: false
+  checks_truncated: false
+  known_limits:
+    - text: Windows编译/运行NOT RUN/deferred
+      truncated: false
+    - text: A2原生悬浮层直接观察、A6权限/设备/睡眠OS交互NOT RUN/deferred，用户已接受
+      truncated: false
+    - text: 浏览器IPC替身及Cua记录按实际证据范围使用
+      truncated: false
+  known_limits_truncated: false
+  review:
+    status: passed
+    summary:
+      text: 原代码复核passed；本次新的只读文档复核确认延期范围准确、功能目标未削减且未冒充真机通过。
+      truncated: false
+    reviewer_execution_ref: /root/audio_code_review
+  submitted_at: 2026-09-08T09:46:47.647Z
+blockers: []
+verification:
+  candidate_id: 8caf4875-7658-438e-aa71-8b19b086d195
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:7ee0661c-b163-405f-96a0-81be3584c42f
+  iteration: 1
+  attempt: 1
+  assurance: skill-coordinated
+  verdict: pass
+  checks:
+    - id: node-tests
+      name:
+        text: Node regression tests
+        truncated: false
+      argv_display:
+        - text: --test
+          truncated: false
+        - text: scripts/build-sidecar.test.mjs
+          truncated: false
+        - text: scripts/build-windows-remote.test.mjs
+          truncated: false
+        - text: scripts/plugin-package.test.mjs
+          truncated: false
+        - text: scripts/vscode-launch.test.mjs
+          truncated: false
+        - text: src/app.test.mjs
+          truncated: false
+        - text: src/audio-settings.test.mjs
+          truncated: false
+        - text: src/audio.test.mjs
+          truncated: false
+        - text: src/curve-parameters.test.mjs
+          truncated: false
+        - text: src/curve-picker.test.mjs
+          truncated: false
+        - text: src/halo-sessions.test.mjs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 1435
+    - id: rust-tests
+      name:
+        text: macOS Rust regression tests
+        truncated: false
+      argv_display:
+        - text: test
+          truncated: false
+        - text: --manifest-path
+          truncated: false
+        - text: src-tauri/Cargo.toml
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 15083
+    - id: rust-format
+      name:
+        text: Rust format
+        truncated: false
+      argv_display:
+        - text: fmt
+          truncated: false
+        - text: --manifest-path
+          truncated: false
+        - text: src-tauri/Cargo.toml
+          truncated: false
+        - text: --
+          truncated: false
+        - text: --check
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 115
+    - id: browser-audio
+      name:
+        text: Browser audio UI and renderer (isolated IPC)
+        truncated: false
+      argv_display:
+        - text: NODE_PATH=/Users/PopoY/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules
+          truncated: false
+        - text: node
+          truncated: false
+        - text: scripts/check-audio-browser.mjs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 2787
+    - id: diff-check
+      name:
+        text: Git whitespace
+        truncated: false
+      argv_display:
+        - text: diff
+          truncated: false
+        - text: --check
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 18
+  summary:
+    text: 按当前用户接受的证据范围，A1～A10 全部 passed。已核对当前 brief/spec、原始采集与观察记录、Runtime
+      五项通过结果及相关实现，最后对照 Builder 交接。未发现新增阻塞问题；未重复展开未变化且已通过的完整代码审查。本次 pass
+      仅表示当前证据门禁满足，不表示双平台全部真机场景通过。
+    truncated: false
+  risks:
+    - text: Windows 编译与运行验收仍 NOT RUN/deferred，用户已接受；本结论不代表 Windows 实测通过。
+      truncated: false
+    - text: A2 真实悬浮层播放/停播直接观察，以及 A6 macOS 权限、物理输出设备、睡眠唤醒交互仍 NOT RUN/deferred；完整功能目标保留。
+      truncated: false
+    - text: 浏览器证据使用隔离 IPC 和合成特征；native-observations.json 是 Cua 真实观察转录，不是自动原生 E2E 断言。
+      truncated: false
+  risks_truncated: false
+  completed_at: 2026-09-08T09:51:11.882Z
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: blocked
+    unresolved_ids:
+      - A2
+      - A6
+    summary:
+      text: 8 passed、2 blocked、0 failed。A8 真实系统 Reduce Motion 开启、暂停、说明及恢复证据已补齐，改为
+        passed。A2 的真实悬浮曲线响应观察、A6 的 macOS 权限/设备/睡眠交互仍阻塞；其余结论保持。
+      truncated: false
+    completed_at: 2026-09-08T09:39:38.560Z
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: recovery
+    unresolved_ids: []
+    summary:
+      text: 用户明确接受将剩余A2真实悬浮层直接观察、A6
+        macOS权限/设备/睡眠交互验收延期。本轮保留完整双平台功能目标，以已有真实采集、受控测试和代码复核作为这些项目的交付证据，未执行的真机项继续标记NOT
+        RUN/deferred。
+      truncated: false
+    completed_at: 2026-09-08T09:43:59.959Z
+  - goal_cycle: 2
+    iteration: 1
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: 按当前用户接受的证据范围，A1～A10 全部 passed。已核对当前 brief/spec、原始采集与观察记录、Runtime
+        五项通过结果及相关实现，最后对照 Builder 交接。未发现新增阻塞问题；未重复展开未变化且已通过的完整代码审查。本次 pass
+        仅表示当前证据门禁满足，不表示双平台全部真机场景通过。
+      truncated: false
+    completed_at: 2026-09-08T09:51:11.882Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: true
+created_at: 2026-09-08T08:07:06.612Z

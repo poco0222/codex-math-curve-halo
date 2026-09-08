@@ -486,6 +486,7 @@ dependencies = [
 name = "codex-halo"
 version = "0.1.0"
 dependencies = [
+ "cc",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
@@ -497,6 +498,7 @@ dependencies = [
  "tauri-plugin-autostart",
  "tauri-plugin-single-instance",
  "tokio",
+ "windows",
  "windows-sys 0.61.2",
 ]
 

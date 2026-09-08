@@ -3,7 +3,7 @@
 use codex_halo_lib::state::{
     AppSettings, DisplayState, HaloState, OverlayPosition, SessionStore, Snapshot,
 };
-use codex_halo_lib::{hook_protocol, hooks, lifecycle, platform, plugin, positioning};
+use codex_halo_lib::{audio, hook_protocol, hooks, lifecycle, platform, plugin, positioning};
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -288,6 +288,7 @@ fn apply_settings_to_overlay(app: &AppHandle, settings: &AppSettings) {
             eprintln!("Codex Halo: unable to apply overlay visibility");
         }
     }
+    sync_audio_settings(app, settings);
     let tray_menu = app
         .state::<ReducerRuntimeState>()
         .tray_menu
@@ -547,13 +548,48 @@ fn open_settings(app: AppHandle) -> Result<(), String> {
     show_settings(&app)
 }
 
+fn sync_audio_settings(app: &AppHandle, settings: &AppSettings) {
+    let visible = app
+        .get_webview_window("main")
+        .and_then(|window| window.is_visible().ok())
+        .unwrap_or(false);
+    if let Some(runtime) = app.try_state::<audio::AudioRuntime>() {
+        runtime.configure(settings.audio_enabled, settings.enabled && visible);
+    }
+}
+
+#[tauri::command]
+fn get_audio_state(runtime: State<'_, audio::AudioRuntime>) -> audio::Snapshot {
+    runtime.snapshot()
+}
+
+#[tauri::command]
+fn retry_audio_capture(runtime: State<'_, audio::AudioRuntime>) -> audio::Snapshot {
+    runtime.retry()
+}
+
+#[tauri::command]
+fn set_audio_motion_preference(
+    window: tauri::WebviewWindow,
+    runtime: State<'_, audio::AudioRuntime>,
+    reduced_motion: bool,
+) -> Result<audio::Snapshot, String> {
+    if window.label() != "main" {
+        return Err("audio motion preference must come from the overlay".to_owned());
+    }
+    Ok(runtime.motion_preference(reduced_motion))
+}
+
 #[tauri::command]
 fn set_overlay_visible(app: AppHandle, visible: bool) -> Result<(), String> {
     let overlay = app
         .get_webview_window("main")
         .ok_or_else(|| "Codex Halo overlay window not found".to_owned())?;
     platform::set_overlay_visibility(&overlay, visible)
-        .map_err(|_| "Codex Halo overlay visibility could not be changed".to_owned())
+        .map_err(|_| "Codex Halo overlay visibility could not be changed".to_owned())?;
+    let settings = load_app_settings(&app)?;
+    sync_audio_settings(&app, &settings);
+    Ok(())
 }
 
 fn reset_position_inner(
@@ -1123,6 +1159,7 @@ fn build_windows(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
         }
     });
 
+    sync_audio_settings(app.handle(), &settings);
     build_tray(app, &settings)?;
 
     Ok(())
@@ -1133,6 +1170,12 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         app.handle().exit(0);
         return Ok(());
     }
+    let handle = app.handle().clone();
+    app.manage(audio::AudioRuntime::new(move |snapshot| {
+        for target in ["main", "settings"] {
+            let _ = handle.emit_to(target, "audio-state", snapshot.clone());
+        }
+    }));
     build_windows(app)
 }
 
@@ -1156,6 +1199,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_display_state,
             get_settings,
+            get_audio_state,
+            retry_audio_capture,
+            set_audio_motion_preference,
             save_settings,
             begin_overlay_drag,
             simulate_state,
@@ -1168,8 +1214,15 @@ fn main() {
         .setup(setup_app);
 
     builder
-        .run(tauri::generate_context!())
-        .expect("error while running Codex Halo");
+        .build(tauri::generate_context!())
+        .expect("error while building Codex Halo")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                if let Some(runtime) = app.try_state::<audio::AudioRuntime>() {
+                    runtime.shutdown();
+                }
+            }
+        });
 }
 
 #[cfg(test)]

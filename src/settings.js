@@ -2,6 +2,7 @@ import { formatFormula, getCurveAnimationSettings, getCurveParameterSettings, ge
 import { DEFAULT_APP_SETTINGS, formatSetupError } from './app.js';
 import { createSettingsBridge } from './settings-bridge.js';
 import { createSettingsStore } from './settings-store.js';
+import { createAudioFrameReceiver } from './audio.js';
 import { createCurvePicker, createCurveSelection } from './curve-picker.js';
 import {
   COLOR_PRESET_GROUPS,
@@ -99,6 +100,7 @@ const SETTINGS_VIEWS = {
     bind: () => {
       renderCurveParameters();
       bindSettingsFields(settingsPanelHost);
+      document.getElementById('audio-retry')?.addEventListener('click', retryAudioCapture);
       curvePicker = createCurvePicker({ root: settingsPanelHost, store: settingsStore, selection: curveSelection, isReady: () => initialSettingsReady });
     },
   },
@@ -151,6 +153,9 @@ const settingsStore = createSettingsStore({
     pluginOperationInFlight: false,
     curveApplying: false,
     curveApplyError: false,
+    audioFrame: null,
+    audioRetryPending: false,
+    audioBridgeFailed: false,
   },
   persist: async (settings) => {
     setSaveStatus('saving');
@@ -242,11 +247,12 @@ function updateSettingsModel(field, local = false) {
     return;
   }
   // Only user input may round legacy or preset durations to whole seconds.
-  if (!local && field.dataset.unit === 'seconds') return;
+  if (!local && ['seconds', 'percent'].includes(field.dataset.unit)) return;
   settingsStore.patchSetting(key, field.type === 'checkbox'
     ? field.checked
     : field.type === 'number' || field.type === 'range'
-      ? field.dataset.unit === 'seconds' ? Math.round(Number(field.value) * 1000) : Number(field.value)
+      ? field.dataset.unit === 'seconds' ? Math.round(Number(field.value) * 1000)
+        : field.dataset.unit === 'percent' ? Math.max(0, Math.min(100, Number(field.value))) / 100 : Number(field.value)
       : field.value);
   if (local && (!initialSettingsReady || document.activeElement === field)) localSettingEdits.add(key);
 }
@@ -289,6 +295,11 @@ function renderRangeValue(field) {
     return;
   }
   const seconds = field.dataset.unit === 'seconds';
+  if (field.dataset.unit === 'percent') {
+    output.textContent = `${Math.round(Number(field.value))}%`;
+    field.setAttribute('aria-valuetext', output.textContent);
+    return;
+  }
   output.textContent = formatRangeValue(key, seconds ? settingsStore.getSettings()[key] : Number(field.value));
   if (seconds) field.setAttribute('aria-valuetext', output.textContent);
 }
@@ -312,7 +323,7 @@ function syncControlsFromSettings(excluded) {
     const value = settings[settingKey(field)];
     if (value === undefined) continue;
     if (field.type === 'checkbox') field.checked = Boolean(value);
-    else field.value = String(field.dataset.unit === 'seconds' ? value / 1000 : value);
+    else field.value = String(field.dataset.unit === 'seconds' ? value / 1000 : field.dataset.unit === 'percent' ? value * 100 : value);
   }
   syncColorField(selectedColorState, settings[STATE_COLOR_KEYS[selectedColorState]]);
 }
@@ -652,6 +663,70 @@ function renderLanguage(language = settingsStore.getSettings().language) {
   renderColorPresets();
   renderCurveParameters();
   curvePicker?.render();
+  renderAudioState();
+}
+
+function renderAudioState() {
+  const statusElement = document.getElementById('audio-status');
+  if (!statusElement) return;
+  const settings = settingsStore.getSettings();
+  const { audioFrame, audioRetryPending, audioBridgeFailed } = settingsStore.getUiState();
+  const live = ['capturing', 'silent'].includes(audioFrame?.status);
+  const stale = live && Date.now() - audioFrame.timestamp_ms > 500;
+  const status = !settings.audio_enabled ? 'disabled'
+    : audioBridgeFailed ? 'error'
+      : stale ? 'stale'
+        : audioFrame?.status === 'starting' && audioFrame.reason === 'awaiting_audio' ? 'awaiting_audio'
+          : audioFrame?.status ?? 'starting';
+  const text = (key) => getText(settings.language, `settings.audio.${key}`);
+  const label = text(`status.${status}`);
+  // The live region only changes on discrete state transitions, never on audio frames.
+  if (statusElement.textContent !== label) statusElement.textContent = label;
+  document.getElementById('audio-intensity').disabled = !['capturing', 'silent'].includes(status);
+  document.getElementById('audio-level').value = settings.audio_enabled && live && !stale && !audioBridgeFailed ? audioFrame.level : 0;
+  const help = document.getElementById('audio-help');
+  const windows = typeof navigator !== 'undefined' && /Win/i.test(navigator.platform ?? navigator.userAgent ?? '');
+  const reason = status === 'permission_denied' ? windows ? 'permission_windows' : 'permission'
+    : status === 'unsupported' ? 'unsupported'
+      : status === 'error' ? audioFrame?.reason === 'restart_required' ? 'restart_required' : 'device'
+        : status === 'paused' && ['hidden', 'reduced_motion', 'motion_pending'].includes(audioFrame?.reason) ? audioFrame.reason
+          : status === 'stale' ? 'disconnected' : null;
+  const helpReason = status === 'awaiting_audio' ? 'awaiting_audio' : reason;
+  help.hidden = !helpReason;
+  help.textContent = helpReason ? text(`help.${helpReason}`) : '';
+  const retry = document.getElementById('audio-retry');
+  retry.hidden = reason === 'restart_required' || !['permission_denied', 'error', 'stale', 'awaiting_audio'].includes(status);
+  retry.disabled = Boolean(audioRetryPending);
+  retry.textContent = text(audioRetryPending ? 'retrying' : 'retry');
+}
+
+async function retryAudioCapture() {
+  if (settingsStore.getUiState().audioRetryPending || !settingsStore.getSettings().audio_enabled) return;
+  settingsStore.setUi({ audioRetryPending: true });
+  renderAudioState();
+  try {
+    const result = await settingsBridge.command('retry_audio_capture');
+    settingsStore.setUi({ audioBridgeFailed: !result.ok });
+    if (result.ok) acceptAudioFrame(result.value);
+  } finally {
+    settingsStore.setUi({ audioRetryPending: false });
+    renderAudioState();
+  }
+}
+
+const acceptAudioFrame = createAudioFrameReceiver((audioFrame) => {
+  settingsStore.setUi({ audioFrame, audioBridgeFailed: false });
+  renderAudioState();
+});
+
+// Subscribe once for this settings window; remounting Appearance only renders stored state.
+const audioStateSubscription = settingsBridge.subscribe('audio-state', ({ payload }) => acceptAudioFrame(payload));
+async function loadAudioState() {
+  await audioStateSubscription;
+  const result = await settingsBridge.command('get_audio_state');
+  if (result.ok) acceptAudioFrame(result.value);
+  else settingsStore.setUi({ audioBridgeFailed: true });
+  renderAudioState();
 }
 
 function applySettings(settings, { preserveLocalEdits = false } = {}) {
@@ -802,6 +877,7 @@ function bindSettingsFields(root) {
       }
       renderRangeValue(field);
       if (field.id === 'language') renderLanguage(field.value);
+      if (field.name === 'audio_enabled') renderAudioState();
       void saveCurrentSettings();
     });
   }
@@ -931,4 +1007,6 @@ settingsViewController = createSettingsViewController({
 });
 settingsViewController.bind();
 initialSettingsLoadPromise = loadSettings();
+void loadAudioState();
+window.setInterval(renderAudioState, 250);
 window.setInterval(refreshDiagnostics, 500);
