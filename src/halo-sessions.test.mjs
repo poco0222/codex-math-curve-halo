@@ -254,3 +254,184 @@ test('same-color cores retain a transparent gap from crossing tails', () => {
     assert(clearances[i].endAngle - clearances[i].startAngle < Math.PI * 1.5, 'leave an opening that connects the core to its own tail');
   }
 });
+
+const familyKey = (key) => typeof key === 'string' && key.trim() ? Buffer.from(key).toString('hex').padEnd(64, '0') : key;
+const familySnapshot = (key, state = 'thinking', updated_at_ms = 100000) => session(familyKey(key), state, updated_at_ms);
+const child = (key, parent, state = 'executing', updated_at_ms = 100000) =>
+  ({ ...familySnapshot(key, state, updated_at_ms), parent_session_key: familyKey(parent) });
+const hasTailColor = (frame, rgb) => frame.strokes.slice(1).some(({ color }) => color.startsWith(`rgba(${rgb},`));
+
+test('one parent and two children share one full-width core with both child colors inside its tail', () => {
+  const p = probe();
+  p.renderer.setSessions([familySnapshot('parent'), child('a', 'parent'), child('b', 'parent', 'input_needed')]);
+  p.frame(0);
+  const family = p.frame(420);
+  assert.equal(family.cores.length, 1, 'children must not allocate independent heads');
+  assert.equal(family.cores[0].color, 'rgba(18,52,86,1)');
+  assert(hasTailColor(family, '171,205,239'));
+  assert(hasTailColor(family, '161,51,119'));
+  const single = probe(); single.renderer.setSessions([familySnapshot('parent')]); single.frame(0);
+  assert.deepEqual(family.cores, single.frame(420).cores, 'children cannot alter parent position, radius or density');
+});
+
+test('two families keep two heads and child polling, reorder and membership changes keep their phases', () => {
+  const p = probe();
+  const parents = [familySnapshot('p'), familySnapshot('q', 'input_needed')];
+  p.renderer.setSessions(parents); p.frame(0);
+  const before = p.frame(420);
+  const records = [...parents, child('b', 'p'), child('a', 'p', 'completed'), child('c', 'q')];
+  p.renderer.setSessions(records);
+  assert.deepEqual(p.frame(420), before, 'new children start at the currently displayed colors');
+  const middle = p.frame(630);
+  p.renderer.setSessions([...records].reverse());
+  assert.deepEqual(p.frame(630), middle, 'polling does not restart the color transition');
+  const settled = p.frame(840);
+  assert.equal(settled.cores.length, 2);
+  assert(hasTailColor(settled, '171,205,239'));
+  p.renderer.setSessions(parents);
+  assert.deepEqual(p.frame(840), settled, 'removing children has no immediate jump');
+  const removed = p.frame(1260);
+  assert(!hasTailColor(removed, '171,205,239'));
+  assert(!hasTailColor(removed, '18,170,52'));
+});
+
+test('orphan siblings form one neutral parent and an arriving parent keeps that head position', () => {
+  const p = probe({ settings: { ...palette, idle_color: '#765432' } });
+  const children = [child('a', 'missing'), child('b', 'missing', 'input_needed')];
+  p.renderer.setSessions(children); p.frame(0);
+  const orphan = p.frame(420);
+  assert.equal(orphan.cores.length, 1);
+  assert.equal(orphan.cores[0].color, 'rgba(118,84,50,1)');
+  assert(hasTailColor(orphan, '171,205,239'));
+  p.renderer.setSessions([...children, familySnapshot('missing')]);
+  assert.deepEqual(p.frame(420), orphan);
+  assert.equal(p.frame(840).cores[0].color, 'rgba(18,52,86,1)');
+});
+
+test('expired terminal or idle parent stays full-sized while a child remains active', () => {
+  for (const [state, updated] of [['completed', 96000], ['idle', 30000]]) {
+    const p = probe();
+    p.renderer.setSessions([familySnapshot('p', state, updated), child('a', 'p')]); p.frame(0);
+    const family = p.frame(420);
+    assert.equal(family.cores.length, 1);
+    assert.equal(family.cores[0].radius, 2.75);
+    assert.equal(family.cores[0].color, state === 'completed' ? 'rgba(18,170,52,1)' : 'rgba(167,173,181,1)');
+    assert(hasTailColor(family, '171,205,239'));
+    assert.equal(p.frame(70000).cores.length, 1);
+    p.renderer.setSessions([familySnapshot('p', state, updated)]);
+    assert(p.frame(70000).cores.length > 1, 'the expired parent cannot outlive its last child');
+  }
+});
+
+test('child completion uses its original three-second deadline and leaves the running parent intact', () => {
+  const p = probe();
+  p.renderer.setSessions([familySnapshot('p'), child('a', 'p', 'completed')]); p.frame(0);
+  const completed = p.frame(420);
+  assert.equal(completed.cores.length, 1);
+  assert(hasTailColor(completed, '18,170,52'));
+  const beforeExit = p.frame(2580);
+  const exiting = p.frame(2790);
+  assert.notDeepEqual(exiting.strokes.map(({ color }) => color), beforeExit.strokes.map(({ color }) => color));
+  const expired = p.frame(3001);
+  assert.equal(expired.cores.length, 1);
+  assert(!hasTailColor(expired, '18,170,52'));
+  p.renderer.setSessions([familySnapshot('p'), child('a', 'p', 'completed')]);
+  assert(!hasTailColor(p.frame(3421), '18,170,52'), 'old polling cannot replay completion feedback');
+});
+
+test('child state changes remain continuous, palette edits apply to children and reduced motion updates immediately', () => {
+  const p = probe();
+  p.renderer.setSessions([familySnapshot('p'), child('a', 'p')]); p.frame(0); const before = p.frame(420);
+  p.renderer.setSessions([familySnapshot('p'), child('a', 'p', 'input_needed')]);
+  assert.deepEqual(p.frame(420), before);
+  const middle = p.frame(620);
+  p.renderer.setSessions([familySnapshot('p'), child('a', 'p', 'completed', 100620)]);
+  assert.deepEqual(p.frame(620), middle);
+  assert(hasTailColor(p.frame(1040), '18,170,52'));
+  p.renderer.setSettings({ completed_color: '#ff8800' });
+  assert(hasTailColor(p.frame(1040), '255,136,0'));
+  const previous = globalThis.matchMedia;
+  globalThis.matchMedia = () => ({ matches: true });
+  try {
+    const still = probe();
+    still.renderer.setSessions([familySnapshot('p'), child('a', 'p')]);
+    const initial = still.frame(0);
+    assert.equal(initial.cores.length, 1);
+    assert(hasTailColor(initial, '171,205,239'));
+    still.renderer.setSessions([familySnapshot('p'), child('a', 'p', 'input_needed')]);
+    const updated = still.frame(0);
+    assert(hasTailColor(updated, '161,51,119'), 'static mode does not need elapsed animation time');
+    assert.deepEqual(updated.cores, initial.cores);
+    assert.deepEqual(still.frame(1000), updated);
+  } finally { globalThis.matchMedia = previous; }
+});
+
+test('invalid relationships, future snapshots and invalid children cannot become extra main heads', () => {
+  const p = probe();
+  p.renderer.setSessions([familySnapshot('p'),
+    child('self', 'self'), child('empty', ''), child('space', '  '), child('null', null),
+    child('number', 12),
+    { ...child('short', 'p'), parent_session_key: 'p' },
+    { ...child('upper', 'p'), parent_session_key: 'A'.repeat(64) },
+    { ...child('nonhex', 'p'), parent_session_key: 'g'.repeat(64) },
+    child('cycle-a', 'cycle-b'), child('cycle-b', 'cycle-a'),
+    child('future', 'p', 'executing', 100001), child('bad-state', 'p', '__proto__'),
+    child('nested', 'future'), { ...familySnapshot('blank'), session_key: '  ' },
+  ]);
+  p.frame(0);
+  const frame = p.frame(420);
+  assert.equal(frame.cores.length, 1);
+  assert(frame.strokes.slice(1).every(({ color }) => color.startsWith('rgba(18,52,86,')));
+});
+
+test('late child completion still contributes color until its original deadline', () => {
+  const p = probe();
+  p.renderer.setSessions([familySnapshot('p'), child('a', 'p', 'completed', 97300)]);
+  const late = p.frame(0);
+  assert.equal(late.cores.length, 1);
+  assert(late.strokes.slice(1).some(({ color }) => !color.startsWith('rgba(18,52,86,')), 'valid late completion is not silently discarded');
+  assert(p.frame(301).strokes.slice(1).every(({ color }) => color.startsWith('rgba(18,52,86,')));
+});
+
+test('a renewed child completion keeps its new deadline without restarting unchanged colors', () => {
+  const p = probe();
+  p.renderer.setSessions([familySnapshot('p'), child('a', 'p', 'completed')]); p.frame(0);
+  const first = p.frame(420);
+  p.renderer.setSessions([familySnapshot('p'), child('a', 'p', 'completed', 100420)]);
+  assert.deepEqual(p.frame(420), first);
+  assert(hasTailColor(p.frame(3000), '18,170,52'), 'the renewed three-second deadline starts exit at 3000, not 2580');
+  assert(!hasTailColor(p.frame(3421), '18,170,52'));
+});
+
+test('an overdue child exit cannot backdate a simultaneous parent color change', () => {
+  let wallTime = 100000;
+  const p = probe({ wallNow: () => wallTime });
+  p.renderer.setSessions([familySnapshot('p'), child('a', 'p', 'completed')]); p.frame(0); p.frame(420);
+  wallTime = 103500;
+  p.renderer.setSessions([familySnapshot('p', 'input_needed', wallTime)]);
+  const updated = p.frame(420);
+  assert.equal(updated.cores[0].color, 'rgba(18,52,86,1)', 'a new parent state still begins at its displayed color');
+  assert.equal(p.frame(840).cores[0].color, 'rgba(161,51,119,1)');
+});
+
+test('late completion in an existing family shows feedback and exits within its remaining deadline', () => {
+  for (const wasRunning of [false, true]) for (const remaining of [200, 300]) {
+    let wallTime = 100000;
+    const p = probe({ wallNow: () => wallTime });
+    p.renderer.setSessions([familySnapshot('p'), ...(wasRunning ? [child('a', 'p')] : [])]); p.frame(0);
+    const before = p.frame(420);
+    wallTime = 103500 - remaining;
+    const completed = [familySnapshot('p'), child('a', 'p', 'completed', 100500)];
+    p.renderer.setSessions(completed);
+    assert.deepEqual(p.frame(420), before, 'late feedback starts from the displayed state');
+    wallTime += remaining / 2;
+    const feedback = p.frame(420 + remaining / 2);
+    assert.equal(feedback.cores.length, 1);
+    assert(hasTailColor(feedback, '18,170,52'), 'the remaining lifetime must include completed feedback');
+    p.renderer.setSessions(completed);
+    assert.deepEqual(p.frame(420 + remaining / 2), feedback, 'polling cannot restart or extend late feedback');
+    wallTime = 103501;
+    const expired = p.frame(421 + remaining);
+    assert(expired.strokes.slice(1).every(({ color }) => color.startsWith('rgba(18,52,86,')), 'completed and prior executing colors are gone after the original deadline');
+  }
+});

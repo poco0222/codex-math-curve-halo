@@ -134,6 +134,32 @@
           }
         ]
       }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${PLUGIN_ROOT}/hooks/run-helper.sh\"",
+            "commandWindows": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"$env:PLUGIN_ROOT\\hooks\\run-helper.ps1\"",
+            "timeout": 5,
+            "statusMessage": "Updating Codex Halo"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${PLUGIN_ROOT}/hooks/run-helper.sh\"",
+            "commandWindows": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"$env:PLUGIN_ROOT\\hooks\\run-helper.ps1\"",
+            "timeout": 5,
+            "statusMessage": "Updating Codex Halo"
+          }
+        ]
+      }
     ]
   }
 }

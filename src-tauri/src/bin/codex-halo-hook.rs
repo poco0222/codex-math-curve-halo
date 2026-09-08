@@ -138,6 +138,9 @@ mod tests {
         for input in [
             br#"{"session_id":"private-id","prompt":"secret"}"#.as_slice(),
             br#"{"session_id":"private-id","hook_event_name":"Unknown","prompt":"secret"}"#,
+            br#"{"session_id":"private-id","hook_event_name":"SubagentStart","prompt":"secret"}"#,
+            br#"{"session_id":"private-id","hook_event_name":"SubagentStop","agent_id":"  ","prompt":"secret"}"#,
+            br#"{"session_id":"private-id","hook_event_name":"SessionEnd","agent_id":"","prompt":"secret"}"#,
         ] {
             let state_dir = temp_path("noop");
             let mut stdout = Vec::new();

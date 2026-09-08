@@ -54,9 +54,11 @@ test('default plugin hooks cover the synchronous Halo lifecycle events', async (
     Interrupt: undefined,
     Stop: undefined,
     SessionEnd: undefined,
+    SubagentStart: undefined,
+    SubagentStop: undefined,
   };
 
-  assert.deepEqual(Object.keys(config.hooks), Object.keys(expected));
+  assert.deepEqual(Object.keys(config.hooks).sort(), Object.keys(expected).sort());
   for (const [event, matcher] of Object.entries(expected)) {
     const [group] = config.hooks[event];
     assert.equal(group.matcher, matcher, event);

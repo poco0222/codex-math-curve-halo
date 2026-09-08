@@ -64,25 +64,86 @@ export function createHaloRenderer(canvas, options = {}) {
   let sessionMode = false;
   const sessions = new Map();
 
+  function validUntil(item) {
+    if (!item) return -Infinity;
+    return item.updated_at_ms + (item.state === 'completed' || item.state === 'interrupted'
+      ? 3000 : item.state === 'idle' ? 60000 : Infinity);
+  }
+
+  function targetColorAt(session, fraction) {
+    if (!session.palette.length || fraction <= 0.28) return session.color;
+    // One continuous tail: reserve the head, then blend only at child segment boundaries.
+    const position = (fraction - 0.28) / 0.72 * session.palette.length;
+    const index = Math.min(Math.floor(position), session.palette.length - 1);
+    const color = session.palette[index].color;
+    const previous = index ? session.palette[index - 1].color : session.color;
+    return mixColor(previous, color, clamp((position - index) / 0.16, 0, 1));
+  }
+
   function sessionColorAt(session, fraction, time) {
-    if (!session.transition) return session.color;
-    const { from, startedAt } = session.transition;
+    const target = targetColorAt(session, fraction);
+    if (!session.transition || reducedMotion?.matches) return target;
+    const { from, startedAt, duration } = session.transition;
     // The head changes first; even the final tail sample settles within 420ms.
-    const delay = fraction * MORPH_DURATION_MS * 0.6;
-    const progress = clamp((time - startedAt - delay) / (MORPH_DURATION_MS * 0.4), 0, 1);
+    const delay = fraction * duration * 0.6;
+    const progress = clamp((time - startedAt - delay) / (duration * 0.4), 0, 1);
     const index = fraction * (from.length - 1);
     const previous = mixColor(from[Math.floor(index)], from[Math.ceil(index)], index % 1);
-    return mixColor(previous, session.color, progress);
+    return mixColor(previous, target, progress);
+  }
+
+  function refreshFamily(session, time, wallTime, immediate = false) {
+    const color = styleFor(session.state, settings);
+    const palette = session.children.filter((child) => wallTime <= validUntil(child)
+      && (session.signature === undefined || reducedMotion?.matches || wallTime < validUntil(child) - (child.exitDuration ?? MORPH_DURATION_MS)))
+      .map((child) => ({ key: child.session_key, color: styleFor(child.state, settings),
+        until: validUntil(child), duration: child.exitDuration ?? MORPH_DURATION_MS }));
+    const signature = JSON.stringify([color, palette.map(({ key, color }) => [key, color])]);
+    if (signature === session.signature) { session.palette = palette; return; }
+    let startedAt = time;
+    let duration = Math.min(MORPH_DURATION_MS, ...palette.map((child) => child.duration));
+    // Completion fades inside its original deadline, even when a frame or poll is late.
+    for (const previous of session.palette) {
+      if (!palette.some(({ key }) => key === previous.key) && wallTime >= previous.until - previous.duration) {
+        startedAt = Math.min(startedAt, time - (wallTime - previous.until + previous.duration));
+        duration = Math.min(duration, previous.duration);
+      }
+    }
+    const segments = Math.max(Math.ceil(animation.particle_count / 2), session.palette.length * 6, palette.length * 6);
+    const from = Array.from({ length: segments + 1 }, (_, i) => sessionColorAt(session, i / segments, startedAt));
+    session.color = color;
+    session.palette = palette;
+    session.signature = signature;
+    session.transition = immediate || reducedMotion?.matches ? null : { from, startedAt, duration };
   }
 
   function updateSessions(nextSessions) {
     const time = clock();
-    const incoming = new Map();
-    for (const item of Array.isArray(nextSessions) ? nextSessions : []) {
-      if (typeof item?.session_key !== 'string' || !item.session_key
-        || !Object.hasOwn(STATE_COLOR_KEYS, item.state) || !Number.isFinite(item.updated_at_ms)) continue;
-      incoming.set(item.session_key, item);
+    const wallTime = wallClock();
+    const records = Array.isArray(nextSessions) ? nextSessions : [];
+    const childKeys = new Set(records.filter((item) => item && Object.hasOwn(item, 'parent_session_key'))
+      .map((item) => item.session_key));
+    const snapshots = new Map();
+    for (const item of records) {
+      if (typeof item?.session_key !== 'string' || !item.session_key.trim()
+        || !Object.hasOwn(STATE_COLOR_KEYS, item.state) || !Number.isFinite(item.updated_at_ms)
+        || item.updated_at_ms < 0 || item.updated_at_ms > wallTime) continue;
+      if (Object.hasOwn(item, 'parent_session_key') && (typeof item.parent_session_key !== 'string'
+        || !/^[0-9a-f]{64}$/.test(item.parent_session_key) || item.parent_session_key === item.session_key
+        || childKeys.has(item.parent_session_key))) continue;
+      if (!snapshots.has(item.session_key) || snapshots.get(item.session_key).updated_at_ms < item.updated_at_ms) {
+        snapshots.set(item.session_key, item);
+      }
     }
+    const incoming = new Map();
+    for (const item of snapshots.values()) {
+      const key = item.parent_session_key ?? item.session_key;
+      if (!incoming.has(key)) incoming.set(key, { parent: null, children: [] });
+      const family = incoming.get(key);
+      if (item.parent_session_key) family.children.push(item);
+      else family.parent = item;
+    }
+    for (const family of incoming.values()) family.children.sort((a, b) => a.session_key < b.session_key ? -1 : a.session_key > b.session_key ? 1 : 0);
     for (const key of sessions.keys()) if (!incoming.has(key)) sessions.delete(key);
     const newcomers = [...incoming.keys()].filter((key) => !sessions.has(key)).sort();
     const initiallyEmpty = sessions.size === 0;
@@ -96,19 +157,28 @@ export function createHaloRenderer(canvas, options = {}) {
           if (gap > largestGap) { largestGap = gap; offset = normalize(offsets[i] + gap / 2); }
         }
       }
-      const item = incoming.get(key);
-      sessions.set(key, { ...item, offset, enteredAt: time, color: styleFor(item.state, settings), transition: null });
+      const family = incoming.get(key);
+      const state = family.parent?.state ?? 'idle';
+      const item = { ...family, state, offset, enteredAt: time, color: styleFor(state, settings), palette: [], transition: null };
+      refreshFamily(item, time, wallTime, true);
+      sessions.set(key, item);
     }
-    for (const [key, item] of incoming) {
+    for (const [key, family] of incoming) {
       const current = sessions.get(key);
-      if (current.state !== item.state) {
-        const segments = Math.ceil(animation.particle_count / 2);
-        const from = Array.from({ length: segments + 1 }, (_, i) => sessionColorAt(current, i / segments, time));
-        current.color = styleFor(item.state, settings);
-        current.transition = { from, startedAt: time };
-      }
-      current.state = item.state;
-      current.updated_at_ms = item.updated_at_ms;
+      refreshFamily(current, time, wallTime);
+      current.parent = family.parent;
+      const previousChildren = new Map(current.children.map((child) => [child.session_key, child]));
+      current.children = family.children.map((child) => {
+        const previous = previousChildren.get(child.session_key);
+        const remaining = validUntil(child) - wallTime;
+        // Late feedback shares its remaining lifetime between arrival and exit, never extends it.
+        const exitDuration = previous?.state === child.state && previous.updated_at_ms === child.updated_at_ms
+          ? previous.exitDuration
+          : remaining > 0 && remaining < MORPH_DURATION_MS ? remaining / 2 : undefined;
+        return { ...child, exitDuration };
+      });
+      current.state = family.parent?.state ?? 'idle';
+      refreshFamily(current, time, wallTime);
     }
     sessionMode = true;
   }
@@ -185,9 +255,9 @@ export function createHaloRenderer(canvas, options = {}) {
   function drawSessions(time, points, angle) {
     const wallTime = wallClock();
     const active = [...sessions.values()].filter((item) => {
-      const age = wallTime - item.updated_at_ms;
-      return age >= 0 && (item.state === 'completed' || item.state === 'interrupted'
-        ? age <= 3000 : item.state !== 'idle' || age <= 60000);
+      item.until = Math.max(validUntil(item.parent), ...item.children.map(validUntil));
+      refreshFamily(item, time, wallTime);
+      return wallTime <= item.until;
     });
     if (!active.length) return false;
     const ordered = [...active].sort((a, b) => a.offset - b.offset);
@@ -215,11 +285,11 @@ export function createHaloRenderer(canvas, options = {}) {
     drawPath(points, angle, outlineColor, animation.stroke_width, 0.08);
     const density = 1 / Math.sqrt(Math.max(1, active.length / 4));
     const width = animation.stroke_width * density;
-    const segments = Math.ceil(animation.particle_count / 2);
     const heads = active.map((item) => {
       const entered = reducedMotion?.matches ? 1 : clamp((time - item.enteredAt) / MORPH_DURATION_MS, 0, 1);
-      const terminal = item.state === 'completed' || item.state === 'interrupted';
-      const exit = terminal ? clamp((3000 - (wallTime - item.updated_at_ms)) / MORPH_DURATION_MS, 0, 1) : 1;
+      const terminal = [item.parent, ...item.children].some((member) => member && validUntil(member) === item.until
+        && (member.state === 'completed' || member.state === 'interrupted'));
+      const exit = terminal ? clamp((item.until - wallTime) / MORPH_DURATION_MS, 0, 1) : 1;
       const growth = (0.12 + 0.88 * (1 - (1 - entered) ** 3)) * (reducedMotion?.matches ? 1 : exit);
       const base = progressPhase + item.offset;
       // A monotone, bounded warp gives each head a rhythm without overtaking peers.
@@ -275,6 +345,7 @@ export function createHaloRenderer(canvas, options = {}) {
         const taper = (1 - fraction) ** 2;
         return { x: point.x + shift.x * taper, y: point.y + shift.y * taper };
       }
+      const segments = Math.max(Math.ceil(animation.particle_count / 2), item.palette.length * 6);
       for (let i = segments; i > 0; i -= 1) {
         const fraction = i / segments;
         const start = head - span * fraction;
@@ -290,7 +361,7 @@ export function createHaloRenderer(canvas, options = {}) {
         }
         drawPath(segment, 0, color, width * (0.2 + fade * 0.8), fade * 0.94 * exit);
       }
-      if (item.transition && time - item.transition.startedAt >= MORPH_DURATION_MS) item.transition = null;
+      if (item.transition && time - item.transition.startedAt >= item.transition.duration) item.transition = null;
     }
     // Clear crossing tails around each core, leaving its own tail connected through an opening.
     context.globalCompositeOperation = 'destination-out';
@@ -369,10 +440,7 @@ export function createHaloRenderer(canvas, options = {}) {
     setSettings(nextSettings = {}) {
       if (nextSettings.enabled !== undefined && nextSettings.enabled !== settings.enabled) lastFrameTime = null;
       settings = { ...settings, ...nextSettings };
-      for (const item of sessions.values()) {
-        const color = styleFor(item.state, settings);
-        if (color !== item.color) { item.color = color; item.transition = null; }
-      }
+      for (const item of sessions.values()) refreshFamily(item, clock(), wallClock(), true);
       curveSettings = prepareCurveSettings(curve, settings);
       animation = animationSettings();
       if (transition) {

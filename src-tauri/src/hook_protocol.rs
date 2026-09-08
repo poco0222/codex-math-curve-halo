@@ -24,6 +24,8 @@ pub struct HookInput {
     hook_event_name: String,
     #[serde(default)]
     source: Option<String>,
+    #[serde(default)]
+    agent_id: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -76,6 +78,20 @@ pub fn parse_hook_input(bytes: &[u8]) -> Result<HookInput, HookError> {
     if input.session_id.trim().is_empty() || input.hook_event_name.trim().is_empty() {
         return Err(HookError::InvalidInput);
     }
+    if input
+        .agent_id
+        .as_ref()
+        .is_some_and(|id| id.trim().is_empty())
+    {
+        return Err(HookError::InvalidInput);
+    }
+    if matches!(
+        input.hook_event_name.as_str(),
+        "SubagentStart" | "SubagentStop"
+    ) && input.agent_id.is_none()
+    {
+        return Err(HookError::InvalidInput);
+    }
     Ok(input)
 }
 
@@ -88,6 +104,8 @@ pub fn map_event(input: &HookInput) -> Option<HookAction> {
                 HaloState::Idle
             },
         )),
+        "SubagentStart" => Some(HookAction::Set(HaloState::Thinking)),
+        "SubagentStop" => Some(HookAction::Set(HaloState::Completed)),
         "UserPromptSubmit" => Some(HookAction::Set(HaloState::Thinking)),
         "PreToolUse" => Some(HookAction::Set(HaloState::Executing)),
         "PostToolUse" => Some(HookAction::Set(HaloState::Thinking)),
@@ -112,7 +130,9 @@ pub fn write_snapshot(
     let path = state_dir.join(format!("{session_key}.json"));
     let (temp_path, mut file) = private_temp_file(state_dir, &format!("{session_key}.json"))?;
     let result = (|| {
-        serde_json::to_writer(&mut file, &Snapshot::new(session_key, state, now_ms))?;
+        let mut snapshot = Snapshot::new(session_key, state, now_ms);
+        snapshot.parent_session_key = input.agent_id.as_ref().map(|_| parent_session_key(input));
+        serde_json::to_writer(&mut file, &snapshot)?;
         file.flush()?;
         fs::rename(&temp_path, path)?;
         Ok(())
@@ -125,13 +145,43 @@ pub fn write_snapshot(
 }
 
 pub fn remove_snapshot(state_dir: &Path, input: &HookInput) -> Result<(), HookError> {
-    let path = snapshot_path(state_dir, input);
-    let remove_result = match fs::remove_file(path) {
+    let key = session_key(input);
+    remove_file_if_present(&snapshot_path(state_dir, input))?;
+    cleanup_session_temps(state_dir, &key)?;
+    if input.agent_id.is_some() {
+        return Ok(());
+    }
+    let entries = match fs::read_dir(state_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    // Only already-written children are observable; no ordering guarantee for late events.
+    for entry in entries {
+        let path = entry?.path();
+        if !is_snapshot_filename(&path) {
+            continue;
+        }
+        let Some(snapshot) = fs::read(&path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Snapshot>(&bytes).ok())
+        else {
+            continue;
+        };
+        if snapshot.parent_session_key.as_deref() == Some(&key) {
+            remove_file_if_present(&path)?;
+            cleanup_session_temps(state_dir, &snapshot.session_key)?;
+        }
+    }
+    Ok(())
+}
+
+fn remove_file_if_present(path: &Path) -> Result<(), HookError> {
+    match fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error.into()),
-    };
-    remove_result.and(cleanup_session_temps(state_dir, input))
+    }
 }
 
 pub fn install_helper(source: &Path, runtime_root: &Path) -> Result<PathBuf, HookError> {
@@ -197,12 +247,23 @@ fn snapshot_path(state_dir: &Path, input: &HookInput) -> PathBuf {
     state_dir.join(format!("{}.json", session_key(input)))
 }
 
-fn session_key(input: &HookInput) -> String {
+fn parent_session_key(input: &HookInput) -> String {
     format!("{:x}", Sha256::digest(input.session_id.as_bytes()))
 }
 
-fn cleanup_session_temps(state_dir: &Path, input: &HookInput) -> Result<(), HookError> {
-    let prefix = format!("{}.json.tmp", session_key(input));
+fn session_key(input: &HookInput) -> String {
+    match input.agent_id.as_deref() {
+        // JSON tuple encoding avoids ambiguous boundaries between the two identities.
+        Some(agent_id) => format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_vec(&["subagent", &input.session_id, agent_id]).unwrap())
+        ),
+        None => parent_session_key(input),
+    }
+}
+
+fn cleanup_session_temps(state_dir: &Path, session_key: &str) -> Result<(), HookError> {
+    let prefix = format!("{session_key}.json.tmp");
     let entries = match fs::read_dir(state_dir) {
         Ok(entries) => entries,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
@@ -347,6 +408,153 @@ mod tests {
             .unwrap()
             .as_nanos();
         std::env::temp_dir().join(format!("codex-halo-{name}-{}-{nonce}", std::process::id()))
+    }
+
+    #[test]
+    fn explicit_empty_agent_identity_never_routes_ordinary_events_to_parent() {
+        for event in ["PreToolUse", "SessionEnd"] {
+            for agent_id in ["", "  "] {
+                assert!(parse_hook_input(
+                    serde_json::json!({"session_id":"parent",
+                    "hook_event_name":event, "agent_id":agent_id})
+                    .to_string()
+                    .as_bytes()
+                )
+                .is_err());
+            }
+            assert!(parse_hook_input(
+                serde_json::json!({"session_id":"parent",
+                "hook_event_name":event, "agent_id":null})
+                .to_string()
+                .as_bytes()
+            )
+            .is_ok());
+        }
+    }
+
+    #[test]
+    fn family_disk_removal_preserves_other_families_and_parent_stop_keeps_children() {
+        let state_dir = temp_path("family-remove");
+        let parent = parse_hook_input(&fixture("Stop")).unwrap();
+        let other =
+            parse_hook_input(br#"{"session_id":"other","hook_event_name":"UserPromptSubmit"}"#)
+                .unwrap();
+        write_snapshot(&state_dir, &parent, HaloState::Thinking, 100).unwrap();
+        write_snapshot(&state_dir, &other, HaloState::Thinking, 100).unwrap();
+        let children = ["child-a", "child-b"].map(|id| {
+            parse_hook_input(
+                serde_json::json!({
+                    "session_id":"thr_123", "hook_event_name":"SessionEnd", "agent_id":id
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .unwrap()
+        });
+        for child in &children {
+            write_snapshot(&state_dir, child, HaloState::Thinking, 100).unwrap();
+        }
+        write_snapshot(&state_dir, &parent, HaloState::Completed, 200).unwrap();
+        assert_eq!(fs::read_dir(&state_dir).unwrap().count(), 4);
+        remove_snapshot(&state_dir, &children[0]).unwrap();
+        assert!(snapshot_path(&state_dir, &parent).exists());
+        assert!(snapshot_path(&state_dir, &children[1]).exists());
+        remove_snapshot(&state_dir, &parent).unwrap();
+        assert_eq!(fs::read_dir(&state_dir).unwrap().count(), 1);
+        assert!(snapshot_path(&state_dir, &other).exists());
+        remove_snapshot(&state_dir, &parent).unwrap();
+        fs::remove_dir_all(state_dir).unwrap();
+    }
+
+    #[test]
+    fn subagent_events_require_identity_and_map_lifecycle_states() {
+        for (event, state) in [
+            ("SubagentStart", HaloState::Thinking),
+            ("SubagentStop", HaloState::Completed),
+        ] {
+            let input = parse_hook_input(
+                serde_json::json!({
+                    "session_id":"thr_123", "hook_event_name":event, "agent_id":"child-a"
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .unwrap();
+            assert_eq!(map_event(&input), Some(HookAction::Set(state)));
+            for agent_id in [
+                Value::Null,
+                Value::String(String::new()),
+                Value::String("  ".into()),
+            ] {
+                assert!(parse_hook_input(
+                    serde_json::json!({
+                        "session_id":"thr_123", "hook_event_name":event, "agent_id":agent_id
+                    })
+                    .to_string()
+                    .as_bytes()
+                )
+                .is_err());
+            }
+            assert!(parse_hook_input(&fixture(event)).is_err());
+        }
+    }
+
+    #[test]
+    fn child_snapshots_have_distinct_anonymous_identity_without_overwriting_parent() {
+        let state_dir = temp_path("child-identity");
+        let parent = parse_hook_input(&fixture("UserPromptSubmit")).unwrap();
+        write_snapshot(&state_dir, &parent, HaloState::Thinking, 100).unwrap();
+        for agent_id in ["child-a", "child-b", "child-a"] {
+            let child = parse_hook_input(
+                serde_json::json!({
+                    "session_id":"thr_123", "hook_event_name":"PreToolUse", "agent_id":agent_id,
+                    "prompt":"secret", "tool_input":{"command":"secret"}
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .unwrap();
+            write_snapshot(&state_dir, &child, HaloState::Executing, 200).unwrap();
+        }
+        let values = fs::read_dir(&state_dir)
+            .unwrap()
+            .map(|entry| {
+                let text = fs::read_to_string(entry.unwrap().path()).unwrap();
+                assert!(!text.contains("child-"));
+                assert!(!text.contains("thr_123"));
+                assert!(!text.contains("secret"));
+                serde_json::from_str::<Value>(&text).unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(values.len(), 3);
+        let mut actual_keys = values
+            .iter()
+            .map(|value| value["session_key"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        actual_keys.sort();
+        assert_eq!(
+            actual_keys,
+            [
+                "2afcd62c59937a6d325c3a0eac8ab4b00af3e54c1fd3442c373b0e270a4c5109",
+                "39306a3b6c2e434f1ab95162b9102200103c364fe63e8cf083f4c46e58fc5465",
+                "e3091fe2986effba7b815449e32060814fed909a796454920df65f816a3a5889"
+            ]
+        );
+        let parent_key = "e3091fe2986effba7b815449e32060814fed909a796454920df65f816a3a5889";
+        let parent = values
+            .iter()
+            .find(|value| value["session_key"] == parent_key)
+            .unwrap();
+        assert_eq!(parent["state"], "thinking");
+        assert!(parent.get("parent_session_key").is_none());
+        for value in values
+            .iter()
+            .filter(|value| value["session_key"] != parent_key)
+        {
+            assert_eq!(value["parent_session_key"], parent_key);
+            assert_eq!(value.as_object().unwrap().len(), 4);
+        }
+        fs::remove_dir_all(state_dir).unwrap();
     }
 
     #[test]

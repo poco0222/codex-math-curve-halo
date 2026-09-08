@@ -1227,6 +1227,44 @@ mod scan_tests {
     }
 
     #[test]
+    fn scan_family_context_cannot_bypass_launch_or_future_boundaries() {
+        let parent = "a".repeat(64);
+        let child: Snapshot = serde_json::from_value(serde_json::json!({
+            "session_key":"child", "parent_session_key":parent,
+            "state":"thinking", "updated_at_ms":101
+        }))
+        .unwrap();
+        for parent_time in [99, 100, 10_001] {
+            let runtime = ReducerRuntimeState {
+                started_at_ms: 100,
+                ..Default::default()
+            };
+            let display = runtime.display_after_scan(
+                Some(Ok(vec![
+                    Snapshot::new(&parent, HaloState::Completed, parent_time),
+                    child.clone(),
+                ])),
+                10_000,
+            );
+            assert_eq!(display.session_count, 1);
+            assert_eq!(display.sessions, vec![child.clone()]);
+        }
+        let runtime = ReducerRuntimeState {
+            started_at_ms: 100,
+            ..Default::default()
+        };
+        let display = runtime.display_after_scan(
+            Some(Ok(vec![
+                Snapshot::new(&parent, HaloState::Completed, 101),
+                child,
+            ])),
+            10_000,
+        );
+        assert_eq!(display.sessions.len(), 2);
+        assert_eq!(runtime.display_after_scan(None, 20_000).sessions.len(), 2);
+    }
+
+    #[test]
     fn scan_keeps_updates_created_after_scan_start() {
         let root = std::env::temp_dir().join(format!(
             "codex-halo-scan-update-{}-{}",

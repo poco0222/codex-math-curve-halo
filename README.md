@@ -74,24 +74,37 @@ simulation uses the Rust reducer and does not add to the real session count.
 
 ## Multiple sessions
 
-Each valid session has its own bright core and fading trail on the selected
-curve, using the configured color for its current state. Sessions in the same
-state remain separate. Color changes travel from core to tail; larger session
-counts shorten the trails. Reduced motion keeps a static multicolor view.
+Each main session has one bright core and fading trail on the selected curve.
+Its subagents appear as color segments inside that same trail, sharing its
+motion without adding separate cores. The head shows the parent state; each
+embedded segment uses its subagent's configured state color. Independent main
+sessions remain separate, including when their states match. Color changes
+transition smoothly; reduced motion keeps a static multicolor view.
 The **Glow** switch under Appearance adds an optional outer glow. It is off by
 default, including for older settings, and your choice saves automatically.
 
 Thinking, executing, compacting, and input-needed sessions retain their last
 reported state without a 60-second timeout. Completed and interrupted states
-last three seconds; idle lasts 60 seconds. `SessionEnd` removes its session.
+last three seconds; idle lasts 60 seconds. A parent that finishes before its
+children keeps its trail and last-known head state while child states remain
+valid. A completed child leaves only its own color segment. Parent `SessionEnd`
+removes the existing snapshots for that family, leaving other families intact.
 Each Halo launch starts idle and accepts only events timestamped after that
 launch. Older snapshots stay on disk but do not restore trails; a task already
 running must emit another event to appear. These are last-known states, not a
 liveness check: a missing end event can still leave a trail until Halo restarts.
 
-Coverage includes independent sessions that emit this plugin's hooks under the
-same `CODEX_HOME`. Subagents appear separately only when they supply their own
-`session_id` and hook events.
+Coverage includes sessions that emit this plugin's hooks under the same
+`CODEX_HOME`. `SubagentStart` and `SubagentStop` require `agent_id` and use
+`session_id` to identify the parent. They report activity (`thinking`) and stop
+feedback (`completed`); finer states require events explicitly carrying the
+subagent identity. Events without that identity retain session-level semantics.
+Halo does not infer an agent from transcript content or tool timing. When only
+a child's snapshot is available, the family uses an idle-colored parent head.
+The session count is the number of represented main-session families, not the
+number of agents. Dense trails preserve child records but may not be readable
+individually at small sizes. Missing or late events remain a source limitation;
+snapshot cleanup is not a liveness or event-order guarantee.
 
 ## Settings and diagnostics
 
@@ -108,10 +121,10 @@ runner. macOS checks do not establish Windows runtime behavior.
 
 ## Privacy
 
-The hook helper reads `session_id` and the lifecycle event name from hook input,
-plus the optional `source` field in `SessionStart` input to identify
-`source: "compact"`. It stores only a hash of the session identifier, state
-names, and timestamps. Prompts, transcripts, tool data, model names, paths,
+The hook helper reads `session_id`, optional `agent_id`, and the lifecycle event
+name, plus optional `source` to identify a compact session start. Snapshots store
+only hashed identities (including a child's parent association), state names,
+and timestamps. Prompts, transcripts, tool data, model names, paths,
 network data, telemetry, and cloud sync are not used.
 
 ## Attribution
