@@ -27,7 +27,7 @@ position. **Reset position** in Settings or the tray restores the default.
 
 ## System audio visualization
 
-In **Appearance → Renderer → Audio visualization**, enable **System audio**
+In **Halo → Audio visualization**, enable **System audio**
 to animate the current curve from your default sound output. Bass scales the
 curve; mids change particle speed; highs add bounded detail. **Intensity** is
 0-100% (50% by default). At 0%, the level meter still shows the input.
@@ -128,6 +128,26 @@ individually at small sizes. Missing or late events remain a source limitation;
 snapshot cleanup is not a liveness or event-order guarantee.
 
 ## Settings and diagnostics
+
+Settings has two pages: **Halo** and **Connection & runtime**. Halo keeps the
+local sample preview, state selection, and color editing together. Opacity and
+Glow are immediately available; geometry, animation, and the read-only formula
+sit in expandable sections. Browsing the curve gallery does not save a choice;
+Apply loads the selected curve's geometry and animation defaults. Edits save
+automatically, with a retry action on failure.
+
+After loading a curve, one restoration can recover the previous curve and six
+animation values while preserving current colors, opacity, Glow, audio, position,
+language, and runtime settings. A later load replaces that restoration point;
+hiding the window or accepting an external change to those parameters clears it.
+There is no persistent preset history.
+
+Local sample states never replace real desktop task states. **Connection & runtime
+→ Advanced diagnostics → Desktop test** retains the explicit desktop simulation;
+new real events can override it. A successful test does not prove plugin
+connectivity, and no new event does not mean a disconnected plugin. The connection
+page provides setup guidance, existing install/uninstall actions, and the last
+known event.
 
 Settings includes a local **Export diagnostics** control. It downloads
 `codex-halo-diagnostics.json` with only the current state name and timestamp;

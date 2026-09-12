@@ -39,7 +39,9 @@ function readObjectLiteral(source, declaration) {
 }
 
 assert.match(html, /id="settings-panel-host"/);
-for (const view of ['appearance', 'colors', 'integration', 'test']) {
+assert.deepEqual([...html.matchAll(/data-view-target="([^"]+)"/g)].map((match) => match[1]), ['appearance', 'integration']);
+assert.deepEqual([...html.matchAll(/data-view-template="([^"]+)"/g)].map((match) => match[1]), ['appearance', 'integration']);
+for (const view of ['appearance', 'integration']) {
   assert.match(html, new RegExp(`data-view-target="${view}"`));
   assert.match(html, new RegExp(`data-view-template="${view}"`));
 }
@@ -64,14 +66,19 @@ for (const [id, name, min, max, step] of sliderSpecs) {
 assert.doesNotMatch(html, /id="(?:particle-count|trail-span|duration-ms|pulse-duration-ms|rotation-duration-ms|stroke-width)"[^>]*type="number"/);
 assert.doesNotMatch(html, /(?:id="offset-[xy](?:-value)?"|name="offset_[xy]")/);
 assert.match(html, /id="color-state-list"/);
-assert.match(html, /id="display-section"[^>]*>[\s\S]*?<\/fieldset>\s*<fieldset id="animation-section"/);
+const appearance = html.match(/<template data-view-template="appearance">([\s\S]*?)<\/template>/)?.[1] ?? '';
+const integration = html.match(/<template data-view-template="integration">([\s\S]*?)<\/template>/)?.[1] ?? '';
+for (const id of ['settings-preview', 'preview-state-label', 'color-state-tabs', 'color-state-panel', 'advanced-settings', 'formula-details', 'undo-curve']) assert.match(appearance, new RegExp(`id="${id}"`));
+assert.match(integration, /id="desktop-test-controls"/);
+assert.equal((integration.match(/data-desktop-test-state=/g) ?? []).length, 7);
+assert.match(html, /id="retry-save"/);
 assert.doesNotMatch(html, /data-section-target=/);
 assert.match(html, /data-section-nav[^>]*role="tablist"/);
 assert.match(html, /id="color-state-tabs"[^>]*role="tablist"/);
 assert.match(html, /id="color-state-panel"[^>]*role="tabpanel"(?![^>]*tabindex)/);
 assert.match(html, /settings-tab-display[^>]*aria-selected="true"[^>]*tabindex="0"/);
-assert.equal((html.match(/role="tab"/g) ?? []).length, 4);
-assert.equal((html.match(/role="tab"[^>]*tabindex="-1"/g) ?? []).length, 3);
+assert.equal((html.match(/role="tab"/g) ?? []).length, 2);
+assert.equal((html.match(/role="tab"[^>]*tabindex="-1"/g) ?? []).length, 1);
 assert.match(html, /id="settings-panel-host"[^>]*role="tabpanel"(?![^>]*tabindex)/);
 for (const state of ['idle', 'thinking', 'executing', 'input_needed', 'completed', 'interrupted', 'compacting']) {
   assert.match(colors, new RegExp(`${state}: '.*_color'`));

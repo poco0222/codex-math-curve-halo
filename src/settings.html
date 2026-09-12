@@ -17,10 +17,8 @@
           </div>
         </div>
         <nav class="settings-nav" data-section-nav role="tablist" aria-label="Settings sections" data-i18n-aria-label="settings.navigation">
-          <button id="settings-tab-display" class="settings-nav-link is-active" type="button" role="tab" aria-selected="true" tabindex="0" aria-controls="settings-panel-host" data-view-target="appearance" data-i18n="settings.appearance">Appearance</button>
-          <button id="settings-tab-colors" class="settings-nav-link" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="settings-panel-host" data-view-target="colors" data-i18n="settings.colors">State colors</button>
-          <button id="settings-tab-integration" class="settings-nav-link" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="settings-panel-host" data-view-target="integration" data-i18n="settings.integration">Integration</button>
-          <button id="settings-tab-test" class="settings-nav-link" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="settings-panel-host" data-view-target="test" data-i18n="settings.test">Test</button>
+          <button id="settings-tab-display" class="settings-nav-link is-active" type="button" role="tab" aria-selected="true" tabindex="0" aria-controls="settings-panel-host" data-view-target="appearance" data-i18n="settings.appearance">Halo</button>
+          <button id="settings-tab-integration" class="settings-nav-link" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="settings-panel-host" data-view-target="integration" data-i18n="settings.integration">Connection &amp; runtime</button>
         </nav>
         <button id="settings-tab-animation" type="button" hidden data-settings-compat-target="appearance" aria-hidden="true" tabindex="-1"></button>
       </aside>
@@ -28,8 +26,8 @@
       <section class="settings-workbench">
         <header class="settings-header">
           <div class="settings-header-copy">
-            <h1 id="settings-view-title" data-i18n="settings.appearance">Appearance</h1>
-            <p id="settings-view-description" class="settings-header-context" data-i18n="settings.description.appearance">Shape your Halo, from curve to motion.</p>
+            <h1 id="settings-view-title" data-i18n="settings.appearance">Halo</h1>
+            <p id="settings-view-description" class="settings-header-context" data-i18n="settings.description.appearance">Choose a curve, tune its appearance, and preview every state.</p>
           </div>
           <div class="settings-header-controls">
             <label class="language-row" for="language">
@@ -43,227 +41,278 @@
               <span data-i18n="settings.overlayEnabled">Overlay enabled</span>
               <input id="enabled" name="enabled" type="checkbox" checked />
             </label>
-            <span id="settings-save-status" class="settings-save-status" role="status" data-i18n="settings.saveStatus.ready">Ready</span>
+            <span id="settings-save-status" class="settings-save-status" role="status" data-i18n="settings.saveStatus.ready">Changes save automatically</span>
+            <button id="retry-save" type="button" hidden data-i18n="settings.retrySave">Retry saving</button>
           </div>
         </header>
         <p id="settings-feedback" class="settings-feedback" role="status" hidden></p>
+
+        <aside id="setup-guide" class="setup-guide" aria-labelledby="setup-guide-title">
+          <div>
+            <strong id="setup-guide-title" data-i18n="settings.setupGuideTitle">Connect Halo to Codex</strong>
+            <p data-i18n="settings.setupGuideHint">Set up the plugin when you are ready to show task states on your desktop.</p>
+          </div>
+          <div class="button-row">
+            <button id="open-connection-guide" type="button" data-i18n="settings.openConnectionGuide">View setup</button>
+            <button id="dismiss-setup-guide" type="button" data-i18n="settings.dismissSetupGuide">Dismiss</button>
+          </div>
+        </aside>
 
         <form id="settings-form" class="settings-dashboard">
           <div id="settings-panel-host" class="settings-panel-host" role="tabpanel" aria-labelledby="settings-tab-display"></div>
         </form>
 
         <template data-view-template="appearance">
-          <fieldset id="display-section" class="settings-panel settings-panel-display" data-section="display">
-            <legend data-i18n="settings.curveProfile">Curve scheme</legend>
-            <div class="field-stack">
-              <div class="curve-picker-entry">
-                <canvas id="curve-picker-current" width="160" height="160" aria-hidden="true"></canvas>
-                <strong id="curve-picker-name">Original Thinking</strong>
-                <button id="curve-picker-open" type="button" aria-haspopup="dialog" aria-controls="curve-picker-dialog" data-i18n="settings.changeCurve">Change</button>
+          <div class="appearance-workspace">
+            <section class="preview-stage" aria-labelledby="preview-title" aria-describedby="preview-hint">
+              <div class="preview-heading">
+                <h2 id="preview-title" data-i18n="settings.previewSample">Sample preview</h2>
+                <span id="preview-state-label" role="status">Thinking</span>
               </div>
-              <select id="curve-id" name="curve_id" hidden aria-hidden="true" tabindex="-1">
-                <option value="original-thinking" data-i18n="settings.curves.originalThinking">Original Thinking</option>
-                <option value="thinking-five" data-i18n="settings.curves.thinkingFive">Thinking Five</option>
-                <option value="thinking-nine" data-i18n="settings.curves.thinkingNine">Thinking Nine</option>
-                <option value="rose-orbit" data-i18n="settings.curves.roseOrbit">Rose Orbit</option>
-                <option value="rose-curve" data-i18n="settings.curves.roseCurve">Rose Curve</option>
-                <option value="rose-two" data-i18n="settings.curves.roseTwo">Rose Two</option>
-                <option value="rose-three" data-i18n="settings.curves.roseThree">Rose Three</option>
-                <option value="rose-four" data-i18n="settings.curves.roseFour">Rose Four</option>
-                <option value="lissajous-drift" data-i18n="settings.curves.lissajousDrift">Lissajous Drift</option>
-                <option value="lemniscate-bloom" data-i18n="settings.curves.lemniscateBloom">Lemniscate Bloom</option>
-                <option value="hypotrochoid-loop" data-i18n="settings.curves.hypotrochoidLoop">Hypotrochoid Loop</option>
-                <option value="three-petal-spiral" data-i18n="settings.curves.threePetalSpiral">Three-Petal Spiral</option>
-                <option value="four-petal-spiral" data-i18n="settings.curves.fourPetalSpiral">Four-Petal Spiral</option>
-                <option value="five-petal-spiral" data-i18n="settings.curves.fivePetalSpiral">Five-Petal Spiral</option>
-                <option value="six-petal-spiral" data-i18n="settings.curves.sixPetalSpiral">Six-Petal Spiral</option>
-                <option value="butterfly-phase" data-i18n="settings.curves.butterflyPhase">Butterfly Phase</option>
-                <option value="cardioid-glow" data-i18n="settings.curves.cardioidGlow">Cardioid Glow</option>
-                <option value="cardioid-heart" data-i18n="settings.curves.cardioidHeart">Cardioid Heart</option>
-                <option value="heart-wave" data-i18n="settings.curves.heartWave">Heart Wave</option>
-                <option value="spiral-search" data-i18n="settings.curves.spiralSearch">Spiral Search</option>
-              </select>
-            </div>
-            <div class="subsection-heading">
-              <h2 data-i18n="settings.curveParameters">Curve parameters</h2>
-              <button id="reset-curve-parameters" type="button" data-i18n="settings.resetCurveParameters">Reset curve parameters</button>
-            </div>
-            <div id="curve-parameters" class="two-column"></div>
-            <output id="formula" class="formula" aria-label="Active formula" data-i18n-aria-label="settings.activeFormula"></output>
-          </fieldset>
-          <fieldset id="animation-section" class="settings-panel settings-panel-animation" data-section="animation">
-            <legend data-i18n="settings.renderer">Renderer</legend>
-            <div class="range-field">
-              <div class="field-label-row">
-                <label for="opacity" data-i18n="settings.opacity">Opacity</label>
-                <output id="opacity-value" for="opacity">100%</output>
+              <canvas id="settings-preview" width="400" height="400" aria-hidden="true"></canvas>
+              <div class="preview-notes">
+                <p id="preview-hint" data-i18n="settings.previewHint">Selecting a state only changes this sample. Appearance edits apply to your desktop and save automatically.</p>
+                <p data-i18n="settings.previewEnabledHint">The sample stays visible when desktop Halo is off.</p>
               </div>
-              <input id="opacity" name="opacity" type="range" min="0.1" max="1" step="0.01" value="1" />
-            </div>
-            <div class="two-column curve-animation-controls">
-              <div class="range-field">
-                <div class="field-label-row">
-                  <label for="particle-count" data-i18n="settings.particleCount">Particle count</label>
-                  <output id="particle-count-value" for="particle-count">64</output>
-                </div>
-                <input id="particle-count" name="particle_count" type="range" min="24" max="140" step="1" value="64" />
-              </div>
-              <div class="range-field">
-                <div class="field-label-row">
-                  <label for="trail-span" data-i18n="settings.trailSpan">Trail span</label>
-                  <output id="trail-span-value" for="trail-span">0.38</output>
-                </div>
-                <input id="trail-span" name="trail_span" type="range" min="0.12" max="0.68" step="0.01" value="0.38" />
-              </div>
-              <div class="range-field">
-                <div class="field-label-row">
-                  <label for="duration-ms" data-i18n="settings.loopDuration">Loop duration (s)</label>
-                  <output id="duration-ms-value" for="duration-ms">5 s</output>
-                </div>
-                <input id="duration-ms" name="duration_ms" type="range" min="1" max="12" step="1" value="5" data-unit="seconds" />
-              </div>
-              <div class="range-field">
-                <div class="field-label-row">
-                  <label for="pulse-duration-ms" data-i18n="settings.pulseDuration">Pulse duration (s)</label>
-                  <output id="pulse-duration-ms-value" for="pulse-duration-ms">5 s</output>
-                </div>
-                <input id="pulse-duration-ms" name="pulse_duration_ms" type="range" min="1" max="10" step="1" value="5" data-unit="seconds" />
-              </div>
-              <div class="range-field">
-                <div class="field-label-row">
-                  <label for="rotation-duration-ms" data-i18n="settings.rotationDuration">Rotation duration (s)</label>
-                  <output id="rotation-duration-ms-value" for="rotation-duration-ms">28 s</output>
-                </div>
-                <input id="rotation-duration-ms" name="rotation_duration_ms" type="range" min="1" max="60" step="1" value="28" data-unit="seconds" />
-              </div>
-              <div class="range-field">
-                <div class="field-label-row">
-                  <label for="stroke-width" data-i18n="settings.strokeWidth">Stroke width</label>
-                  <output id="stroke-width-value" for="stroke-width">5.5</output>
-                </div>
-                <input id="stroke-width" name="stroke_width" type="range" min="1.0" max="7.5" step="0.1" value="5.5" />
-              </div>
-            </div>
-            <label class="switch-row" for="glow-enabled">
-              <span data-i18n="settings.glow">Glow</span>
-              <input id="glow-enabled" name="glow_enabled" type="checkbox" />
-            </label>
-            <div class="section-heading-row">
-              <button id="reset-animation" type="button" data-i18n="settings.resetAnimation">Reset curve animation</button>
-            </div>
-            <section class="audio-settings" aria-labelledby="audio-heading">
-              <div class="subsection-heading">
-                <h2 id="audio-heading" data-i18n="settings.audio.title">Audio visualization</h2>
-              </div>
-              <label class="switch-row" for="audio-enabled">
-                <span data-i18n="settings.audio.enabled">System audio</span>
-                <input id="audio-enabled" name="audio_enabled" type="checkbox" aria-describedby="audio-source" />
-              </label>
-              <p id="audio-source" class="audio-help" data-i18n="settings.audio.source">Follow sound from your default output. Processed on this device, never recorded or uploaded.</p>
-              <div class="range-field">
-                <div class="field-label-row">
-                  <label for="audio-intensity" data-i18n="settings.audio.intensity">Intensity</label>
-                  <output id="audio-intensity-value" for="audio-intensity" aria-live="off">50%</output>
-                </div>
-                <input id="audio-intensity" name="audio_intensity" type="range" min="0" max="100" step="1" value="50" data-unit="percent" aria-describedby="audio-mapping" disabled />
-                <p id="audio-mapping" class="audio-help" data-i18n="settings.audio.mapping">Bass scales the curve; mids and highs animate particles and detail. At 0%, only the level meter responds.</p>
-              </div>
-              <div class="audio-feedback">
-                <p id="audio-status" class="audio-status" role="status" aria-live="polite">Off</p>
-                <meter id="audio-level" min="0" max="1" value="0" aria-label="System audio level" data-i18n-aria-label="settings.audio.level" aria-live="off"></meter>
-              </div>
-              <p id="audio-help" class="audio-help" hidden></p>
-              <button id="audio-retry" class="audio-retry" type="button" hidden data-i18n="settings.audio.retry">Retry capture</button>
             </section>
-          </fieldset>
+            <div class="appearance-controls">
+              <fieldset id="display-section" class="settings-panel settings-panel-display" data-section="display">
+                <legend data-i18n="settings.curveProfile">Curve scheme</legend>
+                <div class="field-stack">
+                  <div class="curve-picker-entry">
+                    <canvas id="curve-picker-current" width="160" height="160" aria-hidden="true"></canvas>
+                    <strong id="curve-picker-name">Original Thinking</strong>
+                    <button id="curve-picker-open" type="button" aria-haspopup="dialog" aria-controls="curve-picker-dialog" data-i18n="settings.changeCurve">Change</button>
+                  </div>
+                  <select id="curve-id" name="curve_id" hidden aria-hidden="true" tabindex="-1">
+                    <option value="original-thinking" data-i18n="settings.curves.originalThinking">Original Thinking</option>
+                    <option value="thinking-five" data-i18n="settings.curves.thinkingFive">Thinking Five</option>
+                    <option value="thinking-nine" data-i18n="settings.curves.thinkingNine">Thinking Nine</option>
+                    <option value="rose-orbit" data-i18n="settings.curves.roseOrbit">Rose Orbit</option>
+                    <option value="rose-curve" data-i18n="settings.curves.roseCurve">Rose Curve</option>
+                    <option value="rose-two" data-i18n="settings.curves.roseTwo">Rose Two</option>
+                    <option value="rose-three" data-i18n="settings.curves.roseThree">Rose Three</option>
+                    <option value="rose-four" data-i18n="settings.curves.roseFour">Rose Four</option>
+                    <option value="lissajous-drift" data-i18n="settings.curves.lissajousDrift">Lissajous Drift</option>
+                    <option value="lemniscate-bloom" data-i18n="settings.curves.lemniscateBloom">Lemniscate Bloom</option>
+                    <option value="hypotrochoid-loop" data-i18n="settings.curves.hypotrochoidLoop">Hypotrochoid Loop</option>
+                    <option value="three-petal-spiral" data-i18n="settings.curves.threePetalSpiral">Three-Petal Spiral</option>
+                    <option value="four-petal-spiral" data-i18n="settings.curves.fourPetalSpiral">Four-Petal Spiral</option>
+                    <option value="five-petal-spiral" data-i18n="settings.curves.fivePetalSpiral">Five-Petal Spiral</option>
+                    <option value="six-petal-spiral" data-i18n="settings.curves.sixPetalSpiral">Six-Petal Spiral</option>
+                    <option value="butterfly-phase" data-i18n="settings.curves.butterflyPhase">Butterfly Phase</option>
+                    <option value="cardioid-glow" data-i18n="settings.curves.cardioidGlow">Cardioid Glow</option>
+                    <option value="cardioid-heart" data-i18n="settings.curves.cardioidHeart">Cardioid Heart</option>
+                    <option value="heart-wave" data-i18n="settings.curves.heartWave">Heart Wave</option>
+                    <option value="spiral-search" data-i18n="settings.curves.spiralSearch">Spiral Search</option>
+                  </select>
+                </div>
+                <button id="undo-curve" class="undo-curve" type="button" hidden data-i18n="settings.undoCurve" data-i18n-aria-label="settings.undoCurveHint" aria-label="Restore the previous curve shape and animation; keep other settings.">Restore previous curve &amp; animation</button>
+                <div class="basic-appearance">
+                  <div class="range-field">
+                    <div class="field-label-row">
+                      <label for="opacity" data-i18n="settings.opacity">Opacity</label>
+                      <output id="opacity-value" for="opacity">100%</output>
+                    </div>
+                    <input id="opacity" name="opacity" type="range" min="0.1" max="1" step="0.01" value="1" />
+                  </div>
+                  <label class="switch-row" for="glow-enabled">
+                    <span data-i18n="settings.glow">Glow</span>
+                    <input id="glow-enabled" name="glow_enabled" type="checkbox" />
+                  </label>
+                </div>
+              </fieldset>
+              <fieldset id="colors-section" class="settings-panel settings-panel-wide" data-section="colors">
+                <legend data-i18n="settings.statePalette">State palette</legend>
+                <div class="section-heading-row">
+                  <span class="section-helper" data-i18n="settings.colorSelectionHint">Select a state to edit its color</span>
+                  <span class="state-color-count" data-i18n="settings.stateCount">7 states</span>
+                </div>
+                <div class="color-master-detail">
+                  <div id="color-state-list" class="color-state-list">
+                    <div id="color-state-tabs" class="color-state-tabs" role="tablist" aria-orientation="horizontal" aria-label="Color states" data-i18n-aria-label="settings.colors"></div>
+                  </div>
+                  <div class="color-detail-column">
+                    <div id="color-state-panel" class="color-state-panel" role="tabpanel" aria-labelledby="color-tab-thinking"></div>
+                    <details id="color-presets-details" class="color-presets-disclosure">
+                      <summary data-i18n="settings.presetPalettes">Preset palettes</summary>
+                      <div id="color-presets" class="color-presets"></div>
+                    </details>
+                  </div>
+                </div>
+              </fieldset>
+              <details id="advanced-settings" class="settings-disclosure">
+                <summary data-i18n="settings.advancedSettings">Advanced adjustments</summary>
+                <div class="disclosure-content">
+                  <p class="section-helper" data-i18n="settings.advancedHint">Fine-tune this curve. Each reset affects only its own group.</p>
+                  <section class="settings-subsection" aria-label="Curve parameters" data-i18n-aria-label="settings.curveParameters">
+                    <div class="subsection-heading">
+                      <h2 data-i18n="settings.curveParameters">Curve parameters</h2>
+                      <button id="reset-curve-parameters" type="button" data-i18n="settings.resetCurveParameters">Reset curve parameters</button>
+                    </div>
+                    <div id="curve-parameters" class="two-column"></div>
+                  </section>
+                  <section id="animation-section" class="settings-subsection" data-section="animation" aria-labelledby="animation-heading">
+                    <div class="subsection-heading">
+                      <h2 id="animation-heading" data-i18n="settings.renderer">Animation &amp; lines</h2>
+                      <button id="reset-animation" type="button" data-i18n="settings.resetAnimation">Reset curve animation</button>
+                    </div>
+                    <div class="two-column curve-animation-controls">
+                      <div class="range-field">
+                        <div class="field-label-row">
+                          <label for="particle-count" data-i18n="settings.particleCount">Particle count</label>
+                          <output id="particle-count-value" for="particle-count">64</output>
+                        </div>
+                        <input id="particle-count" name="particle_count" type="range" min="24" max="140" step="1" value="64" />
+                      </div>
+                      <div class="range-field">
+                        <div class="field-label-row">
+                          <label for="trail-span" data-i18n="settings.trailSpan">Trail span</label>
+                          <output id="trail-span-value" for="trail-span">0.38</output>
+                        </div>
+                        <input id="trail-span" name="trail_span" type="range" min="0.12" max="0.68" step="0.01" value="0.38" />
+                      </div>
+                      <div class="range-field">
+                        <div class="field-label-row">
+                          <label for="duration-ms" data-i18n="settings.loopDuration">Loop duration (s)</label>
+                          <output id="duration-ms-value" for="duration-ms">5 s</output>
+                        </div>
+                        <input id="duration-ms" name="duration_ms" type="range" min="1" max="12" step="1" value="5" data-unit="seconds" />
+                      </div>
+                      <div class="range-field">
+                        <div class="field-label-row">
+                          <label for="pulse-duration-ms" data-i18n="settings.pulseDuration">Pulse duration (s)</label>
+                          <output id="pulse-duration-ms-value" for="pulse-duration-ms">5 s</output>
+                        </div>
+                        <input id="pulse-duration-ms" name="pulse_duration_ms" type="range" min="1" max="10" step="1" value="5" data-unit="seconds" />
+                      </div>
+                      <div class="range-field">
+                        <div class="field-label-row">
+                          <label for="rotation-duration-ms" data-i18n="settings.rotationDuration">Rotation duration (s)</label>
+                          <output id="rotation-duration-ms-value" for="rotation-duration-ms">28 s</output>
+                        </div>
+                        <input id="rotation-duration-ms" name="rotation_duration_ms" type="range" min="1" max="60" step="1" value="28" data-unit="seconds" />
+                      </div>
+                      <div class="range-field">
+                        <div class="field-label-row">
+                          <label for="stroke-width" data-i18n="settings.strokeWidth">Stroke width</label>
+                          <output id="stroke-width-value" for="stroke-width">5.5</output>
+                        </div>
+                        <input id="stroke-width" name="stroke_width" type="range" min="1.0" max="7.5" step="0.1" value="5.5" />
+                      </div>
+                    </div>
+                    <p class="section-helper" data-i18n="settings.trailSpanHint">A longer trail leaves more of the curve visible behind each particle.</p>
+                  </section>
+                </div>
+              </details>
+              <details id="formula-details" class="settings-disclosure">
+                <summary data-i18n="settings.activeFormula">Active formula</summary>
+                <output id="formula" class="formula" aria-label="Active formula" data-i18n-aria-label="settings.activeFormula"></output>
+              </details>
+              <details id="audio-settings-details" class="settings-disclosure">
+                <summary id="audio-heading" data-i18n="settings.audio.title">Audio visualization</summary>
+                <section class="audio-settings" aria-labelledby="audio-heading">
+
+                  <label class="switch-row" for="audio-enabled">
+                    <span data-i18n="settings.audio.enabled">System audio</span>
+                    <input id="audio-enabled" name="audio_enabled" type="checkbox" aria-describedby="audio-source" />
+                  </label>
+                  <p id="audio-source" class="audio-help" data-i18n="settings.audio.source">Follow sound from your default output. Processed on this device, never recorded or uploaded.</p>
+                  <div class="range-field">
+                    <div class="field-label-row">
+                      <label for="audio-intensity" data-i18n="settings.audio.intensity">Intensity</label>
+                      <output id="audio-intensity-value" for="audio-intensity" aria-live="off">50%</output>
+                    </div>
+                    <input id="audio-intensity" name="audio_intensity" type="range" min="0" max="100" step="1" value="50" data-unit="percent" aria-describedby="audio-mapping" disabled />
+                    <p id="audio-mapping" class="audio-help" data-i18n="settings.audio.mapping">Bass scales the curve; mids and highs animate particles and detail. At 0%, only the level meter responds.</p>
+                  </div>
+                  <div class="audio-feedback">
+                    <p id="audio-status" class="audio-status" role="status" aria-live="polite">Off</p>
+                    <meter id="audio-level" min="0" max="1" value="0" aria-label="System audio level" data-i18n-aria-label="settings.audio.level" aria-live="off"></meter>
+                  </div>
+                  <p id="audio-help" class="audio-help" hidden></p>
+                  <button id="audio-retry" class="audio-retry" type="button" hidden data-i18n="settings.audio.retry">Retry capture</button>
+                </section>
+              </details>
+            </div>
+          </div>
           <dialog id="curve-picker-dialog" class="curve-picker-dialog" aria-labelledby="curve-picker-title">
             <div class="curve-picker-header">
               <h2 id="curve-picker-title" data-i18n="settings.chooseCurve">Choose a curve</h2>
               <button id="curve-picker-close" type="button" data-i18n="settings.closeCurvePicker">Close</button>
             </div>
+            <p id="curve-picker-apply-hint" class="section-helper" data-i18n="settings.curveApplyHint">Applying a different curve loads its shape and animation defaults. Colors and other settings stay as they are.</p>
             <div id="curve-picker-families" class="curve-picker-family-grid" role="group" aria-label="Curve family" data-i18n-aria-label="settings.curveFamily"></div>
             <h3 id="curve-picker-variants-heading" class="curve-picker-variants-heading" aria-live="polite" data-i18n="settings.curveVariants">Preset variants</h3>
             <div id="curve-picker-grid" class="curve-picker-grid" role="group" aria-labelledby="curve-picker-variants-heading"></div>
             <div class="curve-picker-feedback">
               <p id="curve-picker-status" role="status" aria-live="polite"></p>
+              <button id="curve-picker-apply" type="button" aria-describedby="curve-picker-apply-hint" data-i18n="settings.applyCurve">Apply</button>
               <button id="curve-picker-retry" type="button" hidden data-i18n="settings.retryCurveSave">Retry</button>
             </div>
           </dialog>
         </template>
 
-        <template data-view-template="colors">
-          <fieldset id="colors-section" class="settings-panel settings-panel-wide" data-section="colors">
-            <legend data-i18n="settings.statePalette">State palette</legend>
-            <div class="section-heading-row">
-              <span class="section-helper" data-i18n="settings.colorSelectionHint">Select a state to edit its color</span>
-              <span class="state-color-count" data-i18n="settings.stateCount">7 states</span>
-            </div>
-            <div class="color-master-detail">
-              <div id="color-state-list" class="color-state-list">
-                <div id="color-state-tabs" class="color-state-tabs" role="tablist" aria-orientation="vertical" aria-label="Color states" data-i18n-aria-label="settings.colors"></div>
-              </div>
-              <div class="color-detail-column">
-                <div id="color-state-panel" class="color-state-panel" role="tabpanel" aria-labelledby="color-tab-idle"></div>
-                <details id="color-presets-details" class="color-presets-disclosure">
-                  <summary data-i18n="settings.presetPalettes">Preset palettes</summary>
-                  <div id="color-presets" class="color-presets"></div>
-                </details>
-              </div>
-            </div>
-          </fieldset>
-        </template>
-
         <template data-view-template="integration">
           <fieldset id="integration-section" class="settings-panel settings-panel-wide" data-section="integration">
-            <legend data-i18n="settings.connections">Connection settings</legend>
-            <div class="integration-grid">
-              <section class="settings-subsection" aria-labelledby="plugin-heading">
-                <div class="subsection-heading">
-                  <h2 id="plugin-heading" data-i18n="settings.plugin">Codex Plugin</h2>
-                </div>
-                <p id="plugin-status" class="status-line" role="status" data-i18n="settings.pluginReady">Plugin setup</p>
-                <div class="button-row">
-                  <button id="install-plugin" type="button" data-i18n="settings.installPlugin">Install Plugin</button>
-                  <button id="uninstall-plugin" type="button" data-i18n="settings.uninstallPlugin">Uninstall Plugin</button>
-                </div>
-              </section>
-              <section class="settings-subsection" aria-labelledby="diagnostics-heading">
-                <div class="subsection-heading">
-                  <h2 id="diagnostics-heading" data-i18n="settings.diagnostics">Diagnostics</h2>
-                </div>
-                <p id="diagnostics" class="diagnostics" aria-live="polite" data-i18n="settings.diagnosticsLoading">State: Idle | Last event: never</p>
-                <div class="button-row">
-                  <button id="reset-position" type="button" data-i18n="settings.resetPosition">Reset position</button>
-                  <button id="export-diagnostics" type="button" data-i18n="settings.exportDiagnostics">Export diagnostics</button>
-                </div>
-              </section>
-            </div>
-            <div class="subsection-heading runtime-heading"><h2 data-i18n="settings.runtime">Startup &amp; behavior</h2></div>
-            <div class="settings-runtime">
-              <label class="switch-row" for="start-at-login">
-                <span data-i18n="settings.startAtLogin">Start at login</span>
-                <input id="start-at-login" name="start_at_login" type="checkbox" />
-              </label>
-              <label class="switch-row" for="follow-codex-lifecycle">
-                <span data-i18n="settings.followCodexLifecycle">Follow Codex lifecycle</span>
-                <input id="follow-codex-lifecycle" name="follow_codex_lifecycle" type="checkbox" />
-              </label>
-            </div>
-          </fieldset>
-        </template>
-
-        <template data-view-template="test">
-          <fieldset id="test-section" class="settings-panel settings-panel-wide" data-section="test">
-            <legend data-i18n="settings.simulateState">Simulate state</legend>
-            <div class="state-grid">
-              <button type="button" data-state="idle" data-i18n="settings.states.idle">Idle</button>
-              <button type="button" data-state="thinking" data-i18n="settings.states.thinking">Thinking</button>
-              <button type="button" data-state="executing" data-i18n="settings.states.executing">Executing</button>
-              <button type="button" data-state="input_needed" data-i18n="settings.states.inputNeeded">Input needed</button>
-              <button type="button" data-state="completed" data-i18n="settings.states.completed">Completed</button>
-              <button type="button" data-state="interrupted" data-i18n="settings.states.interrupted">Interrupted</button>
-              <button type="button" data-state="compacting" data-i18n="settings.states.compacting">Compacting</button>
-            </div>
+            <legend data-i18n="settings.connectionGuideTitle">Show Codex task states on your desktop</legend>
+            <ol class="connection-steps">
+              <li data-i18n="settings.connectionStepInstall">Install the plugin below to let Codex send task events to Halo.</li>
+              <li data-i18n="settings.connectionStepTask">Start a task in Codex.</li>
+              <li data-i18n="settings.connectionStepInspect">Check the last event in diagnostics to confirm what Halo received.</li>
+            </ol>
+            <p class="section-helper" data-i18n="settings.connectionEvidenceHint">Installation results and the last received event are separate facts. A desktop test does not verify the connection.</p>
+            <section class="settings-subsection" aria-labelledby="plugin-heading">
+              <div class="subsection-heading">
+                <h2 id="plugin-heading" data-i18n="settings.plugin">Codex Plugin</h2>
+              </div>
+              <p id="plugin-status" class="status-line" role="status" data-i18n="settings.pluginReady">Plugin setup</p>
+              <div class="button-row">
+                <button id="install-plugin" type="button" data-i18n="settings.installPlugin">Install Plugin</button>
+                <button id="uninstall-plugin" type="button" data-i18n="settings.uninstallPlugin">Uninstall Plugin</button>
+              </div>
+            </section>
+            <section class="settings-subsection" aria-labelledby="runtime-heading">
+              <div class="subsection-heading"><h2 id="runtime-heading" data-i18n="settings.runtime">Startup &amp; behavior</h2></div>
+              <div class="settings-runtime">
+                <label class="switch-row" for="start-at-login">
+                  <span data-i18n="settings.startAtLogin">Start at login</span>
+                  <input id="start-at-login" name="start_at_login" type="checkbox" />
+                </label>
+                <label class="switch-row" for="follow-codex-lifecycle">
+                  <span data-i18n="settings.followCodexLifecycle">Follow Codex lifecycle</span>
+                  <input id="follow-codex-lifecycle" name="follow_codex_lifecycle" type="checkbox" />
+                </label>
+              </div>
+            </section>
+            <details id="advanced-diagnostics" class="settings-disclosure">
+              <summary data-i18n="settings.advancedDiagnostics">Advanced diagnostics</summary>
+              <div class="disclosure-content">
+                <section class="settings-subsection" aria-labelledby="diagnostics-heading">
+                  <div class="subsection-heading">
+                    <h2 id="diagnostics-heading" data-i18n="settings.diagnostics">Diagnostics</h2>
+                  </div>
+                  <p id="diagnostics" class="diagnostics" aria-live="polite" data-i18n="settings.diagnosticsLoading">No event data received yet</p>
+                  <div class="button-row">
+                    <button id="reset-position" type="button" data-i18n="settings.resetPosition">Reset position</button>
+                    <button id="export-diagnostics" type="button" data-i18n="settings.exportDiagnostics">Export diagnostics</button>
+                  </div>
+                </section>
+                <section class="settings-subsection" aria-labelledby="desktop-test-heading">
+                  <h2 id="desktop-test-heading" data-i18n="settings.desktopTest">Test on desktop</h2>
+                  <p id="desktop-test-hint" class="section-helper" data-i18n="settings.desktopTestHint">These buttons change the real desktop display. New Codex events can replace the test state under the usual rules; a successful test does not prove that task events are connected.</p>
+                  <div id="desktop-test-controls" class="state-grid" role="group" aria-labelledby="desktop-test-heading" aria-describedby="desktop-test-hint">
+                    <button type="button" data-desktop-test-state="idle" data-i18n="settings.states.idle">Idle</button>
+                    <button type="button" data-desktop-test-state="thinking" data-i18n="settings.states.thinking">Thinking</button>
+                    <button type="button" data-desktop-test-state="executing" data-i18n="settings.states.executing">Executing</button>
+                    <button type="button" data-desktop-test-state="input_needed" data-i18n="settings.states.inputNeeded">Input needed</button>
+                    <button type="button" data-desktop-test-state="completed" data-i18n="settings.states.completed">Completed</button>
+                    <button type="button" data-desktop-test-state="interrupted" data-i18n="settings.states.interrupted">Interrupted</button>
+                    <button type="button" data-desktop-test-state="compacting" data-i18n="settings.states.compacting">Compacting</button>
+                  </div>
+                </section>
+              </div>
+            </details>
           </fieldset>
         </template>
       </section>

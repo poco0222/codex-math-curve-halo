@@ -821,7 +821,7 @@ test('settings-changed waits behind a queued local save', async () => {
   assert.equal(store.getSettings().curve_id, 'spiral-search');
 
   const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
-  assert.match(source, /settingsStore\.enqueue\(\(\) => applySettings\(payload\)\)/);
+  assert.match(source, /settingsStore\.enqueue\(\(\) => applySettings\(payload, \{ receivedLocalEdits \}\)\)/);
 });
 
 test('settings controller serializes reset after a blocked save and applies its response', async () => {
@@ -888,13 +888,13 @@ test('settings controller serializes reset after a blocked save and applies its 
   const make = (options) => new FakeNode(options);
   const settingsPanelHost = make({ id: 'settings-panel-host' });
   const saveStatus = make({ id: 'settings-save-status' });
-  const viewTabs = ['appearance', 'colors', 'integration', 'test'].map((viewId) => make({
+  const viewTabs = ['appearance', 'integration'].map((viewId) => make({
     tagName: 'button',
     id: `settings-tab-${viewId}`,
     dataset: { viewTarget: viewId },
   }));
   const templates = new Map();
-  for (const viewId of ['appearance', 'colors', 'integration', 'test']) {
+  for (const viewId of ['appearance', 'integration']) {
     templates.set(viewId, {
       content: {
         cloneNode() {
@@ -971,7 +971,7 @@ test('settings controller serializes reset after a blocked save and applies its 
   try {
     await import(`./settings.js?controller-reset-queue=${Date.now()}`);
     await new Promise((resolve) => setImmediate(resolve));
-    await viewTabs[2].dispatch('click');
+    await viewTabs[1].dispatch('click');
 
     const startAtLogin = findById('start-at-login');
     const resetPosition = findById('reset-position');
@@ -1439,13 +1439,13 @@ test('appearance offers an accessible visual curve dialog while retaining the le
   assert.match(html, /id="curve-picker-retry"/);
 });
 
-test('settings navigation uses a localized Test label', async () => {
+test('settings navigation groups explicit desktop tests within Integration', async () => {
   const html = await readFile(new URL('./settings.html', import.meta.url), 'utf8');
   const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
 
-  assert.match(html, /data-view-target="test"[^>]*data-i18n="settings\.test">Test<\/button>/);
-  assert.match(html, /<legend data-i18n="settings\.simulateState">Simulate state<\/legend>/);
-  assert.match(source, /labelKey: 'settings\.test'/);
+  assert.match(html, /data-view-target="integration"[^>]*data-i18n="settings\.integration"/);
+  assert.match(html, /id="desktop-test-controls"/);
+  assert.match(source, /labelKey: 'settings\.integration'/);
   assert.equal(getText('en', 'settings.test'), 'Test');
   assert.equal(getText('zh-CN', 'settings.test'), '测试');
 });
@@ -1566,13 +1566,13 @@ test('settings page uses the Halo Control Room workbench layout', async () => {
   assert.match(html, /data-section="animation"/);
   assert.match(html, /data-section="colors"/);
   assert.match(html, /data-view-target="appearance"/);
-  assert.match(html, /data-view-target="colors"/);
+  assert.doesNotMatch(html, /data-view-target="colors"/);
   assert.match(html, /data-view-target="integration"/);
-  assert.match(html, /data-view-target="test"/);
+  assert.doesNotMatch(html, /data-view-target="test"/);
   assert.match(html, /data-view-template="appearance"/);
   assert.match(html, /id="particle-count"/);
   assert.match(html, /id="color-state-list"/);
-  assert.match(html, /id="display-section"[^>]*>[\s\S]*?<\/fieldset>\s*<fieldset id="animation-section"/);
+  assert.match(html, /id="advanced-settings"[\s\S]*?id="animation-section"/);
   assert.doesNotMatch(html, /data-section-target=/);
   assert.match(html, /<details[^>]+id="color-presets-details"/);
   assert.match(css, /\.settings-workbench\s*\{/);
@@ -1595,9 +1595,9 @@ test('settings navigation mounts one strict section at a time', async () => {
 
   assert.match(html, /data-section-nav[^>]*role="tablist"/);
   assert.match(html, /id="settings-panel-host"[^>]*role="tabpanel"/);
-  assert.equal((html.match(/data-view-template=/g) ?? []).length, 4);
+  assert.equal((html.match(/data-view-template=/g) ?? []).length, 2);
   assert.doesNotMatch(css, /scroll-margin-top/);
-  assert.match(css, /@media\s*\(max-width:\s*700px\)[\s\S]*\.settings-sidebar\s*\{[^}]*position:\s*static/);
+  assert.match(css, /@media\s*\(max-width:\s*700px\)[\s\S]*\.settings-sidebar\s*\{[^}]*flex-wrap:\s*wrap/);
   assert.match(css, /@media\s*\(max-width:\s*480px\)[\s\S]*min-height:\s*40px/);
 });
 
@@ -1610,7 +1610,7 @@ test('settings preserves the legacy animation tab as a hidden Appearance compati
   assert.doesNotMatch(html, /id="settings-tab-animation"[^>]*role="tab"/);
   assert.deepEqual(
     [...html.matchAll(/<button[^>]*data-view-target="([^"]+)"/g)].map((match) => match[1]),
-    ['appearance', 'colors', 'integration', 'test'],
+    ['appearance', 'integration'],
   );
   assert.match(source, /document\.getElementById\('settings-tab-animation'\)/);
   assert.match(source, /settingsTabAnimation\?\.addEventListener\('click', \(\) => selectSettingsView\('appearance', true\)\)/);
@@ -1638,7 +1638,7 @@ test('settings View controller mounts one View and roves focus through navigatio
       setAttribute() {},
     };
   };
-  const viewIds = ['appearance', 'colors', 'integration', 'test'];
+  const viewIds = ['appearance', 'integration'];
   tabs.push(...viewIds.map(makeTab));
   const host = {
     children: [],
@@ -1700,8 +1700,8 @@ test('settings View controller mounts one View and roves focus through navigatio
     });
 
     assert.equal(prevented, true);
-    assert.equal(controller.getActiveView(), 'colors');
-    assert.deepEqual(host.children, [{ viewId: 'colors' }]);
+    assert.equal(controller.getActiveView(), 'integration');
+    assert.deepEqual(host.children, [{ viewId: 'integration' }]);
     assert.equal(host.children.length, 1);
     assert.equal(tabs[0].tabIndex, -1);
     assert.equal(tabs[1].tabIndex, 0);
@@ -2034,14 +2034,14 @@ test('settings page exposes a master-detail state color editor', async () => {
   const css = await readFile(new URL('./styles.css', import.meta.url), 'utf8');
 
   assert.match(html, /id="color-state-list"/);
-  assert.match(html, /id="color-state-tabs"[^>]*role="tablist"[^>]*aria-orientation="vertical"/);
+  assert.match(html, /id="color-state-tabs"[^>]*role="tablist"/);
   assert.match(settingsSource, /renderColorStateList/);
   assert.match(settingsSource, /mountColorStateDetail/);
   assert.match(settingsSource, /STATE_COLOR_KEYS/);
   assert.match(css, /\.color-master-detail\s*\{/);
-  assert.match(css, /@media\s*\(max-width:\s*1000px\)[\s\S]*\.color-master-detail\s*\{[^}]*grid-template-columns:\s*1fr/);
+  assert.match(css, /\.color-state-tabs\s*\{[^}]*grid-template-columns:\s*repeat/);
   assert.match(css, /\.color-state-tabs\s*\{[^}]*display:\s*grid/);
-  assert.match(css, /\.settings-shell\s*\{[\s\S]*align-content:\s*start/);
+  assert.match(css, /\.settings-shell\s*\{[^}]*width:\s*min\(100%/);
 });
 
 test('settings color list preserves invalid Hex drafts after blur and refresh', async () => {
@@ -2137,17 +2137,17 @@ test('settings color list preserves invalid Hex drafts after blur and refresh', 
   const language = make({ tagName: 'select', id: 'language', value: 'en', dataset: { i18nAriaLabel: 'settings.language' } });
   const enabled = make({ tagName: 'input', id: 'enabled', type: 'checkbox', checked: true });
   const saveStatus = make({ id: 'settings-save-status', dataset: { i18n: 'settings.saveStatus.ready' } });
-  const viewTabs = ['appearance', 'colors', 'integration', 'test'].map((viewId) => make({
+  const viewTabs = ['appearance', 'integration'].map((viewId) => make({
     tagName: 'button',
     id: `settings-tab-${viewId}`,
     dataset: { viewTarget: viewId },
   }));
   const templates = new Map();
-  for (const viewId of ['appearance', 'colors', 'integration', 'test']) {
+  for (const viewId of ['appearance', 'integration']) {
     templates.set(viewId, {
       content: {
         cloneNode() {
-          if (viewId !== 'colors') return { tagName: 'fieldset', children: [] };
+          if (viewId !== 'appearance') return { tagName: 'fieldset', children: [] };
           const list = make({ id: 'color-state-list' });
           list.append(make({ id: 'color-state-tabs' }));
           return {
@@ -2218,7 +2218,7 @@ test('settings color list preserves invalid Hex drafts after blur and refresh', 
   try {
     const settingsModule = await import(`./settings.js?master-detail-test=${Date.now()}`);
     await new Promise((resolve) => setImmediate(resolve));
-    viewTabs[1].dispatch('click');
+    viewTabs[0].dispatch('click');
 
     const stateTabs = () => findById('color-state-tabs').children;
     const stateRow = (state) => stateTabs().find((row) => row.dataset.colorState === state);
@@ -2228,7 +2228,8 @@ test('settings color list preserves invalid Hex drafts after blur and refresh', 
       .filter((node) => node.className === 'color-editor');
     assert.equal(stateTabs().length, 7);
     assert.equal(stateTabs().filter((row) => row.getAttribute('aria-selected') === 'true').length, 1);
-    assert.deepEqual(stateTabs().map((row) => row.tabIndex), [0, -1, -1, -1, -1, -1, -1]);
+    assert.deepEqual(stateTabs().map((row) => row.tabIndex), [-1, 0, -1, -1, -1, -1, -1]);
+    stateRow('thinking').dispatch('keydown', { key: 'Home', preventDefault() {} });
 
     let prevented = false;
     stateRow('idle').dispatch('keydown', {
@@ -2334,7 +2335,7 @@ test('settings changes reach both overlay and settings windows', async () => {
 
   assert.match(mainSource, /for target in \["main", "settings"\]/);
   assert.match(mainSource, /app\.emit_to\(target, "settings-changed", settings\.clone\(\)\)/);
-  assert.match(settingsSource, /settingsBridge\.subscribe\(\s*'settings-changed',\s*\(\{ payload \}\) => settingsStore\.enqueue\(\(\) => applySettings\(payload\)\)/);
+  assert.match(settingsSource, /settingsBridge\.subscribe\(\s*'settings-changed',\s*\(\{ payload \}\) => \{[\s\S]*?settingsStore\.enqueue\(\(\) => applySettings\(payload, \{ receivedLocalEdits \}\)\)/);
 });
 
 test('macOS private API is target-scoped for cross-target checks', async () => {
@@ -2455,7 +2456,7 @@ test('settings feedback only announces changed diagnostics and reports errors ou
   let writes = 0;
   let text = '';
   const feedback = { dataset: {}, hidden: true, get textContent() { return text; }, set textContent(value) { text = value; writes++; } };
-  const ui = { activeView: 'test', diagnosticsSnapshot: { state: 'idle', updated_at_ms: 0 }, setupError: null };
+  const ui = { activeView: 'integration', diagnosticsSnapshot: { state: 'idle', updated_at_ms: 0 }, setupError: null };
   const context = {
     document: { getElementById: id => id === 'settings-feedback' ? feedback : null },
     settingsStore: { getUiState: () => ui, setUi: patch => Object.assign(ui, patch) },

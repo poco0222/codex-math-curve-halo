@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-12T14:37:03.9386473+08:00",
+  "generatedAt": "2026-09-12T08:09:13.599Z",
   "title": "Design System: Codex Halo Settings",
   "extensions": {
     "colorMeta": {
@@ -14,7 +14,7 @@
       },
       "panel": {
         "role": "neutral",
-        "displayName": "分组面"
+        "displayName": "曲线对话框面"
       }
     },
     "typographyMeta": {
@@ -46,11 +46,11 @@
     ],
     "breakpoints": [
       {
-        "name": "compact-desktop-max",
-        "value": "1000px"
+        "name": "compact-preview-max",
+        "value": "900px"
       },
       {
-        "name": "top-navigation-max",
+        "name": "wrapped-navigation-max",
         "value": "700px"
       },
       {
@@ -61,10 +61,10 @@
   },
   "components": [
     {
-      "name": "安装按钮",
+      "name": "主要按钮",
       "kind": "button",
       "refersTo": "button-primary",
-      "description": "实心暖橙用于主要安装动作；示例只展示视觉。",
+      "description": "实心暖橙用于安装及应用曲线；示例只展示视觉。",
       "html": "<button class=\"ds-primary\" type=\"button\">安装插件</button>",
       "css": ".ds-primary{min-height:36px;padding:8px 14px;border:1px solid transparent;border-radius:6px;background:#f5a66a;color:#26190f;font:600 14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer;transition:background-color 120ms ease-out,border-color 120ms ease-out}.ds-primary:hover{background:#ffc397}.ds-primary:focus-visible{outline:2px solid #f5a66a;outline-offset:3px}.ds-primary:disabled{opacity:.55;cursor:not-allowed}@media(prefers-reduced-motion:reduce){.ds-primary{transition:none}}"
     },
@@ -93,20 +93,20 @@
       "css": ".ds-field-label{display:grid;gap:4px;color:#d4d5d8;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.ds-input{min-width:0;min-height:36px;padding:7px 10px;border:1px solid #61656b;border-radius:6px;background:#292b2e;color:#f1f1f2;font:inherit;caret-color:#f5a66a}.ds-input:hover{border-color:#8d9197}.ds-input:focus-visible{outline:2px solid #f5a66a;outline-offset:3px}.ds-input:invalid{border-color:#ffaaaa}.ds-input:disabled{opacity:.55;cursor:not-allowed}"
     },
     {
-      "name": "活动导航项",
+      "name": "两项顶部导航",
       "kind": "nav",
       "refersTo": "navigation-active",
-      "description": "暖底、暖色文字与实心圆点共同表达当前分类。",
-      "html": "<nav aria-label=\"设置分类\"><button class=\"ds-nav\" aria-current=\"page\" type=\"button\">外观</button></nav>",
-      "css": ".ds-nav{display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:10px 12px;border:1px solid transparent;border-radius:6px;background:#38312b;color:#ffc397;text-align:left;font:600 14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer;transition:background-color 120ms ease-out,border-color 120ms ease-out}.ds-nav::before{content:'';width:7px;height:7px;flex:none;border:1px solid currentColor;border-radius:50%;background:currentColor}.ds-nav:hover{border-color:#8d9197}.ds-nav:focus-visible{outline:2px solid #f5a66a;outline-offset:3px}@media(max-width:700px){.ds-nav{justify-content:center;padding:8px 4px;gap:6px;text-align:center}.ds-nav::before{display:none}}@media(prefers-reduced-motion:reduce){.ds-nav{transition:none}}"
+      "description": "暖底、暖色文字和字重表示当前页面；两项导航在窄窗等分，无圆点。示例展示选中状态。",
+      "html": "<div class=\"ds-nav\" role=\"tablist\" aria-label=\"设置分类\"><button class=\"ds-nav-link\" role=\"tab\" aria-selected=\"true\" type=\"button\">光环</button><button class=\"ds-nav-link\" role=\"tab\" aria-selected=\"false\" tabindex=\"-1\" type=\"button\">连接与运行</button></div>",
+      "css": ".ds-nav{display:grid;grid-template-columns:auto auto;gap:6px}.ds-nav-link{display:flex;align-items:center;justify-content:center;min-width:0;min-height:42px;padding:8px 16px;border:1px solid transparent;border-radius:6px;background:transparent;color:#d4d5d8;text-align:center;font:14px/1.5 -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;cursor:pointer;transition:background-color 120ms ease-out,border-color 120ms ease-out}.ds-nav-link:hover{background:#292b2e;border-color:#8d9197;color:#f1f1f2}.ds-nav-link[aria-selected=\"true\"]{background:#38312b;color:#ffc397;font-weight:600}.ds-nav-link:focus-visible{outline:2px solid #f5a66a;outline-offset:3px}@media(max-width:700px){.ds-nav{grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.ds-nav-link{padding:8px}}@media(prefers-reduced-motion:reduce){.ds-nav-link{transition:none}}"
     },
     {
       "name": "设置分组",
       "kind": "card",
       "refersTo": "panel",
-      "description": "无边框、无阴影，通过背景与间距建立层级。",
-      "html": "<section class=\"ds-panel\" aria-labelledby=\"ds-panel-title\"><h2 id=\"ds-panel-title\">动画</h2><p>调整光环的动画表现。</p></section>",
-      "css": ".ds-panel{display:grid;gap:18px;min-width:0;padding:24px;border:0;border-radius:12px;background:#202123;color:#f1f1f2;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.ds-panel h2{margin:0;font-size:16px;line-height:24px;font-weight:650}.ds-panel p{margin:0;color:#a6a9ae;font-size:13px;line-height:1.6}@media(max-width:1000px){.ds-panel{padding:20px}}@media(max-width:480px){.ds-panel{padding:18px}}"
+      "description": "透明分组，无内边距、边框或阴影；以标题和内容间距建立层级。",
+      "html": "<fieldset class=\"ds-panel\"><legend>曲线方案</legend><p>选择曲线、微调外观，就地查看每种状态。</p></fieldset>",
+      "css": ".ds-panel{display:grid;gap:16px;min-width:0;margin:0;padding:0;border:0;background:transparent;color:#f1f1f2;font:14px/1.5 -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.ds-panel legend{float:left;width:100%;padding:0;font-size:16px;line-height:24px;font-weight:650}.ds-panel p{margin:0;color:#a6a9ae;font-size:13px;line-height:1.6}"
     },
     {
       "name": "开关",
@@ -119,9 +119,9 @@
   ],
   "narrative": {
     "northStar": "清晰、克制的暖橙设置台",
-    "overview": "中性深灰承载设置内容，略亮分组面建立层级，暖橙标识动作、选中状态与键盘焦点。系统字体、紧凑控件与明确留白服务快速扫描和持续调整。",
+    "overview": "中性深灰承载设置内容，略亮预览面与细分隔线建立层级，暖橙标识动作、选中状态与键盘焦点。系统字体、紧凑控件与明确留白服务快速配置和就地查看效果。",
     "keyCharacteristics": [
-      "中性深灰分层，无卡片阴影。",
+      "中性深灰分层，平面分组与突出预览，无卡片阴影。",
       "暖橙集中表达交互与选中状态。",
       "系统字体、细滑块、紧凑开关。",
       "双语内容可换行，保留明确焦点和错误反馈。"

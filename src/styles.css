@@ -72,29 +72,23 @@ body {
   color: #fff;
 }
 .settings-shell {
-  display: grid;
-  grid-template-columns: 196px minmax(0, 1fr);
-  width: min(100%, 1320px);
+  width: min(100%, 1220px);
   min-height: 100vh;
   margin: 0 auto;
 }
 .settings-sidebar {
-  position: sticky;
-  top: 0;
-  align-self: start;
-  display: grid;
-  align-content: start;
-  gap: 40px;
-  min-height: 100vh;
-  padding: 32px 16px;
-  background: var(--sidebar);
-  border-right: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-width: 0;
+  padding: 18px 36px;
+  border-bottom: 1px solid var(--line);
 }
 .settings-sidebar-brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 8px;
 }
 .settings-brand-mark {
   width: 32px;
@@ -114,27 +108,22 @@ body {
 }
 .settings-nav {
   display: grid;
+  grid-template-columns: auto auto;
   gap: 6px;
 }
 .settings-page .settings-nav-link {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 44px;
-  width: 100%;
-  padding: 10px 12px;
+  justify-content: center;
+  min-height: 42px;
+  padding: 8px 16px;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--muted);
-  text-align: left;
+  color: var(--text-soft);
+  text-align: center;
 }
 .settings-nav-link::before {
-  content: '';
-  width: 7px;
-  height: 7px;
-  flex: none;
-  border: 1px solid currentColor;
-  border-radius: 50%;
+  display: none;
 }
 .settings-page .settings-nav-link:hover {
   background: var(--field);
@@ -150,32 +139,34 @@ body {
 }
 .settings-workbench {
   min-width: 0;
-  padding: 32px 36px 48px;
+  padding: 28px 36px 48px;
 }
 .settings-header {
-  display: grid;
-  gap: 22px;
-  margin-bottom: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  margin-bottom: 24px;
 }
 .settings-header-copy h1 {
   margin: 0;
-  font-size: 28px;
+  font-size: 24px;
   line-height: 1.25;
   letter-spacing: -0.025em;
   font-weight: 650;
 }
 .settings-header-context {
-  margin: 7px 0 0;
+  max-width: 52ch;
+  margin: 6px 0 0;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 13px;
 }
 .settings-header-controls {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 16px 24px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--line);
+  gap: 12px 20px;
 }
 .language-row {
   display: flex;
@@ -187,7 +178,7 @@ body {
   min-width: 116px;
 }
 .settings-enabled-row {
-  margin-left: auto;
+  margin-left: 0;
 }
 .settings-save-status {
   color: #a8dab9;
@@ -226,13 +217,12 @@ body {
 }
 .settings-page .settings-panel {
   display: grid;
-  gap: 18px;
+  gap: 16px;
   min-width: 0;
   margin: 0;
-  padding: 24px;
+  padding: 0;
   border: 0;
-  border-radius: 12px;
-  background: var(--panel);
+  background: transparent;
 }
 .settings-page legend {
   float: left;
@@ -409,15 +399,13 @@ body {
   cursor: pointer;
 }
 .curve-animation-controls {
-  border-top: 1px solid var(--line);
-  padding-top: 20px;
+  gap: 16px 24px;
 }
 .formula {
   display: block;
   min-width: 0;
   margin: 0;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
+  padding: 0 0 18px;
   color: var(--muted);
   font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   overflow-wrap: anywhere;
@@ -476,8 +464,7 @@ body {
   display: grid;
   gap: 12px;
   min-width: 0;
-  padding-top: 24px;
-  border-top: 1px solid var(--line);
+  padding: 0 0 20px;
 }
 .audio-help, .audio-status {
   margin: 0;
@@ -519,16 +506,14 @@ body {
 /* The picker keeps its native dialog and existing canvas preview lifecycle. */
 .curve-picker-entry {
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) auto;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 16px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid var(--line);
+  gap: 12px;
 }
 #curve-picker-current {
   display: block;
-  width: 56px;
-  height: 56px;
+  width: 48px;
+  height: 48px;
 }
 #curve-picker-name {
   font-size: 14px;
@@ -653,13 +638,21 @@ body {
   cursor: wait;
 }
 .curve-picker-feedback {
+  position: sticky;
+  bottom: -24px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 12px;
+  margin-top: 20px;
+  padding: 16px 0 8px;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
 }
 #curve-picker-status {
-  margin: 16px 0 0;
+  flex: 1 1 160px;
+  margin: 0;
   color: var(--text-soft);
   font-size: 13px;
 }
@@ -671,27 +664,26 @@ body {
 }
 .color-master-detail {
   display: grid;
-  grid-template-columns: minmax(168px, 0.7fr) minmax(0, 1fr);
-  gap: 28px;
+  gap: 16px;
   min-width: 0;
-  align-items: start;
 }
 .color-state-list, .color-detail-column {
   min-width: 0;
 }
 .color-state-tabs {
   display: grid;
-  gap: 4px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
 }
 .settings-page .color-state-tab {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-columns: 16px minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
-  min-height: 60px;
+  gap: 8px;
+  min-height: 54px;
   width: 100%;
-  padding: 10px 12px;
-  border: 1px solid transparent;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
   background: transparent;
   text-align: left;
 }
@@ -703,11 +695,11 @@ body {
   border-color: #997356;
 }
 .color-state-row-swatch, .state-color-preview {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   flex: none;
   border: 1px solid #93979f;
-  border-radius: 6px;
+  border-radius: 4px;
 }
 .color-state-row-copy {
   display: grid;
@@ -725,8 +717,8 @@ body {
 }
 .color-state-panel {
   display: grid;
-  gap: 20px;
-  padding-top: 10px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
   min-width: 0;
 }
 .color-editor-summary {
@@ -735,7 +727,7 @@ body {
   gap: 12px;
 }
 .color-editor-summary strong {
-  font-size: 16px;
+  font-size: 14px;
 }
 .color-editor {
   display: grid;
@@ -752,8 +744,7 @@ body {
   border-color: #ffaaaa;
 }
 .color-presets-disclosure {
-  margin-top: 24px;
-  border-top: 1px solid var(--line);
+  margin-top: 12px;
 }
 .color-presets-disclosure summary {
   padding: 14px 0;
@@ -801,57 +792,215 @@ body {
 .color-swatch span:last-child {
   overflow-wrap: anywhere;
 }
-@media (max-width: 1000px) {
-  .settings-shell {
-    grid-template-columns: 168px minmax(0, 1fr);
-  }
+/* Keep the preview beside long adjustments without fixing over narrow-screen controls. */
+.appearance-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 40px;
+  align-items: start;
+}
+.preview-stage {
+  position: sticky;
+  top: 24px;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 22px;
+  border-radius: 12px;
+  background: var(--sidebar);
+}
+.preview-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.preview-heading h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-soft);
+}
+#preview-state-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+#settings-preview {
+  display: block;
+  width: min(100%, 400px);
+  height: auto;
+  aspect-ratio: 1;
+  justify-self: center;
+}
+.preview-notes {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.preview-notes p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.appearance-controls {
+  display: grid;
+  min-width: 0;
+}
+.appearance-controls > .settings-panel {
+  padding-bottom: 24px;
+}
+.appearance-controls > .settings-panel + .settings-panel {
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+.basic-appearance {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+.undo-curve {
+  justify-self: start;
+}
+.settings-disclosure {
+  min-width: 0;
+  border-top: 1px solid var(--line);
+}
+.settings-disclosure > summary {
+  padding: 17px 0;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.settings-disclosure > summary::marker,
+.color-presets-disclosure > summary::marker {
+  color: var(--muted);
+}
+.disclosure-content {
+  display: grid;
+  gap: 20px;
+  padding-bottom: 22px;
+}
+.settings-subsection > h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.setup-guide {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  margin: 0 0 24px;
+  padding: 0 0 20px;
+  border-bottom: 1px solid var(--line);
+}
+.setup-guide strong {
+  font-weight: 600;
+}
+.setup-guide p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.settings-page :is(#dismiss-setup-guide, #undo-curve) {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-soft);
+}
+.settings-page :is(#dismiss-setup-guide, #undo-curve):hover {
+  background: var(--field);
+}
+.settings-page #curve-picker-apply {
+  background: var(--accent);
+  color: #26190f;
+  border-color: transparent;
+  font-weight: 600;
+}
+.settings-page #curve-picker-apply:hover {
+  background: #ffc397;
+}
+#curve-picker-apply-hint {
+  margin: 0 0 20px;
+}
+.color-state-tab .color-state-row-swatch {
+  width: 16px;
+  height: 16px;
+}
+.color-state-row-hex {
+  font-size: 11px;
+}
+#integration-section {
+  max-width: 820px;
+  gap: 24px;
+}
+.connection-steps {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 22px;
+  color: var(--text-soft);
+}
+@media (max-width: 900px) {
   .settings-sidebar {
-    padding: 28px 10px;
+    padding: 16px 24px;
   }
   .settings-workbench {
-    padding: 28px 24px 40px;
+    padding: 24px;
   }
-  .settings-header-controls {
-    gap: 12px 16px;
+  .appearance-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
   }
-  .settings-enabled-row {
-    margin-left: 0;
+  .preview-stage {
+    position: static;
+    grid-template-columns: 180px minmax(0, 1fr);
+    gap: 8px 24px;
+    align-items: center;
+    padding: 16px 20px;
   }
-  .settings-page .settings-panel {
-    padding: 20px;
+  #settings-preview {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    width: 180px;
   }
-  .color-master-detail {
-    grid-template-columns: 1fr;
-    gap: 20px;
+  .preview-heading, .preview-notes {
+    grid-column: 2;
+  }
+  .preview-heading {
+    align-self: end;
+  }
+  .preview-notes {
+    align-self: start;
+  }
+  .color-state-tabs {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 @media (max-width: 700px) {
-  .settings-shell {
-    grid-template-columns: 1fr;
-  }
   .settings-sidebar {
-    position: static;
-    min-height: 0;
-    padding: 20px;
-    gap: 20px;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 16px 20px;
   }
   .settings-nav {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 4px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
   }
   .settings-page .settings-nav-link {
-    justify-content: center;
-    padding: 8px 4px;
-    gap: 6px;
-    text-align: center;
-  }
-  .settings-nav-link::before {
-    display: none;
+    padding: 8px;
   }
   .settings-workbench {
-    padding: 24px 20px 36px;
+    padding: 20px;
+  }
+  .settings-header-controls {
+    width: 100%;
+    gap: 12px 16px;
+  }
+  .settings-save-status {
+    flex-basis: 100%;
   }
   .curve-picker-dialog {
     width: calc(100vw - 24px);
@@ -861,30 +1010,58 @@ body {
   .curve-picker-header {
     top: -16px;
   }
+  .curve-picker-feedback {
+    bottom: -16px;
+  }
   .curve-picker-grid, .curve-picker-family-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .color-state-tabs {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 @media (max-width: 480px) {
-  .settings-nav {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .settings-workbench {
-    padding: 24px 16px 32px;
+    padding: 20px 16px 32px;
   }
-  .settings-page .settings-panel {
-    padding: 18px;
+  .settings-sidebar {
+    padding: 16px;
   }
   .settings-header-controls {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 12px;
+    gap: 10px;
   }
   .language-row {
     justify-content: space-between;
   }
   .settings-save-status {
-    justify-self: end;
+    min-height: 18px;
+  }
+  .settings-header {
+    margin-bottom: 20px;
+  }
+  .setup-guide {
+    margin-bottom: 20px;
+  }
+  .preview-stage {
+    grid-template-columns: 120px minmax(0, 1fr);
+    gap: 8px 12px;
+    padding: 12px;
+  }
+  #settings-preview {
+    width: 120px;
+  }
+  .preview-heading {
+    display: grid;
+    gap: 2px;
+  }
+  .preview-notes {
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .preview-notes p + p {
+    grid-column: 1 / -1;
   }
   .two-column {
     grid-template-columns: 1fr;
@@ -894,32 +1071,33 @@ body {
     gap: 4px;
   }
   .curve-picker-entry {
-    grid-template-columns: 48px minmax(0, 1fr);
-    gap: 12px;
-  }
-  #curve-picker-open {
-    grid-column: 2;
-    justify-self: start;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    gap: 8px;
   }
   #curve-picker-current {
-    width: 48px;
-    height: 48px;
+    width: 40px;
+    height: 40px;
   }
-  .curve-picker-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .settings-page #curve-picker-open {
+    padding-inline: 10px;
   }
-  .curve-picker-family-grid {
+  .curve-picker-grid, .curve-picker-family-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .settings-page :is(button, select, input:not([type='checkbox']):not([type='range'])) {
     min-height: 40px;
   }
-  .color-editor {
-    grid-template-columns: 42px minmax(0, 1fr);
+  .color-state-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .color-editor button {
-    grid-column: 2;
-    justify-self: start;
+  .settings-page .color-state-tab {
+    min-height: 52px;
+  }
+  .color-editor {
+    grid-template-columns: 42px minmax(0, 1fr) auto;
+  }
+  .audio-feedback {
+    grid-template-columns: minmax(0, 1fr) 80px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

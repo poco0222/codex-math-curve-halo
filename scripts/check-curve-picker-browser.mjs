@@ -82,9 +82,14 @@ async function createPage({ holdInitial = false } = {}) {
   await page.goto(url + '/settings.html');
   await page.locator('#curve-picker-open').waitFor({ timeout: 5000 });
   if (!holdInitial) await page.waitForFunction(() => document.querySelector('#duration-ms-value').textContent === '4.637 s');
+  await expandDetails(page);
   return page;
 }
 
+const expandDetails = async (page) => {
+  await page.locator('details').evaluateAll((items) => items.forEach((item) => { item.open = true; }));
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+};
 const item = (page, id) => getCurveFamily(id).profileIds.length === 1
   ? familyItem(page, getCurveFamily(id).id)
   : page.locator(`#curve-picker-grid button[data-curve-id="${id}"]`);
@@ -100,49 +105,57 @@ const open = async (page) => {
   await page.click('#curve-picker-open');
   await page.locator('#curve-picker-dialog[open]').waitFor();
 };
-const waitNoFrames = (page) => page.waitForFunction(() => window.__pickerTest.activeFrames() === 0);
+const waitNoFrames = (page) => page.waitForFunction(() => window.__pickerTest.activeFrames() === (!document.hidden && !matchMedia('(prefers-reduced-motion: reduce)').matches && document.querySelector('#settings-preview') && !document.querySelector('#curve-picker-dialog')?.open ? 1 : 0));
 
 try {
+  const candidatePage = await createPage();
+  await open(candidatePage);
+  await familyItem(candidatePage, 'heart-wave').click();
+  assert.equal(await saveCount(candidatePage), 0, 'single-preset activation selects a candidate without saving');
+  assert.equal(await candidatePage.locator('#curve-picker-dialog').evaluate((dialog) => dialog.open), true);
+  await candidatePage.click('#curve-picker-apply');
+  await waitClosed(candidatePage);
+  assert.equal((await persisted(candidatePage)).curve_id, 'heart-wave');
+  await candidatePage.close();
   const directPage = await createPage();
   await open(directPage);
   await directPage.evaluate(() => { window.__pickerTest.hold = true; });
   await familyItem(directPage, 'heart-wave').press('Enter');
-  await directPage.waitForFunction(() => window.__pickerTest.saves.length === 1, undefined, { timeout: 2000 });
-  await directPage.keyboard.press('Enter');
-  assert.equal(await saveCount(directPage), 1, 'pending direct application must not submit twice');
+  assert.equal(await saveCount(directPage), 0);
+  await directPage.click('#curve-picker-apply');
+  await directPage.waitForFunction(() => window.__pickerTest.saves.length === 1);
+  assert.equal(await directPage.locator('#curve-picker-apply').isDisabled(), true);
   await directPage.evaluate(() => { window.__pickerTest.hold = false; window.__pickerTest.release(); });
   await waitClosed(directPage);
-  assert.equal((await persisted(directPage)).curve_id, 'heart-wave', 'single-preset cards apply in one activation');
+  assert.equal((await persisted(directPage)).curve_id, 'heart-wave');
   await open(directPage);
   assert.equal(await visibleItems(directPage).count(), 0, 'single presets must not have a duplicate variant entry');
   assert.equal(await directPage.locator('#curve-picker-variants-heading').isVisible(), false);
   assert.equal(await directPage.evaluate(() => document.activeElement.dataset.familyId), 'heart-wave');
-  const directScreenshot = resolve(output, 'singleton-en-1130.png');
-  await directPage.screenshot({ path: directScreenshot });
-  screenshots.push(directScreenshot);
   await directPage.keyboard.press('Tab');
-  assert.equal(await directPage.evaluate(() => document.activeElement.id), 'curve-picker-close');
+  assert.equal(await directPage.evaluate(() => document.activeElement.id), 'curve-picker-apply');
   await directPage.keyboard.press('Shift+Tab');
   assert.equal(await directPage.evaluate(() => document.activeElement.dataset.familyId), 'heart-wave');
-  await directPage.keyboard.press('Space');
+  await directPage.click('#curve-picker-apply');
   await waitClosed(directPage);
-  assert.equal(await saveCount(directPage), 1, 'current single preset must not save or reset');
+  assert.equal(await saveCount(directPage), 1, 'applying current preset must not save or reset');
   await open(directPage);
   await directPage.evaluate(() => { window.__pickerTest.failures = 1; });
   await familyItem(directPage, 'spiral-search').click();
+  await directPage.click('#curve-picker-apply');
   await directPage.locator('#curve-picker-retry').waitFor({ state: 'visible' });
   const directFailed = await directPage.evaluate(() => window.__pickerTest.saves.at(-1));
   await directPage.click('#curve-picker-retry');
   await waitClosed(directPage);
-  assert.deepEqual(await directPage.evaluate(() => window.__pickerTest.saves.at(-1)), directFailed, 'direct retry must keep submitted settings');
+  assert.deepEqual(await directPage.evaluate(() => window.__pickerTest.saves.at(-1)), directFailed, 'retry must keep submitted settings');
   await directPage.close();
   const page = await createPage();
   assert.equal(await page.locator('#curve-id').isVisible(), false);
-  assert.equal(await page.locator('#display-section #curve-parameters').count(), 1);
-  assert.equal(await page.locator('#display-section #reset-curve-parameters').count(), 1);
-  assert.equal(await page.locator('#display-section #formula').count(), 1);
-  assert.equal(await page.locator('#animation-section #curve-parameters, #animation-section #formula, #display-section #opacity').count(), 0);
-  assert.equal(await page.locator('#animation-section #opacity').count(), 1);
+  assert.equal(await page.locator('#advanced-settings #curve-parameters').count(), 1);
+  assert.equal(await page.locator('#advanced-settings #reset-curve-parameters').count(), 1);
+  assert.equal(await page.locator('#formula-details #formula').count(), 1);
+  assert.equal(await page.locator('#animation-section #curve-parameters, #animation-section #formula, #animation-section #opacity').count(), 0);
+  assert.equal(await page.locator('#display-section #opacity').count(), 1);
   const background = await page.locator('#animation-section').boundingBox();
   await open(page);
   assert.equal(await page.locator('#curve-picker-dialog select').count(), 0, 'family chooser must not regress to a dropdown');
@@ -185,7 +198,7 @@ try {
   const pixels = [];
   for (const family of curveFamilies) {
     if (family.profileIds.length === 1) {
-      assert.equal(await familyItem(page, family.id).locator('.curve-picker-family-count').textContent(), getText('en', 'settings.useCurveDirect'));
+      assert((await familyItem(page, family.id).locator('.curve-picker-family-count').textContent()).includes(getText('en', 'settings.selectCurve')));
       const pixel = await familyItem(page, family.id).locator('canvas.curve-picker-family-thumbnail').evaluate((canvas) => {
         const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
         return { nonblank: data.some((value, index) => index % 4 === 3 && value > 0), image: canvas.toDataURL() };
@@ -195,7 +208,7 @@ try {
     }
     await familyItem(page, family.id).click();
     assert.equal(await familyItem(page, family.id).getAttribute('aria-pressed'), 'true');
-    assert.equal(await familyItem(page, family.id).locator('.curve-picker-family-count').textContent(), getText('en', 'settings.curveVariantCount').replace('{count}', family.profileIds.length));
+    assert.equal(await familyItem(page, family.id).locator('.curve-picker-family-count').textContent(), getText('en', 'settings.browseCurveVariants').replace('{count}', family.profileIds.length));
     assert((await page.locator('#curve-picker-variants-heading').textContent()).includes(getText('en', `settings.curveFamilies.${family.id}`)));
     assert.deepEqual(await visibleItems(page).evaluateAll((buttons) => buttons.map((button) => button.dataset.curveId)), family.profileIds);
     assert.equal(await page.locator('#curve-picker-grid button[hidden][tabindex="0"]').count(), 0);
@@ -235,18 +248,18 @@ try {
     document.dispatchEvent(new Event('visibilitychange'));
   });
   await waitNoFrames(page);
-  assert.equal(await page.evaluate(() => window.__pickerTest.visibilityListeners()), 0, 'hiding the page must release temporary listeners');
+  assert.equal(await page.evaluate(() => window.__pickerTest.visibilityListeners()), 2, 'hiding the page must release temporary listeners');
   await page.evaluate(() => { delete document.hidden; });
   await browse(page, 'rose-two');
   await item(page, 'rose-two').hover();
   await page.waitForFunction(() => window.__pickerTest.activeFrames() === 1);
-  assert.equal(await page.evaluate(() => window.__pickerTest.visibilityListeners()), 1, 'interacting after visibility resumes must restore preview cleanup');
+  assert.equal(await page.evaluate(() => window.__pickerTest.visibilityListeners()), 4, 'interacting after visibility resumes must restore preview cleanup');
   assert.equal(await saveCount(page), 0, 'focus and hover must not save');
   assert.deepEqual(await persisted(page), initial);
   await page.keyboard.press('Escape');
   await waitClosed(page);
   await waitNoFrames(page);
-  assert.equal(await page.evaluate(() => window.__pickerTest.visibilityListeners()), 0);
+  assert.equal(await page.evaluate(() => window.__pickerTest.visibilityListeners()), 2);
   assert.equal(await page.evaluate(() => document.activeElement.id), 'curve-picker-open');
   await open(page);
   assert.equal(await familyItem(page, 'thinking').getAttribute('aria-pressed'), 'true', 'reopen must discard the last browsed family');
@@ -255,6 +268,7 @@ try {
   assert.equal(await saveCount(page), 0, 'backdrop dismissal must not save');
   await open(page);
   await item(page, initial.curve_id).press('Enter');
+  await page.click('#curve-picker-apply');
   await waitClosed(page);
   assert.equal(await saveCount(page), 0, 'same selection must preserve customized values without saving');
   assert.deepEqual(await persisted(page), initial);
@@ -262,17 +276,19 @@ try {
   await open(page);
   await browse(page, 'heart-wave');
   await item(page, 'heart-wave').press('Space');
+  await page.click('#curve-picker-apply');
   await waitClosed(page);
   assert.equal(await saveCount(page), 1);
   assert.deepEqual(await persisted(page), { ...initial, curve_id: 'heart-wave', curve_parameters: getCurveParameterSettings('heart-wave'), ...getCurveAnimationSettings('heart-wave') });
-  await page.click('#settings-tab-colors');
+  await page.click('#settings-tab-integration');
   assert.equal(await page.locator('#curve-picker-open').count(), 0);
   await page.click('#settings-tab-display');
+  await expandDetails(page);
   assert.equal(await page.locator('#curve-id').inputValue(), 'heart-wave');
   await open(page);
   await page.evaluate(() => window.__pickerTest.external({ curve_id: 'rose-two', ...{ duration_ms: 4321, idle_color: '#234567' } }));
   await page.waitForFunction(() => document.querySelector('#curve-id').value === 'rose-two');
-  assert.equal(await item(page, 'rose-two').getAttribute('aria-pressed'), 'true');
+  assert.equal(await item(page, 'rose-two').getAttribute('aria-current'), 'true');
   assert.equal(await saveCount(page), 1, 'external settings are not a new local save');
   await page.click('#curve-picker-close');
   await waitClosed(page);
@@ -281,6 +297,7 @@ try {
   await open(page);
   await page.evaluate(() => { window.__pickerTest.failures = 1; });
   await item(page, 'rose-three').click();
+  await page.click('#curve-picker-apply');
   await page.locator('#curve-picker-retry').waitFor({ state: 'visible' });
   assert.equal(await page.locator('#settings-save-status').getAttribute('data-status'), 'error');
   assert.equal(await page.locator('#curve-picker-dialog').evaluate((dialog) => dialog.open), true);
@@ -294,6 +311,7 @@ try {
   await page.evaluate(() => { window.__pickerTest.failures = 1; });
   await browse(page, 'rose-orbit');
   await item(page, 'rose-orbit').click();
+  await page.click('#curve-picker-apply');
   await page.locator('#curve-picker-retry').waitFor({ state: 'visible' });
   await page.keyboard.press('Escape');
   await waitClosed(page);
@@ -310,6 +328,7 @@ try {
   await page.evaluate(() => { window.__pickerTest.hold = true; });
   await browse(page, 'rose-four');
   await item(page, 'rose-four').click();
+  await page.click('#curve-picker-apply');
   await page.waitForFunction(() => typeof window.__pickerTest.release === 'function');
   const pendingCount = await saveCount(page);
   await page.keyboard.press('Enter');
@@ -370,6 +389,7 @@ try {
   await waitClosed(page);
   await page.reload();
   await page.locator('#curve-picker-open').waitFor();
+  await expandDetails(page);
   assert.equal(await page.locator('#curve-id').inputValue(), 'rose-four');
 
   await page.emulateMedia({ reducedMotion: 'no-preference' });
@@ -381,6 +401,7 @@ try {
     await browse(page, profile.id);
     const priorSaveCount = await saveCount(page);
     await item(page, profile.id).click();
+  await page.click('#curve-picker-apply');
     await waitClosed(page);
     assert.equal(await saveCount(page), priorSaveCount + 1, 'each different preset, including singletons, applies with one activation');
     const controls = await page.locator('[data-curve-parameter]').evaluateAll((fields) => fields.map((field) => ({
@@ -406,6 +427,7 @@ try {
     const count = await saveCount(page);
     await open(page);
     await item(page, profile.id).press('Enter');
+  await page.click('#curve-picker-apply');
     await waitClosed(page);
     assert.equal(await saveCount(page), count, 'reselecting the current curve must preserve custom geometry');
   }
@@ -426,16 +448,19 @@ try {
 
   await page.locator('#curve-parameter-searchTurns').fill('5.5');
   await page.waitForFunction(() => window.__pickerTest.read().curve_parameters.searchTurns === 5.5);
-  await page.click('#settings-tab-colors');
+  await page.click('#settings-tab-integration');
   await page.click('#settings-tab-display');
+  await expandDetails(page);
   assert.equal(await page.locator('#curve-parameter-searchTurns').inputValue(), '5.5');
   await page.reload();
+  await expandDetails(page);
   await page.waitForFunction(() => document.querySelector('#curve-parameter-searchTurns')?.value === '5.5');
   await page.evaluate(() => { window.__pickerTest.failures = 1; });
   await page.locator('#curve-parameter-searchTurns').fill('6.5');
   await page.waitForFunction(() => document.querySelector('#settings-save-status').dataset.status === 'error');
-  await page.click('#settings-tab-colors');
+  await page.click('#settings-tab-integration');
   await page.click('#settings-tab-display');
+  await expandDetails(page);
   assert.equal(await page.locator('#curve-parameter-searchTurns').inputValue(), '6.5');
   await open(page);
   await page.locator('#curve-picker-retry').waitFor({ state: 'visible' });
@@ -447,7 +472,7 @@ try {
   await page.locator('#curve-parameter-searchTurns').fill('7');
   await page.waitForFunction(() => typeof window.__pickerTest.release === 'function');
   await page.locator('#curve-parameter-searchTurns').fill('7.5');
-  await page.click('#settings-tab-colors');
+  await page.click('#settings-tab-integration');
   await page.evaluate(() => {
     window.__pickerTest.external({ curve_parameters: { searchTurns: 2 } });
     window.__pickerTest.hold = false;
@@ -455,11 +480,13 @@ try {
   });
   await page.waitForFunction(() => window.__pickerTest.read().curve_parameters.searchTurns === 7.5);
   await page.click('#settings-tab-display');
+  await expandDetails(page);
   assert.equal(await page.locator('#curve-parameter-searchTurns').inputValue(), '7.5', 'queued events must not erase a blurred local edit');
 
   await open(page);
   await browse(page, 'rose-curve');
   await item(page, 'rose-curve').click();
+  await page.click('#curve-picker-apply');
   await waitClosed(page);
   for (const language of ['en', 'zh-CN']) {
     await page.selectOption('#language', language);
@@ -480,11 +507,12 @@ try {
 
   const loadingPage = await createPage({ holdInitial: true });
   await loadingPage.locator('#curve-parameter-baseRadius').fill('8');
-  await loadingPage.click('#settings-tab-colors');
+  await loadingPage.click('#settings-tab-integration');
   await loadingPage.evaluate(() => { window.__pickerTest.failures = 1; window.__pickerTest.releaseInitial(); });
   await loadingPage.waitForFunction(() => document.querySelector('#settings-save-status').dataset.status === 'error');
   await loadingPage.evaluate(() => window.__pickerTest.external({ curve_id: 'original-thinking', curve_parameters: { baseRadius: 7 }, opacity: 0.67 }));
   await loadingPage.click('#settings-tab-display');
+  await expandDetails(loadingPage);
   await loadingPage.waitForFunction(() => document.querySelector('#opacity').value === '0.67');
   assert.equal(await loadingPage.locator('#curve-parameter-baseRadius').inputValue(), '8', 'initial save failure must preserve a local geometry edit through external events');
   await open(loadingPage);
@@ -498,9 +526,27 @@ try {
   await loadingPage.waitForFunction(() => document.querySelector('#curve-parameter-baseRadius').value === '9');
   assert.equal(await loadingPage.locator('#curve-parameter-detailAmplitude').inputValue(), '4', 'partial geometry events must retain other custom keys');
   assert.equal(await loadingPage.locator('#curve-parameter-petalCount').inputValue(), '6');
+  const settingsPage = await createPage();
+  for (const language of ['en', 'zh-CN']) {
+    await settingsPage.selectOption('#language', language);
+    for (const [width, height] of [[1130, 890], [390, 844]]) {
+      await settingsPage.setViewportSize({ width, height });
+      for (const view of ['display', 'integration']) {
+        await settingsPage.click(`#settings-tab-${view}`);
+        await settingsPage.locator('details').evaluateAll((items) => items.forEach((item) => { item.open = false; }));
+        await settingsPage.evaluate(() => window.scrollTo(0, 0));
+        assert(await settingsPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${language} ${view} ${width} horizontal overflow`);
+        await settingsPage.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        const path = resolve(output, `settings-${view}-${language}-${width}.png`);
+        await settingsPage.screenshot({ path, fullPage: true });
+        screenshots.push(path);
+      }
+    }
+  }
+  await settingsPage.close();
   assert.deepEqual(errors, []);
   await writeFile(resolve(output, 'result.json'), JSON.stringify({ result: 'passed', parameterCount, catalog: pixels.map(({ id, nonblank }) => ({ id, nonblank })), screenshots, errors, nativeIPC: 'NOT RUN; isolated browser substitute' }, null, 2) + '\n');
-  console.log('curve picker browser: PASS (10 visual families, 6 direct singletons, 20 presets, 89 controls, keyboard, preview, direct retry/pending, no multi-family browse saves, reset/opacity, load races, en/zh-CN desktop/mobile)');
+  console.log('curve picker browser: PASS (10 families, 20 candidate presets, explicit apply, 89 controls, keyboard, preview, retry/pending, reset/opacity, load races, en/zh-CN desktop/mobile)');
   console.log(output);
 } finally {
   await browser.close();

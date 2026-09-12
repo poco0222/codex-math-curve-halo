@@ -4,6 +4,7 @@ import { createSettingsBridge } from './settings-bridge.js';
 import { createSettingsStore } from './settings-store.js';
 import { createAudioFrameReceiver } from './audio.js';
 import { createCurvePicker, createCurveSelection } from './curve-picker.js';
+import { createSettingsPreview } from './settings-preview.js';
 import {
   COLOR_PRESET_GROUPS,
   isHexColor,
@@ -99,18 +100,13 @@ const SETTINGS_VIEWS = {
     labelKey: 'settings.appearance',
     bind: () => {
       renderCurveParameters();
-      bindSettingsFields(settingsPanelHost);
-      document.getElementById('audio-retry')?.addEventListener('click', retryAudioCapture);
-      curvePicker = createCurvePicker({ root: settingsPanelHost, store: settingsStore, selection: curveSelection, isReady: () => initialSettingsReady });
-    },
-  },
-  colors: {
-    template: 'colors',
-    labelKey: 'settings.colors',
-    bind: () => {
       renderColorStateList();
       mountColorStateDetail();
       bindSettingsFields(settingsPanelHost);
+      document.getElementById('undo-curve')?.addEventListener('click', undoCurveChange);
+      document.getElementById('audio-retry')?.addEventListener('click', retryAudioCapture);
+      settingsPreview = createSettingsPreview(document.getElementById('settings-preview'));
+      curvePicker = createCurvePicker({ root: settingsPanelHost, store: settingsStore, selection: curveSelection, isReady: () => initialSettingsReady, onOpenChange: (open) => settingsPreview?.setPaused(open) });
     },
   },
   integration: {
@@ -119,20 +115,23 @@ const SETTINGS_VIEWS = {
     bind: () => {
       bindSettingsFields(settingsPanelHost);
       bindIntegrationActions();
+      bindTestActions();
     },
-  },
-  test: {
-    template: 'test',
-    labelKey: 'settings.test',
-    bind: () => bindTestActions(),
   },
 };
 let settingsViewController;
 let curvePicker;
+let settingsPreview;
 let initialSettingsReady = false;
 let pendingInitialSave = false;
 let initialSettingsLoadPromise = Promise.resolve();
 const localSettingEdits = new Set();
+const curveRestoreKeys = ['curve_id', 'curve_parameters', 'particle_count', 'trail_span', 'duration_ms', 'pulse_duration_ms', 'rotation_duration_ms', 'stroke_width'];
+let curveRestoreSnapshot = null;
+let curveRestorePending = false;
+let curveRestoreApplied = false;
+let settingsRetryPending = false;
+let setupGuideDismissed = false;
 
 const settingsBridge = createSettingsBridge({
   invoke,
@@ -144,7 +143,7 @@ const settingsStore = createSettingsStore({
   defaults: DEFAULT_APP_SETTINGS,
   uiDefaults: {
     activeView: 'appearance',
-    selectedColorState: 'idle',
+    selectedColorState: 'thinking',
     saveStatus: 'ready',
     setupError: null,
     diagnosticsSnapshot: { state: 'idle', updated_at_ms: 0 },
@@ -185,16 +184,69 @@ const curveSelection = createCurveSelection({
   store: settingsStore,
   changeCurve(id) {
     readSettings();
+    curveRestoreSnapshot = curveSnapshot(settingsStore.getSettings());
+    curveRestoreApplied = false;
     settingsStore.patchSetting('curve_id', id);
     localSettingEdits.add('curve_id');
     restoreCurveParameters();
     syncControlsFromSettings();
     restoreCurveAnimation();
+    renderCurveRestore();
     curvePicker?.render();
   },
   save: () => saveCurrentSettings({ latest: true }),
-  onChange: () => curvePicker?.render(),
+  onChange: () => { curvePicker?.render(); renderCurveRestore(); },
 });
+
+function curveSnapshot(settings) {
+  return Object.fromEntries(curveRestoreKeys.map((key) => [key, structuredClone(settings[key])]));
+}
+
+function renderCurveRestore() {
+  const button = document.getElementById('undo-curve');
+  if (!button) return;
+  button.hidden = !curveRestoreSnapshot;
+  button.disabled = curveRestorePending || curveSelection.pending;
+}
+
+async function undoCurveChange() {
+  if (!curveRestoreSnapshot || curveRestorePending || curveSelection.pending) return;
+  const snapshot = curveRestoreSnapshot;
+  readSettings();
+  settingsStore.mergeSettings(snapshot);
+  for (const key of curveRestoreKeys) localSettingEdits.add(key);
+  curveRestorePending = true;
+  curveRestoreApplied = true;
+  syncControlsFromSettings();
+  renderLanguage();
+  renderRangeValues();
+  renderFormula();
+  renderCurveRestore();
+  const result = await saveCurrentSettings({ latest: true });
+  curveRestorePending = false;
+  if (result?.ok && curveRestoreSnapshot === snapshot) curveRestoreSnapshot = null;
+  renderCurveRestore();
+  return result;
+}
+
+function bindSetupGuide() {
+  const guide = document.getElementById('setup-guide');
+  if (!guide) return;
+  try { setupGuideDismissed = window.localStorage?.getItem('halo-setup-guide-dismissed') === 'true'; }
+  catch { setupGuideDismissed = false; }
+  renderSetupGuide();
+  document.getElementById('dismiss-setup-guide')?.addEventListener('click', () => {
+    setupGuideDismissed = true;
+    renderSetupGuide();
+    try { window.localStorage?.setItem('halo-setup-guide-dismissed', 'true'); } catch { /* Storage is optional for this hint. */ }
+  });
+  document.getElementById('open-connection-guide')?.addEventListener('click', () => selectSettingsView('integration', true));
+}
+
+function renderSetupGuide() {
+  const guide = document.getElementById('setup-guide');
+  if (guide) guide.hidden = setupGuideDismissed || settingsStore.getUiState().activeView !== 'appearance';
+}
 
 const saveStatusKeys = {
   ready: 'settings.saveStatus.ready',
@@ -566,10 +618,12 @@ function selectColorState(state, focus = false) {
   renderColorStateList();
   mountColorStateDetail(state);
   renderColorPresets();
+  renderSettingsPreview();
   if (focus) document.getElementById(`color-tab-${state}`)?.focus();
 }
 
 function renderFormula(settings = settingsStore.getSettings()) {
+  renderSettingsPreview();
   const formula = document.getElementById('formula');
   if (!formula) return;
   const profile = getCurveProfile(settings.curve_id);
@@ -588,6 +642,25 @@ function setSaveStatus(status) {
     element.dataset.status = saveStatus;
     element.textContent = getText(language, saveStatusKeys[saveStatus]);
   }
+  const retry = document.getElementById('retry-save');
+  if (retry) {
+    const hidden = saveStatus === 'saving' ? retry.hidden : saveStatus !== 'error' && !settingsRetryPending;
+    if (hidden && document.activeElement === retry && saveStatusElements[0]) {
+      saveStatusElements[0].tabIndex = -1;
+      saveStatusElements[0].focus?.();
+    }
+    retry.hidden = hidden;
+    retry.disabled = settingsRetryPending || saveStatus === 'saving';
+  }
+}
+
+function renderSettingsPreview() {
+  const settings = settingsStore.getSettings();
+  const { selectedColorState, audioFrame } = settingsStore.getUiState();
+  settingsPreview?.update(settings, selectedColorState);
+  if (audioFrame) settingsPreview?.setAudioFrame(audioFrame);
+  const label = document.getElementById('preview-state-label');
+  if (label) label.textContent = getStateLabel(settings.language, selectedColorState);
 }
 
 function renderPluginStatus(status) {
@@ -618,7 +691,7 @@ function renderDiagnostics(displayState = {}) {
   // Report command failures even when the Integration view is unmounted.
   const feedback = document.getElementById('settings-feedback');
   if (feedback) {
-    feedback.hidden = !setupError && settingsStore.getUiState().activeView !== 'test';
+    feedback.hidden = !setupError && settingsStore.getUiState().activeView !== 'integration';
     feedback.dataset.status = setupError ? 'error' : 'ready';
     const message = setupError ? formatSetupError(setupError.command, setupError.error, language) : detail;
     if (feedback.textContent !== message) feedback.textContent = message;
@@ -663,7 +736,7 @@ function renderLanguage(language = settingsStore.getSettings().language) {
     const tab = viewTabs.find((candidate) => candidate.dataset.viewTarget === viewId);
     if (tab) tab.textContent = getText(currentLanguage, view.labelKey);
   }
-  if (settingsStore.getUiState().activeView === 'colors') {
+  if (settingsStore.getUiState().activeView === 'appearance') {
     const { selectedColorState } = settingsStore.getUiState();
     renderColorStateList();
     const label = document.querySelector?.('[data-color-state-label]');
@@ -677,6 +750,8 @@ function renderLanguage(language = settingsStore.getSettings().language) {
   renderCurveParameters();
   curvePicker?.render();
   renderAudioState();
+  renderCurveRestore();
+  renderSetupGuide();
 }
 
 function renderAudioState() {
@@ -730,6 +805,7 @@ async function retryAudioCapture() {
 const acceptAudioFrame = createAudioFrameReceiver((audioFrame) => {
   settingsStore.setUi({ audioFrame, audioBridgeFailed: false });
   renderAudioState();
+  settingsPreview?.setAudioFrame(audioFrame);
 });
 
 // Subscribe once for this settings window; remounting Appearance only renders stored state.
@@ -742,11 +818,12 @@ async function loadAudioState() {
   renderAudioState();
 }
 
-function applySettings(settings, { preserveLocalEdits = false } = {}) {
+function applySettings(settings, { preserveLocalEdits = false, receivedLocalEdits = [] } = {}) {
   if (!settings) return;
+  const protectedEdits = new Set([...receivedLocalEdits, ...localSettingEdits]);
   const activeField = document.activeElement;
   const activeKey = activeField && settingKey(activeField);
-  const preserveActiveField = localSettingEdits.has(activeKey);
+  const preserveActiveField = protectedEdits.has(activeKey);
   const incoming = {
     ...settings,
     language: normalizeLanguage(settings.language ?? settingsStore.getSettings().language),
@@ -754,11 +831,11 @@ function applySettings(settings, { preserveLocalEdits = false } = {}) {
   if (preserveActiveField && activeKey && Object.hasOwn(settingsStore.getSettings(), activeKey)) {
     delete incoming[activeKey];
   }
-  if (preserveLocalEdits || localSettingEdits.size > 0) {
-    for (const key of localSettingEdits) delete incoming[key];
+  if (preserveLocalEdits || protectedEdits.size > 0) {
+    for (const key of protectedEdits) delete incoming[key];
   }
   if (incoming.curve_id && incoming.curve_id !== settingsStore.getSettings().curve_id) {
-    if (localSettingEdits.has('curve_parameters')) delete incoming.curve_id;
+    if (protectedEdits.has('curve_parameters')) delete incoming.curve_id;
     else if (!Object.hasOwn(incoming, 'curve_parameters')) incoming.curve_parameters = {};
   }
   if (Object.hasOwn(incoming, 'curve_parameters')) {
@@ -769,7 +846,13 @@ function applySettings(settings, { preserveLocalEdits = false } = {}) {
       ...incoming.curve_parameters,
     });
   }
+  const previousSettings = settingsStore.getSettings();
   const nextSettings = settingsStore.mergeSettings(incoming);
+  // Compare accepted values only: local protection and normalization precede invalidation.
+  if (curveRestoreKeys.some((key) => JSON.stringify(previousSettings[key]) !== JSON.stringify(nextSettings[key]))) {
+    curveRestoreSnapshot = null;
+    curveRestoreApplied = false;
+  }
   const { selectedColorState } = settingsStore.getUiState();
   syncControlsFromSettings(preserveActiveField ? activeField : undefined);
   renderLanguage(nextSettings.language);
@@ -803,7 +886,11 @@ async function loadSettings() {
 
 const settingsChangedSubscription = settingsBridge.subscribe(
   'settings-changed',
-  ({ payload }) => settingsStore.enqueue(() => applySettings(payload)),
+  ({ payload }) => {
+    // A queued newer save may clear edits before this event is processed.
+    const receivedLocalEdits = new Set(localSettingEdits);
+    return settingsStore.enqueue(() => applySettings(payload, { receivedLocalEdits }));
+  },
 );
 settingsChangedSubscription?.catch?.(() => {});
 const positionSaveFailedSubscription = settingsBridge.subscribe('position-save-failed', ({ payload }) => settingsStore.enqueue(() => {
@@ -827,6 +914,7 @@ pluginOperationSubscription?.catch?.(() => {});
 
 function saveCurrentSettings({ latest = false } = {}) {
   readSettings();
+  renderSettingsPreview();
   if (!initialSettingsReady) {
     pendingInitialSave = true;
     return initialSettingsLoadPromise;
@@ -974,10 +1062,10 @@ function bindIntegrationActions() {
 }
 
 function bindTestActions() {
-  if (!settingsPanelHost) return;
-  for (const button of settingsPanelHost.querySelectorAll('[data-state]')) {
+  const controls = document.getElementById('desktop-test-controls');
+  for (const button of controls?.querySelectorAll('[data-desktop-test-state]') ?? []) {
     button.addEventListener('click', async () => {
-      const result = await invokeCommand('simulate_state', { state: button.dataset.state });
+      const result = await invokeCommand('simulate_state', { state: button.dataset.desktopTestState });
       if (result.ok) {
         clearSetupError();
         renderDiagnostics(result.value);
@@ -995,8 +1083,30 @@ function selectSettingsView(viewId, focus = false) {
 }
 
 settingsTabAnimation?.addEventListener('click', () => selectSettingsView('appearance', true));
+document.getElementById('retry-save')?.addEventListener('click', async () => {
+  if (settingsRetryPending || settingsStore.getUiState().saveStatus === 'saving') return;
+  settingsRetryPending = true;
+  setSaveStatus(settingsStore.getUiState().saveStatus);
+  const snapshot = curveRestoreSnapshot;
+  try {
+    const result = await saveCurrentSettings({ latest: true });
+    if (result?.ok && curveRestoreApplied && snapshot === curveRestoreSnapshot) curveRestoreSnapshot = null;
+    return result;
+  } finally {
+    settingsRetryPending = false;
+    setSaveStatus(settingsStore.getUiState().saveStatus);
+    renderCurveRestore();
+  }
+});
+document.addEventListener?.('visibilitychange', () => {
+  if (!document.hidden) return;
+  curveRestoreSnapshot = null;
+  curveRestoreApplied = false;
+  renderCurveRestore();
+});
 
 bindSettingsFields(document);
+bindSetupGuide();
 settingsViewController = createSettingsViewController({
   views: SETTINGS_VIEWS,
   host: settingsPanelHost,
@@ -1006,6 +1116,8 @@ settingsViewController = createSettingsViewController({
     syncSettingsModelFromControls();
     curvePicker?.destroy();
     curvePicker = null;
+    settingsPreview?.destroy();
+    settingsPreview = null;
   },
   afterMount: (viewId) => {
     settingsStore.setUi({ activeView: viewId });
