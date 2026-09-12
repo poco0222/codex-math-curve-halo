@@ -1547,9 +1547,9 @@ test('settings page uses a responsive settings workbench', async () => {
   assert.match(html, /class="settings-workbench"/);
   assert.match(html, /class="settings-dashboard"/);
   assert.match(html, /class="settings-panel settings-panel-wide"/);
-  assert.match(css, /\.settings-dashboard\s*\{[\s\S]*margin:\s*0/);
+  assert.match(css, /\.settings-page form\s*\{[^}]*margin:\s*0/);
   assert.match(css, /\.settings-panel-host\s*\{/);
-  assert.match(css, /@media\s*\(max-width:\s*880px\)/);
+  assert.match(css, /@media\s*\(max-width:\s*700px\)/);
   assert.match(mainSource, /\.inner_size\(1130\.0, 890\.0\)/);
 });
 
@@ -1577,7 +1577,7 @@ test('settings page uses the Halo Control Room workbench layout', async () => {
   assert.match(html, /<details[^>]+id="color-presets-details"/);
   assert.match(css, /\.settings-workbench\s*\{/);
   assert.match(css, /\.settings-sidebar\s*\{/);
-  assert.match(css, /@media\s*\(max-width:\s*880px\)/);
+  assert.match(css, /@media\s*\(max-width:\s*700px\)/);
   assert.match(source, /setSaveStatus\('saving'\)/);
   assert.match(source, /setSaveStatus\('saved'\)/);
   assert.match(source, /setSaveStatus\('error'\)/);
@@ -1597,8 +1597,8 @@ test('settings navigation mounts one strict section at a time', async () => {
   assert.match(html, /id="settings-panel-host"[^>]*role="tabpanel"/);
   assert.equal((html.match(/data-view-template=/g) ?? []).length, 4);
   assert.doesNotMatch(css, /scroll-margin-top/);
-  assert.match(css, /@media\s*\(max-width:\s*880px\)[\s\S]*\.settings-header\s*\{[\s\S]*position:\s*static/);
-  assert.match(css, /@media\s*\(max-width:\s*640px\)[\s\S]*button,[\s\S]*input:not\(\[type="checkbox"\]\),[\s\S]*select,[\s\S]*\.settings-nav-link[\s\S]*min-height:\s*40px/);
+  assert.match(css, /@media\s*\(max-width:\s*700px\)[\s\S]*\.settings-sidebar\s*\{[^}]*position:\s*static/);
+  assert.match(css, /@media\s*\(max-width:\s*480px\)[\s\S]*min-height:\s*40px/);
 });
 
 test('settings preserves the legacy animation tab as a hidden Appearance compatibility control', async () => {
@@ -2025,7 +2025,7 @@ test('settings page exposes state color tabs and one active editor', async () =>
   assert.match(source, /settingsStore\.getSettings\(\)/);
   assert.match(source, /saveCurrentSettings/);
   assert.match(css, /\.color-state-tabs\s*\{/);
-  assert.match(css, /\.color-state-tab\[aria-selected="true"\]/);
+  assert.match(css, /\.color-state-tab\[aria-selected=['"]true['"]\]/);
 });
 
 test('settings page exposes a master-detail state color editor', async () => {
@@ -2039,8 +2039,8 @@ test('settings page exposes a master-detail state color editor', async () => {
   assert.match(settingsSource, /mountColorStateDetail/);
   assert.match(settingsSource, /STATE_COLOR_KEYS/);
   assert.match(css, /\.color-master-detail\s*\{/);
-  assert.match(css, /@media\s*\(max-width:\s*640px\)[\s\S]*\.color-master-detail\s*\{[\s\S]*grid-template-columns:\s*1fr/);
-  assert.match(css, /@media\s*\(max-width:\s*640px\)[\s\S]*?\.color-state-tabs\s*\{\s*grid-template-columns:\s*1fr;\s*\}[\s\S]*?\.settings-subsection/);
+  assert.match(css, /@media\s*\(max-width:\s*1000px\)[\s\S]*\.color-master-detail\s*\{[^}]*grid-template-columns:\s*1fr/);
+  assert.match(css, /\.color-state-tabs\s*\{[^}]*display:\s*grid/);
   assert.match(css, /\.settings-shell\s*\{[\s\S]*align-content:\s*start/);
 });
 
@@ -2446,4 +2446,31 @@ test('README documents combined Codex lifecycle ownership without assigning it t
   ]) {
     assert(pluginOwnsAppLifecycle.some((pattern) => pattern.test(badWording)), badWording);
   }
+});
+
+test('settings feedback only announces changed diagnostics and reports errors outside Integration', async () => {
+  const { runInNewContext } = await import('node:vm');
+  const source = await readFile(new URL('./settings.js', import.meta.url), 'utf8');
+  const render = source.slice(source.indexOf('function renderDiagnostics('), source.indexOf('function renderLanguage('));
+  let writes = 0;
+  let text = '';
+  const feedback = { dataset: {}, hidden: true, get textContent() { return text; }, set textContent(value) { text = value; writes++; } };
+  const ui = { activeView: 'test', diagnosticsSnapshot: { state: 'idle', updated_at_ms: 0 }, setupError: null };
+  const context = {
+    document: { getElementById: id => id === 'settings-feedback' ? feedback : null },
+    settingsStore: { getUiState: () => ui, setUi: patch => Object.assign(ui, patch) },
+    getCurrentLanguage: () => 'en', getText, getStateLabel, localeForLanguage: () => 'en-US', formatSetupError,
+  };
+  runInNewContext(`${render}\nrenderDiagnostics(); renderDiagnostics();`, context);
+  assert.equal(writes, 1);
+  assert.equal(feedback.hidden, false);
+  ui.activeView = 'appearance';
+  ui.setupError = { command: 'simulate_state', error: 'test-error' };
+  runInNewContext('renderDiagnostics(); renderDiagnostics();', context);
+  assert.equal(writes, 2);
+  assert.equal(feedback.dataset.status, 'error');
+  assert.equal(feedback.hidden, false);
+  ui.setupError = null;
+  runInNewContext('renderDiagnostics();', context);
+  assert.equal(feedback.hidden, true);
 });

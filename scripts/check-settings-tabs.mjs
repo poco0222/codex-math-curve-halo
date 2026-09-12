@@ -131,7 +131,11 @@ assert.match(settings, /const settingsBridge = createSettingsBridge\(/);
 assert.match(settings, /settingsBridge\.command\(/);
 assert.match(settings, /settingsBridge\.subscribe\(/);
 assert.doesNotMatch(settings, /await invoke\(command, args\)/);
-assert.match(css, /@media\s*\(max-width:\s*880px\)[\s\S]*\.settings-nav-link\s*\{[\s\S]*width:\s*auto/);
+assert.match(css, /@media\s*\(max-width:\s*700px\)[\s\S]*\.settings-nav\s*\{[^}]*grid-template-columns:/);
+assert.match(html, /id="settings-view-title"/);
+assert.match(html, /id="settings-view-description"/);
+assert.match(html, /id="settings-feedback"[^>]*role="status"/);
+assert.equal((html.match(/>Codex Halo</g) ?? []).length, 1);
 assert.match(css, /\.diagnostics\s*\{[^}]*overflow-wrap:\s*anywhere/);
 
 console.log('settings tabs structure: PASS');

@@ -615,6 +615,14 @@ function renderDiagnostics(displayState = {}) {
     ? new Date(updatedAt).toLocaleString(localeForLanguage(language))
     : getText(language, 'settings.diagnosticsNever');
   const detail = `${getText(language, 'settings.diagnosticsState')}: ${state} | ${getText(language, 'settings.diagnosticsLastEvent')}: ${timestamp}`;
+  // Report command failures even when the Integration view is unmounted.
+  const feedback = document.getElementById('settings-feedback');
+  if (feedback) {
+    feedback.hidden = !setupError && settingsStore.getUiState().activeView !== 'test';
+    feedback.dataset.status = setupError ? 'error' : 'ready';
+    const message = setupError ? formatSetupError(setupError.command, setupError.error, language) : detail;
+    if (feedback.textContent !== message) feedback.textContent = message;
+  }
   const diagnostics = document.getElementById('diagnostics');
   if (!diagnostics) return;
   if (!setupError) {
@@ -627,6 +635,11 @@ function renderDiagnostics(displayState = {}) {
 
 function renderLanguage(language = settingsStore.getSettings().language) {
   const currentLanguage = normalizeLanguage(language);
+  const activeView = settingsStore.getUiState().activeView;
+  const title = document.getElementById('settings-view-title');
+  const description = document.getElementById('settings-view-description');
+  if (title) title.dataset.i18n = SETTINGS_VIEWS[activeView].labelKey;
+  if (description) description.dataset.i18n = `settings.description.${activeView}`;
   document.documentElement.lang = currentLanguage;
   document.title = getText(currentLanguage, 'settings.title');
   for (const element of document.querySelectorAll('[data-i18n]')) {

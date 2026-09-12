@@ -10,10 +10,10 @@
     <main class="settings-shell">
       <aside class="settings-sidebar" aria-label="Settings sections" data-i18n-aria-label="settings.navigation">
         <div class="settings-sidebar-brand">
-          <span class="settings-brand-mark" aria-hidden="true">CH</span>
+          <svg class="settings-brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><ellipse cx="16" cy="16" rx="12" ry="5" stroke="currentColor" stroke-width="1.5"/><ellipse cx="16" cy="16" rx="12" ry="5" stroke="currentColor" stroke-width="1.5" transform="rotate(60 16 16)"/><ellipse cx="16" cy="16" rx="12" ry="5" stroke="currentColor" stroke-width="1.5" transform="rotate(120 16 16)"/></svg>
           <div>
-            <p class="settings-eyebrow" data-i18n="settings.plugin">Codex Plugin</p>
             <strong>Codex Halo</strong>
+            <p class="settings-brand-caption" data-i18n="settings.context">Settings workspace</p>
           </div>
         </div>
         <nav class="settings-nav" data-section-nav role="tablist" aria-label="Settings sections" data-i18n-aria-label="settings.navigation">
@@ -28,9 +28,8 @@
       <section class="settings-workbench">
         <header class="settings-header">
           <div class="settings-header-copy">
-            <p class="settings-eyebrow" data-i18n="settings.plugin">Codex Plugin</p>
-            <h1>Codex Halo</h1>
-            <p class="settings-header-context" data-i18n="settings.context">Settings workspace</p>
+            <h1 id="settings-view-title" data-i18n="settings.appearance">Appearance</h1>
+            <p id="settings-view-description" class="settings-header-context" data-i18n="settings.description.appearance">Shape your Halo, from curve to motion.</p>
           </div>
           <div class="settings-header-controls">
             <label class="language-row" for="language">
@@ -47,6 +46,7 @@
             <span id="settings-save-status" class="settings-save-status" role="status" data-i18n="settings.saveStatus.ready">Ready</span>
           </div>
         </header>
+        <p id="settings-feedback" class="settings-feedback" role="status" hidden></p>
 
         <form id="settings-form" class="settings-dashboard">
           <div id="settings-panel-host" class="settings-panel-host" role="tabpanel" aria-labelledby="settings-tab-display"></div>
@@ -193,7 +193,7 @@
 
         <template data-view-template="colors">
           <fieldset id="colors-section" class="settings-panel settings-panel-wide" data-section="colors">
-            <legend data-i18n="settings.colors">State colors</legend>
+            <legend data-i18n="settings.statePalette">State palette</legend>
             <div class="section-heading-row">
               <span class="section-helper" data-i18n="settings.colorSelectionHint">Select a state to edit its color</span>
               <span class="state-color-count" data-i18n="settings.stateCount">7 states</span>
@@ -215,12 +215,11 @@
 
         <template data-view-template="integration">
           <fieldset id="integration-section" class="settings-panel settings-panel-wide" data-section="integration">
-            <legend data-i18n="settings.integration">Integration</legend>
+            <legend data-i18n="settings.connections">Connection settings</legend>
             <div class="integration-grid">
               <section class="settings-subsection" aria-labelledby="plugin-heading">
                 <div class="subsection-heading">
                   <h2 id="plugin-heading" data-i18n="settings.plugin">Codex Plugin</h2>
-                  <span class="subsection-kicker" data-i18n="settings.pluginReady">Plugin setup</span>
                 </div>
                 <p id="plugin-status" class="status-line" role="status" data-i18n="settings.pluginReady">Plugin setup</p>
                 <div class="button-row">
@@ -231,7 +230,6 @@
               <section class="settings-subsection" aria-labelledby="diagnostics-heading">
                 <div class="subsection-heading">
                   <h2 id="diagnostics-heading" data-i18n="settings.diagnostics">Diagnostics</h2>
-                  <span class="subsection-kicker" data-i18n="settings.diagnosticsLive">Live</span>
                 </div>
                 <p id="diagnostics" class="diagnostics" aria-live="polite" data-i18n="settings.diagnosticsLoading">State: Idle | Last event: never</p>
                 <div class="button-row">
@@ -240,6 +238,7 @@
                 </div>
               </section>
             </div>
+            <div class="subsection-heading runtime-heading"><h2 data-i18n="settings.runtime">Startup &amp; behavior</h2></div>
             <div class="settings-runtime">
               <label class="switch-row" for="start-at-login">
                 <span data-i18n="settings.startAtLogin">Start at login</span>

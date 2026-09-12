@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-12T14:37:03.9386473+08:00",
+  "title": "Design System: Codex Halo Settings",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "暖橙"
+      },
+      "page": {
+        "role": "neutral",
+        "displayName": "中性深灰"
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "分组面"
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "页面标题",
+        "purpose": "当前设置页标题。"
+      },
+      "body": {
+        "displayName": "系统正文",
+        "purpose": "双语标签与正文。"
+      },
+      "formula": {
+        "displayName": "公式",
+        "purpose": "可选择、可换行的数学表达式。"
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "button-feedback",
+        "value": "background-color 120ms ease-out, border-color 120ms ease-out",
+        "purpose": "按钮悬停反馈。"
+      },
+      {
+        "name": "switch-thumb",
+        "value": "transform 140ms ease-out",
+        "purpose": "开关圆钮移动；减少动态偏好下关闭全部 CSS 过渡。"
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact-desktop-max",
+        "value": "1000px"
+      },
+      {
+        "name": "top-navigation-max",
+        "value": "700px"
+      },
+      {
+        "name": "single-column-fields-max",
+        "value": "480px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "安装按钮",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "实心暖橙用于主要安装动作；示例只展示视觉。",
+      "html": "<button class=\"ds-primary\" type=\"button\">安装插件</button>",
+      "css": ".ds-primary{min-height:36px;padding:8px 14px;border:1px solid transparent;border-radius:6px;background:#f5a66a;color:#26190f;font:600 14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer;transition:background-color 120ms ease-out,border-color 120ms ease-out}.ds-primary:hover{background:#ffc397}.ds-primary:focus-visible{outline:2px solid #f5a66a;outline-offset:3px}.ds-primary:disabled{opacity:.55;cursor:not-allowed}@media(prefers-reduced-motion:reduce){.ds-primary{transition:none}}"
+    },
+    {
+      "name": "次级按钮",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "字段底色与强边框承载普通动作。",
+      "html": "<button class=\"ds-secondary\" type=\"button\">重试</button>",
+      "css": ".ds-secondary{min-height:36px;padding:8px 14px;border:1px solid #61656b;border-radius:6px;background:#292b2e;color:#f1f1f2;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer;transition:background-color 120ms ease-out,border-color 120ms ease-out}.ds-secondary:hover{background:#323437;border-color:#8d9197}.ds-secondary:focus-visible{outline:2px solid #f5a66a;outline-offset:3px}.ds-secondary:disabled{opacity:.55;cursor:not-allowed}@media(prefers-reduced-motion:reduce){.ds-secondary{transition:none}}"
+    },
+    {
+      "name": "弱化按钮",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "重置和卸载采用透明底色。",
+      "html": "<button class=\"ds-ghost\" type=\"button\">重置</button>",
+      "css": ".ds-ghost{min-height:36px;padding:8px 14px;border:1px solid transparent;border-radius:6px;background:transparent;color:#a6a9ae;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer;transition:background-color 120ms ease-out,border-color 120ms ease-out}.ds-ghost:hover{background:#292b2e;border-color:#8d9197;color:#f1f1f2}.ds-ghost:focus-visible{outline:2px solid #f5a66a;outline-offset:3px}.ds-ghost:disabled{opacity:.55;cursor:not-allowed}@media(prefers-reduced-motion:reduce){.ds-ghost{transition:none}}"
+    },
+    {
+      "name": "文本输入",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "强边框区分可编辑字段；保留标签、错误边框及焦点。",
+      "html": "<label class=\"ds-field-label\">颜色值<input class=\"ds-input\" value=\"#F5A66A\" pattern=\"#[0-9A-Fa-f]{6}\" spellcheck=\"false\"></label>",
+      "css": ".ds-field-label{display:grid;gap:4px;color:#d4d5d8;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.ds-input{min-width:0;min-height:36px;padding:7px 10px;border:1px solid #61656b;border-radius:6px;background:#292b2e;color:#f1f1f2;font:inherit;caret-color:#f5a66a}.ds-input:hover{border-color:#8d9197}.ds-input:focus-visible{outline:2px solid #f5a66a;outline-offset:3px}.ds-input:invalid{border-color:#ffaaaa}.ds-input:disabled{opacity:.55;cursor:not-allowed}"
+    },
+    {
+      "name": "活动导航项",
+      "kind": "nav",
+      "refersTo": "navigation-active",
+      "description": "暖底、暖色文字与实心圆点共同表达当前分类。",
+      "html": "<nav aria-label=\"设置分类\"><button class=\"ds-nav\" aria-current=\"page\" type=\"button\">外观</button></nav>",
+      "css": ".ds-nav{display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:10px 12px;border:1px solid transparent;border-radius:6px;background:#38312b;color:#ffc397;text-align:left;font:600 14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer;transition:background-color 120ms ease-out,border-color 120ms ease-out}.ds-nav::before{content:'';width:7px;height:7px;flex:none;border:1px solid currentColor;border-radius:50%;background:currentColor}.ds-nav:hover{border-color:#8d9197}.ds-nav:focus-visible{outline:2px solid #f5a66a;outline-offset:3px}@media(max-width:700px){.ds-nav{justify-content:center;padding:8px 4px;gap:6px;text-align:center}.ds-nav::before{display:none}}@media(prefers-reduced-motion:reduce){.ds-nav{transition:none}}"
+    },
+    {
+      "name": "设置分组",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "无边框、无阴影，通过背景与间距建立层级。",
+      "html": "<section class=\"ds-panel\" aria-labelledby=\"ds-panel-title\"><h2 id=\"ds-panel-title\">动画</h2><p>调整光环的动画表现。</p></section>",
+      "css": ".ds-panel{display:grid;gap:18px;min-width:0;padding:24px;border:0;border-radius:12px;background:#202123;color:#f1f1f2;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.ds-panel h2{margin:0;font-size:16px;line-height:24px;font-weight:650}.ds-panel p{margin:0;color:#a6a9ae;font-size:13px;line-height:1.6}@media(max-width:1000px){.ds-panel{padding:20px}}@media(max-width:480px){.ds-panel{padding:18px}}"
+    },
+    {
+      "name": "开关",
+      "kind": "input",
+      "refersTo": "switch",
+      "description": "原生复选框保留键盘行为，圆钮与暖色表示开启。",
+      "html": "<label class=\"ds-switch-row\">启用光环<input class=\"ds-switch\" type=\"checkbox\" checked></label>",
+      "css": ".ds-switch-row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:36px;color:#d4d5d8;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer}.ds-switch{appearance:none;box-sizing:border-box;flex:none;width:40px;height:24px;margin:0;padding:3px;border:1px solid #72767d;border-radius:12px;background:#414449;cursor:pointer}.ds-switch::before{content:'';display:block;width:16px;height:16px;border-radius:50%;background:#e2e3e5;transition:transform 140ms ease-out}.ds-switch:hover{border-color:#8d9197}.ds-switch:checked{background:#f5a66a;border-color:#f5a66a}.ds-switch:checked::before{transform:translateX(16px);background:#281b11}.ds-switch:focus-visible{outline:2px solid #f5a66a;outline-offset:3px}.ds-switch:disabled{opacity:.55;cursor:not-allowed}@media(prefers-reduced-motion:reduce){.ds-switch::before{transition:none}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "清晰、克制的暖橙设置台",
+    "overview": "中性深灰承载设置内容，略亮分组面建立层级，暖橙标识动作、选中状态与键盘焦点。系统字体、紧凑控件与明确留白服务快速扫描和持续调整。",
+    "keyCharacteristics": [
+      "中性深灰分层，无卡片阴影。",
+      "暖橙集中表达交互与选中状态。",
+      "系统字体、细滑块、紧凑开关。",
+      "双语内容可换行，保留明确焦点和错误反馈。"
+    ],
+    "rules": [
+      {
+        "name": "The Scoped Palette Rule",
+        "body": "设置页颜色保留局部作用域，避免改变共享样式表中的透明桌面光环。",
+        "section": "colors"
+      }
+    ],
+    "dos": [
+      "Do 复用局部颜色、系统字体、控件圆角和分组间距。",
+      "Do 保留双语换行、数值对齐、键盘焦点及文字状态反馈。",
+      "Do 用轻微底色变化和细线建立层级。"
+    ],
+    "donts": [
+      "Don't 将设置页背景应用于透明桌面光环。",
+      "Don't 加入装饰渐变、厚重阴影或无任务目的的动态效果。",
+      "Don't 用颜色取代标签、保存消息或错误说明。"
+    ]
+  }
+}
